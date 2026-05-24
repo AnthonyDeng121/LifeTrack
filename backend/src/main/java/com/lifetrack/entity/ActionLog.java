@@ -28,6 +28,13 @@ public class ActionLog {
     @Column(name = "sub_task_id")
     private Long subTaskId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Task.Category category;
+
+    @Column(name = "duration_minutes")
+    private Integer durationMinutes; // 投入时长（分钟）
+
     @Column(name = "raw_input", columnDefinition = "TEXT", nullable = false)
     private String rawInput;
 
