@@ -1,7 +1,10 @@
 package com.lifetrack.service;
 
+import com.lifetrack.common.UserContext;
+import com.lifetrack.dto.SubTaskListResponse;
 import com.lifetrack.dto.TaskDeconstructRequest;
 import com.lifetrack.dto.TaskDeconstructResponse;
+import com.lifetrack.dto.TaskListResponse;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
 import com.lifetrack.repository.SubTaskRepository;
@@ -22,6 +25,53 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
     private final AIService aiService;
+
+    /**
+     * 获取当前用户所有进行中的任务列表
+     */
+    public List<TaskListResponse> getTaskList() {
+        // 1. 从上下文获取当前登录用户 ID
+        Long userId = UserContext.getUserId();
+
+        // 2. 查询该用户下所有进行中的任务 (status = 0)
+        List<Task> tasks = taskRepository.findByUserIdAndStatus(userId, 0);
+
+        // 3. 转换为 DTO 并处理进度数值 (乘以 100)
+        return tasks.stream().map(task -> TaskListResponse.builder()
+                        .id(task.getId())
+                        .title(task.getTitle())
+                        .category(task.getCategory().name())
+                        .totalProgress(task.getTotalProgress().multiply(new BigDecimal("100")))
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取指定主任务下的所有子任务
+     */
+    public List<SubTaskListResponse> getSubTaskList(Long taskId) {
+        // 1. 校验任务是否存在且属于当前用户
+        Long userId = UserContext.getUserId();
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("任务不存在"));
+        
+        if (!task.getUserId().equals(userId)) {
+            throw new RuntimeException("无权访问该任务");
+        }
+
+        // 2. 查询子任务并按 orderNum 排序
+        List<SubTask> subTasks = subTaskRepository.findByTaskIdOrderByOrderNumAsc(taskId);
+
+        // 3. 转换为 DTO
+        return subTasks.stream().map(st -> SubTaskListResponse.builder()
+                        .id(st.getId())
+                        .content(st.getContent())
+                        .weight(st.getWeight().multiply(new BigDecimal("100")))
+                        .currentProgress(st.getCurrentProgress().multiply(new BigDecimal("100")))
+                        .isCompleted(st.getIsCompleted())
+                        .build())
+                .collect(Collectors.toList());
+    }
 
     @Transactional
     public TaskDeconstructResponse deconstructTask(TaskDeconstructRequest request) {
