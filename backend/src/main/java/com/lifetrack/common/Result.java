@@ -16,7 +16,7 @@ public class Result<T> {
     @Schema(description = "响应消息", example = "操作成功")
     private String message;
     
-    @Schema(description = "响应数据")
+    @Schema(description = "响应数据", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
     private T data;
 
     public static <T> Result<T> success(T data) {

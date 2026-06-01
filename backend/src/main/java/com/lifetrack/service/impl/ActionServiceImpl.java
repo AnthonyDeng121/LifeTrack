@@ -1,18 +1,27 @@
 package com.lifetrack.service.impl;
 
 import com.lifetrack.common.UserContext;
-import com.lifetrack.dto.ActionSyncRequest;
-import com.lifetrack.dto.ActionSyncResponse;
+import com.lifetrack.dto.*;
 import com.lifetrack.entity.ActionLog;
+import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
+import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
+import com.lifetrack.repository.SubTaskRepository;
+import com.lifetrack.repository.TaskRepository;
 import com.lifetrack.service.ActionService;
+import com.lifetrack.service.AIService;
+import com.lifetrack.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -20,6 +29,10 @@ import java.math.BigDecimal;
 public class ActionServiceImpl implements ActionService {
 
     private final ActionLogRepository actionLogRepository;
+    private final TaskRepository taskRepository;
+    private final SubTaskRepository subTaskRepository;
+    private final TaskService taskService;
+    private final AIService aiService;
 
     @Override
     @Transactional
@@ -27,34 +40,142 @@ public class ActionServiceImpl implements ActionService {
         Long userId = UserContext.getUserId();
         log.info("User {} is syncing action: {}", userId, request.getRawInput());
 
-        // 1. 调用 AI Agent 进行分析 (此处为 Mock 逻辑)
-        // 实际逻辑应为：获取该用户所有进行中的任务 -> 发送给 AI -> AI 返回匹配的任务 ID 和贡献度
-        
-        BigDecimal mockIncrement = new BigDecimal("0.05"); // 5% 增量
-        String mockMatchedTask = "学会 Spring Boot 开发";
-        String mockAiAnalysis = "干得漂亮！你已经掌握了 Web 开发的核心。";
-        Task.Category mockCategory = Task.Category.学习;
-        Integer mockDuration = 45; // 假设投入了45分钟
+        // 1. 获取用户所有进行中的主任务及其子任务
+        List<Task> activeTasks = taskRepository.findByUserIdAndStatus(userId, 0);
+        if (activeTasks.isEmpty()) {
+            throw new BusinessException(400, "请先创建任务再进行同步");
+        }
 
-        // 2. 持久化行为日志
-        ActionLog actionLog = ActionLog.builder()
-                .userId(userId)
-                .rawInput(request.getRawInput())
-                .contribution(mockIncrement)
-                .category(mockCategory)
-                .durationMinutes(mockDuration)
-                .aiAnalysis(mockAiAnalysis)
-                .build();
-        actionLogRepository.save(actionLog);
+        List<SubTask> allCandidateSubTasks = activeTasks.stream()
+                .flatMap(task -> subTaskRepository.findByTaskIdOrderByOrderNumAsc(task.getId()).stream())
+                .collect(Collectors.toList());
 
-        // 3. 更新任务进度 (此处逻辑暂略，后续对接 TaskService)
-        // 实际上这里应该更新 Task 和 SubTask 的进度字段，为了演示看板效果，假设进度已更新
+        if (allCandidateSubTasks.isEmpty()) {
+            throw new BusinessException(400, "没有任何已拆解的任务，请先进行任务拆解");
+        }
+
+        // 2. 调用 AI 进行 1 对 N 匹配分析
+        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), allCandidateSubTasks);
         
+        if (aiResult.getMatches() == null || aiResult.getMatches().isEmpty()) {
+            return ActionSyncResponse.builder()
+                    .updates(Collections.emptyList())
+                    .aiAnalysis(aiResult.getAiAnalysis() != null ? aiResult.getAiAnalysis() : "AI 未能匹配到任何相关任务")
+                    .build();
+        }
+
+        // 3. 处理所有匹配到的子任务更新
+        List<ActionSyncResponse.TaskUpdateDetail> updateDetails = new ArrayList<>();
+        Map<Long, Task> taskMap = activeTasks.stream().collect(Collectors.toMap(Task::getId, t -> t));
+
+        for (AIMatchResult.MatchDetail match : aiResult.getMatches()) {
+            SubTask subTask = subTaskRepository.findById(match.getSubTaskId()).orElse(null);
+            if (subTask == null) continue;
+
+            Task task = taskMap.get(subTask.getTaskId());
+            if (task == null) continue;
+
+            // 持久化行为日志
+            ActionLog actionLog = ActionLog.builder()
+                    .userId(userId)
+                    .taskId(task.getId())
+                    .subTaskId(subTask.getId())
+                    .rawInput(request.getRawInput())
+                    .contribution(match.getIncrement())
+                    .category(task.getCategory())
+                    .durationMinutes(0) // 可根据 AI 分析扩展时长
+                    .aiAnalysis(aiResult.getAiAnalysis())
+                    .build();
+            actionLogRepository.save(actionLog);
+
+            // 更新子任务进度
+            subTask.setCurrentProgress(subTask.getCurrentProgress().add(match.getIncrement()));
+            if (subTask.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) {
+                subTask.setCurrentProgress(BigDecimal.ONE);
+                subTask.setIsCompleted(1);
+            }
+            subTaskRepository.save(subTask);
+
+            // 更新主任务总进度
+            taskService.updateTaskProgress(task.getId());
+            
+            // 重新获取更新后的进度
+            Task updatedTask = taskRepository.findById(task.getId()).orElse(task);
+            updateDetails.add(ActionSyncResponse.TaskUpdateDetail.builder()
+                    .taskTitle(updatedTask.getTitle())
+                    .increment(match.getIncrement().multiply(new BigDecimal("100")))
+                    .newTotalProgress(updatedTask.getTotalProgress().multiply(new BigDecimal("100")))
+                    .build());
+        }
+
         return ActionSyncResponse.builder()
-                .matchedTask(mockMatchedTask)
-                .increment(mockIncrement.multiply(new BigDecimal("100")))
-                .newTotalProgress(new BigDecimal("72.5"))
-                .aiAnalysis(mockAiAnalysis)
+                .updates(updateDetails)
+                .aiAnalysis(aiResult.getAiAnalysis())
                 .build();
+    }
+
+    @Override
+    public PageResponse<ActionHistoryResponse> getHistory(Pageable pageable) {
+        Long userId = UserContext.getUserId();
+        Page<ActionLog> page = actionLogRepository.findByUserId(userId, pageable);
+
+        // 获取涉及到的任务 ID 列表，用于批量查询任务标题
+        Set<Long> taskIds = page.getContent().stream()
+                .map(ActionLog::getTaskId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        
+        Map<Long, String> taskTitleMap = taskRepository.findAllById(taskIds).stream()
+                .collect(Collectors.toMap(Task::getId, Task::getTitle));
+
+        List<ActionHistoryResponse> list = page.getContent().stream()
+                .map(log -> ActionHistoryResponse.builder()
+                        .id(log.getId())
+                        .rawInput(log.getRawInput())
+                        .contribution(log.getContribution().multiply(new BigDecimal("100")))
+                        .aiAnalysis(log.getAiAnalysis())
+                        .taskTitle(taskTitleMap.getOrDefault(log.getTaskId(), "未知任务"))
+                        .category(log.getCategory() != null ? log.getCategory().name() : null)
+                        .createdAt(log.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+
+        return PageResponse.of(page.getTotalElements(), list);
+    }
+
+    @Override
+    @Transactional
+    public void deleteAction(Long actionId) {
+        Long userId = UserContext.getUserId();
+        ActionLog actionLog = actionLogRepository.findById(actionId)
+                .orElseThrow(() -> new BusinessException(404, "记录不存在"));
+        
+        if (!actionLog.getUserId().equals(userId)) {
+            throw new BusinessException(403, "无权删除该记录");
+        }
+
+        // 如果该记录关联了任务和子任务，需要回退进度
+        if (actionLog.getSubTaskId() != null) {
+            SubTask subTask = subTaskRepository.findById(actionLog.getSubTaskId()).orElse(null);
+            if (subTask != null) {
+                // 回退进度
+                BigDecimal newProgress = subTask.getCurrentProgress().subtract(actionLog.getContribution());
+                if (newProgress.compareTo(BigDecimal.ZERO) < 0) {
+                    newProgress = BigDecimal.ZERO;
+                }
+                subTask.setCurrentProgress(newProgress);
+                
+                // 如果回退后进度小于 1.0，标记为未完成
+                if (newProgress.compareTo(BigDecimal.ONE) < 0) {
+                    subTask.setIsCompleted(0);
+                }
+                subTaskRepository.save(subTask);
+
+                // 更新主任务总进度
+                taskService.updateTaskProgress(subTask.getTaskId());
+            }
+        }
+
+        actionLogRepository.delete(actionLog);
     }
 }

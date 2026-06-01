@@ -22,3 +22,9 @@ jackson:
 jwt:
   secret: life-track-ai-secret-key-2024-05-23-very-long-key
   expiration: 86400000 # 24小时
+
+# AI 配置 (由李想/魏欣岳填充)
+openai:
+  api-key: ${OPENAI_API_KEY:sk-xxx} # 建议通过环境变量注入
+  api-url: https://api.openai.com/v1/chat/completions
+  model: gpt-4o-mini

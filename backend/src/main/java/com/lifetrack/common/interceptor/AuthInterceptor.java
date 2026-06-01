@@ -2,6 +2,7 @@ package com.lifetrack.common.interceptor;
 
 import com.lifetrack.common.UserContext;
 import com.lifetrack.common.annotation.LoginRequired;
+import com.lifetrack.exception.BusinessException;
 import com.lifetrack.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,7 +42,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             String authHeader = request.getHeader("Authorization");
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 log.warn("Missing or invalid Authorization header");
-                throw new RuntimeException("未登录或 Token 已过期");
+                throw new BusinessException(401, "未登录或 Token 已过期");
             }
 
             String token = authHeader.substring(7);
@@ -58,7 +59,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 return true;
             } catch (Exception e) {
                 log.error("Token validation failed: {}", e.getMessage());
-                throw new RuntimeException("无效的 Token");
+                throw new BusinessException(401, "无效的 Token");
             }
         }
 

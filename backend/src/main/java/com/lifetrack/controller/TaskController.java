@@ -3,6 +3,7 @@ package com.lifetrack.controller;
 import com.lifetrack.common.Result;
 import com.lifetrack.common.annotation.LoginRequired;
 import com.lifetrack.dto.SubTaskListResponse;
+import com.lifetrack.dto.SubTaskUpdateRequest;
 import com.lifetrack.dto.TaskDeconstructRequest;
 import com.lifetrack.dto.TaskDeconstructResponse;
 import com.lifetrack.dto.TaskListResponse;
@@ -57,5 +58,53 @@ public class TaskController {
     public Result<TaskDeconstructResponse> deconstruct(@RequestBody @Validated TaskDeconstructRequest request) {
         TaskDeconstructResponse response = taskService.deconstructTask(request);
         return Result.success(response);
+    }
+
+    /**
+     * 删除任务
+     * 用户放弃某个目标时，删除该任务及其关联的所有数据
+     */
+    @Operation(summary = "删除任务", description = "删除指定任务及其所有子任务和行为日志")
+    @DeleteMapping("/{taskId}")
+    public Result<Void> deleteTask(
+            @Parameter(description = "要删除的任务ID") @PathVariable Long taskId) {
+        taskService.deleteTask(taskId);
+        return Result.success();
+    }
+
+    /**
+     * 删除子任务
+     * 删除子任务后，剩余子任务的权重将按比例重新分配
+     */
+    @Operation(summary = "删除子任务", description = "删除子任务并重新分配剩余子任务权重")
+    @DeleteMapping("/subtasks/{subTaskId}")
+    public Result<Void> deleteSubTask(
+            @Parameter(description = "子任务ID") @PathVariable Long subTaskId) {
+        taskService.deleteSubTask(subTaskId);
+        return Result.success();
+    }
+
+    /**
+     * 手动勾选子任务完成
+     */
+    @Operation(summary = "勾选子任务完成", description = "手动标记子任务为已完成并同步主任务进度")
+    @PutMapping("/subtasks/{subTaskId}/complete")
+    public Result<Void> completeSubTask(
+            @Parameter(description = "子任务ID") @PathVariable Long subTaskId) {
+        taskService.completeSubTask(subTaskId);
+        return Result.success();
+    }
+
+    /**
+     * 编辑子任务
+     * 允许修改子任务内容或权重，修改权重后其他子任务权重会自动按比例缩放
+     */
+    @Operation(summary = "编辑子任务", description = "修改子任务内容或权重")
+    @PutMapping("/subtasks/{subTaskId}")
+    public Result<Void> updateSubTask(
+            @Parameter(description = "子任务ID") @PathVariable Long subTaskId,
+            @RequestBody @Validated SubTaskUpdateRequest request) {
+        taskService.updateSubTask(subTaskId, request);
+        return Result.success();
     }
 }

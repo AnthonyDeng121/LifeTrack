@@ -1,6 +1,7 @@
 package com.lifetrack.exception;
 
 import com.lifetrack.common.Result;
+import com.lifetrack.exception.BusinessException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +10,9 @@ import org.springframework.validation.BindException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
@@ -56,12 +59,16 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理 HTTP 消息不可读异常 (如 JSON 格式错误或枚举映射失败)
+     * 处理 HTTP 消息不可读异常 (如 JSON 格式错误、请求体缺失)
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<String> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
-        log.error("HTTP 消息不可读: ", e);
-        return Result.error(400, "请求数据格式错误或包含非法参数");
+        log.warn("HTTP 消息不可读: {}", e.getMessage());
+        String msg = "请求参数格式错误";
+        if (e.getMessage() != null && e.getMessage().contains("Required request body is missing")) {
+            msg = "请求体不能为空";
+        }
+        return Result.error(400, msg);
     }
 
     /**
@@ -77,15 +84,39 @@ public class GlobalExceptionHandler {
         return Result.error(e.getMessage());
     }
 
+    /**
+     * 处理路径参数缺失异常 (如 /api/v1/tasks/ 后面没填 ID)
+     */
+    @ExceptionHandler(MissingPathVariableException.class)
+    public Result<String> handleMissingPathVariableException(MissingPathVariableException e) {
+        log.warn("路径参数缺失: {}", e.getVariableName());
+        return Result.error(400, "必需的路径参数缺失: " + e.getVariableName());
+    }
+
+    /**
+     * 处理路径参数类型不匹配异常 (如 ID 需要 Long 却传了 String)
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public Result<String> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        log.warn("参数类型不匹配: {}, expected: {}", e.getName(), e.getRequiredType());
+        return Result.error(400, "参数类型错误: " + e.getName());
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public Result<String> handleBusinessException(BusinessException e) {
+        log.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage());
+        return Result.error(e.getCode(), e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Result<String> handleException(Exception e) {
         log.error("系统异常: ", e);
-        return Result.error("服务器繁忙，请稍后再试");
+        return Result.error(500, "服务器繁忙，请稍后再试");
     }
 
     @ExceptionHandler(RuntimeException.class)
     public Result<String> handleRuntimeException(RuntimeException e) {
         log.error("运行时异常: ", e);
-        return Result.error(e.getMessage() != null ? e.getMessage() : "系统运行异常");
+        return Result.error(500, e.getMessage() != null ? e.getMessage() : "系统运行异常");
     }
 }

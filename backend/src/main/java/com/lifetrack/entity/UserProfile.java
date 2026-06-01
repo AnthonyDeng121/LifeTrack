@@ -24,6 +24,9 @@ public class UserProfile {
     @Column(name = "energy_level")
     private Integer energyLevel;
 
+    @Column(name = "current_anxiety_level")
+    private Integer currentAnxietyLevel; // 1-10 焦虑等级
+
     @Column(name = "daily_quote", length = 500)
     private String dailyQuote;
 
