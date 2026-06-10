@@ -95,6 +95,7 @@ CREATE TABLE `user_profiles` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL,
   `energy_level` int DEFAULT '100' COMMENT '今日能量值 (0-100)',
+  `current_anxiety_level` int DEFAULT '1' COMMENT '当前焦虑等级 (1-10)',
   `daily_quote` varchar(500) DEFAULT NULL COMMENT '今日AI生成的个性化寄语',
   `interest_tags` json DEFAULT NULL COMMENT '兴趣标签 (AI分析得出, JSON格式)',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

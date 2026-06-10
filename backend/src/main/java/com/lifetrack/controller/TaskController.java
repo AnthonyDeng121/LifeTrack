@@ -26,6 +26,13 @@ public class TaskController {
 
     private final TaskService taskService;
 
+    @Operation(summary = "手动创建任务", description = "用户自行定义主任务、子任务及其权重")
+    @PostMapping("/manual")
+    public Result<com.lifetrack.dto.TaskDeconstructResponse> createManualTask(
+            @RequestBody @Validated com.lifetrack.dto.ManualTaskCreateRequest request) {
+        return Result.success(taskService.createManualTask(request));
+    }
+
     /**
      * 获取任务列表
      * 获取当前用户所有进行中的任务及其总进度

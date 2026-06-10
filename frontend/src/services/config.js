@@ -43,6 +43,11 @@ export const endpoints = {
       path: "/tasks/deconstruct",
       data: { title, category },
     }),
+    createManual: (data) => ({
+      method: "POST",
+      path: "/tasks/manual",
+      data,
+    }),
     delete: (taskId) => ({ method: "DELETE", path: `/tasks/${taskId}` }),
     deleteSubtask: (subTaskId) => ({
       method: "DELETE",

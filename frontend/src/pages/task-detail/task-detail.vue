@@ -51,17 +51,53 @@
               <view class="progress-fill" :style="{ width: clampProgress(item.currentProgress) + '%' }"></view>
             </view>
           </view>
-          <button
-            class="glass-button complete-btn"
-            :disabled="isDone(item)"
-            @tap.stop="finishSubtask(item)"
-          >
-            {{ isDone(item) ? "已完成" : "完成" }}
-          </button>
+          <view class="subtask-ops">
+            <button
+              class="glass-button complete-btn"
+              :disabled="isDone(item)"
+              @tap.stop="finishSubtask(item)"
+            >
+              {{ isDone(item) ? "已完成" : "完成" }}
+            </button>
+            <text class="edit-icon" @tap.stop="openEditDialog(item)">✎</text>
+            <text class="delete-icon" @tap.stop="handleDeleteSubtask(item)">×</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="showEditDialog" class="modal-mask" @tap="closeEditDialog">
+        <view class="edit-dialog glass-card" @tap.stop>
+          <view class="modal-head">
+            <text class="modal-title">编辑子任务</text>
+            <button class="close-btn" @tap="closeEditDialog">×</button>
+          </view>
+          
+          <view class="form-block">
+            <text class="field-label">任务内容</text>
+            <input
+              v-model="editingSubtask.content"
+              class="glass-input edit-input"
+              placeholder="请输入子任务描述"
+            />
+          </view>
+
+          <view class="form-block">
+            <text class="field-label">任务权重 (%)</text>
+            <input
+              v-model="editingSubtask.weight"
+              type="number"
+              class="glass-input edit-input"
+              placeholder="请输入权重占比"
+            />
+            <text class="text-muted small">修改权重后，其他子任务的权重将自动按比例重新分配。</text>
+          </view>
+
+          <button class="glass-button save-btn" :loading="saving" @tap="saveSubtask">保存修改</button>
         </view>
       </view>
 
       <button class="glass-button record-action" @tap="goRecord">用行为记录推进任务</button>
+      <button class="glass-button delete-task-btn" @tap="handleDeleteTask">放弃这个目标</button>
       <view class="tabbar-space"></view>
     </view>
   </view>
@@ -70,7 +106,7 @@
 <script setup>
 import { ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { completeSubtask, getSubtasks } from "../../services/api";
+import { completeSubtask, getSubtasks, deleteTask, deleteSubtask, updateSubtask } from "../../services/api";
 
 const task = ref({
   id: "",
@@ -80,6 +116,13 @@ const task = ref({
 });
 const subtasks = ref([]);
 const loading = ref(false);
+const showEditDialog = ref(false);
+const saving = ref(false);
+const editingSubtask = ref({
+  id: "",
+  content: "",
+  weight: ""
+});
 
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
@@ -133,6 +176,102 @@ async function finishSubtask(item) {
   } catch (error) {
     console.warn("complete subtask failed", error);
   }
+}
+
+async function handleDeleteTask() {
+  uni.showModal({
+    title: "确定放弃？",
+    content: "删除后该目标的所有记录都将消失。",
+    success: async (res) => {
+      if (res.confirm) {
+        try {
+          await deleteTask(task.value.id);
+          uni.showToast({ title: "任务已删除", icon: "none" });
+          setTimeout(() => {
+            uni.redirectTo({ url: "/pages/tasks/tasks" });
+          }, 800);
+        } catch (error) {
+          console.warn("delete task failed", error);
+        }
+      }
+    },
+  });
+}
+
+async function handleDeleteSubtask(item) {
+  uni.showModal({
+    title: "删除子任务？",
+    content: "删除后权重将自动分配给剩余步骤。",
+    success: async (res) => {
+      if (res.confirm) {
+        try {
+          await deleteSubtask(item.id);
+          uni.showToast({ title: "已删除并重新分配权重", icon: "none" });
+          loadSubtasks();
+          // 刷新主任务进度
+          refreshTaskProgress();
+        } catch (error) {
+          console.warn("delete subtask failed", error);
+        }
+      }
+    },
+  });
+}
+
+function openEditDialog(item) {
+  editingSubtask.value = {
+    id: item.id,
+    content: item.content,
+    weight: formatWeight(item.weight)
+  };
+  showEditDialog.value = true;
+}
+
+function closeEditDialog() {
+  if (saving.value) return;
+  showEditDialog.value = false;
+}
+
+async function saveSubtask() {
+  const { id, content, weight } = editingSubtask.value;
+  if (!content.trim()) {
+    uni.showToast({ title: "内容不能为空", icon: "none" });
+    return;
+  }
+  if (!weight || isNaN(Number(weight)) || Number(weight) <= 0 || Number(weight) >= 100) {
+    uni.showToast({ title: "请输入有效的权重 (1-99)", icon: "none" });
+    return;
+  }
+
+  saving.value = true;
+  try {
+    await updateSubtask(id, {
+      content: content.trim(),
+      weight: Number(weight) / 100
+    });
+    uni.showToast({ title: "更新成功", icon: "none" });
+    showEditDialog.value = false;
+    await loadSubtasks();
+    await refreshTaskProgress();
+  } catch (error) {
+    console.warn("update subtask failed", error);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function refreshTaskProgress() {
+  try {
+    const data = await getSubtasks(task.value.id);
+    // 实际上 getSubtasks 只返回子任务，不返回主任务总进度
+    // 这里需要一个获取单个任务详情的接口，或者通过子任务手动计算
+    if (Array.isArray(data)) {
+      const total = data.reduce((sum, st) => {
+        return sum + (Number(st.weight) * Number(st.currentProgress));
+      }, 0);
+      task.value.totalProgress = total;
+    }
+  } catch (e) {}
 }
 
 onLoad((options) => {
@@ -274,12 +413,65 @@ onLoad((options) => {
   color: rgba(35, 104, 148, 0.55);
 }
 
+.subtask-ops {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.delete-icon,
+.edit-icon {
+  width: 44rpx;
+  height: 44rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.3);
+  font-size: 32rpx;
+}
+
+.delete-icon {
+  color: #ff5a5f;
+}
+
+.edit-icon {
+  color: #236894;
+}
+
+.edit-dialog {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.save-btn {
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 26rpx;
+}
+
+.edit-input {
+  height: 92rpx;
+}
+
 .record-action {
   margin-top: 32rpx;
   width: 100%;
   height: 92rpx;
   line-height: 92rpx;
   font-size: 27rpx;
+}
+
+.delete-task-btn {
+  margin-top: 24rpx;
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 24rpx;
+  background: rgba(255, 90, 95, 0.1) !important;
+  color: #ff5a5f !important;
+  border-color: rgba(255, 90, 95, 0.2) !important;
 }
 
 .empty-card {

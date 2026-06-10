@@ -157,37 +157,45 @@ PROGRESS_JUDGE_PROMPT = """
 你是一个进度判断专家。用户会输入一条日常行为记录，系统会提供当前所有未完成的子任务列表。
 【输入格式】
 用户行为：{{user_action}}
+用户提供时长：{{duration_input}}
 子任务列表：{{sub_tasks}}
 【输出格式】
 {
   "matches": [{"task_id": 数字, "contribution": 小数}],
+  "duration_minutes": 数字,
   "is_entertainment": 布尔值,
   "suggested_reply": "字符串"
 }
 【规则】
 1. 精准匹配优先
-2. 模糊输入（“学了一会”）→ contribution = 0.05
-3. 可以匹配多个任务，总和≤1.0
-4. 娱乐行为（打游戏、刷剧）→ is_entertainment = true, matches = []
-5. 单次贡献度不超过0.30
-6. 只输出纯JSON，严禁输出任何Python代码、解释、markdown、```
+2. 提取时长：优先从【用户提供时长】中解析分钟数。如果用户提供时长模糊（如“一会儿”），请结合【用户行为】进行【合理解构】：
+   - 比如“炒个菜”+“一会儿”约 15-20 分钟
+   - "看书"+"1.5小时"= 90 分钟
+   - “学了一会”约 15-30 分钟
+3. 模糊输入（“学了一会”）→ contribution = 0.05
+4. 匹配多个任务时，contribution 总和≤1.0
+5. 娱乐行为（打游戏、刷剧）→ is_entertainment = true, matches = []
+6. 单次贡献度不超过0.30
+7. 只输出纯JSON，严禁输出任何Python代码、解释、markdown、```
 【示例1】
 用户行为：看了2小时Spring Boot网课
 子任务列表：[{"task_id": 1, "step": "学习基础语法"}, {"task_id": 2, "step": "完成Spring MVC网课"}]
 输出：
 {
   "matches": [{"task_id": 2, "contribution": 0.20}],
+  "duration_minutes": 120,
   "is_entertainment": false,
-  "suggested_reply": "网课进度+20%"
+  "suggested_reply": "网课进度+20%，坚持就是胜利！"
 }
 【示例2】
-用户行为：学了一会Java
-子任务列表：[{"task_id": 1, "step": "学习基础语法"}]
+用户行为：炒了个西红柿炒鸡蛋
+子任务列表：[{"task_id": 10, "step": "练习烹饪技巧"}]
 输出：
 {
-  "matches": [{"task_id": 1, "contribution": 0.05}],
+  "matches": [{"task_id": 10, "contribution": 0.10}],
+  "duration_minutes": 20,
   "is_entertainment": false,
-  "suggested_reply": "已记录，下次具体点"
+  "suggested_reply": "大厨辛苦了，烹饪进度+10%"
 }
 【示例3】
 用户行为：打了2小时王者荣耀
@@ -199,6 +207,7 @@ PROGRESS_JUDGE_PROMPT = """
   "suggested_reply": "放松一下，回来继续"
 }
 用户行为：{{user_action}}
+用户提供时长：{{duration_input}}
 子任务列表：{{sub_tasks}}
 输出：
 """
@@ -219,10 +228,34 @@ MOTIVATION_PROMPT = """
 用户名：{{user_name}}
 """
 
+# ===================== 5. 周报总结 Prompt =====================
+REPORT_PROMPT = """
+你是一个大学生学业分析专家。根据用户过去一周的行为日志，生成一份深度成长报告。
+【输入数据】
+用户行为日志：{{logs}}
+【输出格式】
+只输出纯JSON，严禁输出任何Python代码、解释、markdown、```
+{
+  "title": "本周成长深度报告",
+  "ai_summary": "总结用户本周的核心表现、成长点、不足（约100字）",
+  "achievement_tags": ["标签1", "标签2"],
+  "suggestion": "针对下周的改进建议（约50字）"
+}
+"""
+
 # 通用工具函数
 def clean_output(text):
-    """清除markdown代码块标记"""
-    return text.replace("```json", "").replace("```", "").strip()
+    """清除markdown代码块标记并提取JSON部分"""
+    text = text.replace("```json", "").replace("```", "").strip()
+    # 尝试寻找第一个 { 和最后一个 } 之间的内容
+    try:
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            return text[start:end+1]
+    except:
+        pass
+    return text
 
 def call_llm(prompt):
     """统一调用智谱大模型"""
@@ -265,13 +298,21 @@ def ai_intent():
 # 接口3：进度判断/行为匹配
 @app.route("/ai/progress-judge", methods=["POST"])
 def ai_progress_judge():
-    req_data = request.get_json()
-    user_action = req_data.get("user_action", "")
-    sub_tasks = req_data.get("sub_tasks", "")
-    final_prompt = PROGRESS_JUDGE_PROMPT.replace("{{user_action}}", user_action).replace("{{sub_tasks}}", sub_tasks)
-    raw_res = call_llm(final_prompt)
-    res_text = clean_output(raw_res)
-    return jsonify({"code": 200, "msg": "success", "data": res_text})
+    try:
+        req_data = request.get_json()
+        user_action = req_data.get("user_action", "")
+        duration_input = req_data.get("duration_input", "")
+        sub_tasks = req_data.get("sub_tasks", "")
+        final_prompt = PROGRESS_JUDGE_PROMPT\
+            .replace("{{user_action}}", user_action)\
+            .replace("{{duration_input}}", duration_input)\
+            .replace("{{sub_tasks}}", sub_tasks)
+        raw_res = call_llm(final_prompt)
+        res_text = clean_output(raw_res)
+        return jsonify({"code": 200, "msg": "success", "data": res_text})
+    except Exception as e:
+        print(f"Error in progress-judge: {e}")
+        return jsonify({"code": 500, "msg": str(e), "data": None})
 
 # 接口4：生成激励文案
 @app.route("/ai/motivation", methods=["POST"])
@@ -287,6 +328,49 @@ def ai_motivation():
     raw_res = call_llm(final_prompt)
     res_text = clean_output(raw_res)
     return jsonify({"code": 200, "msg": "success", "data": res_text})
+
+# 接口5：生成周报
+@app.route("/ai/report", methods=["POST"])
+def ai_report():
+    req_data = request.get_json()
+    logs = req_data.get("logs", "")
+    final_prompt = REPORT_PROMPT.replace("{{logs}}", str(logs))
+    raw_res = call_llm(final_prompt)
+    res_text = clean_output(raw_res)
+    try:
+        data = json.loads(res_text)
+        return jsonify({"code": 200, "msg": "success", "data": data})
+    except json.JSONDecodeError:
+        return jsonify({"code": 400, "msg": "AI生成报告失败", "data": None})
+
+# 接口6：调整策略
+@app.route("/ai/adjust-strategy", methods=["POST"])
+def ai_adjust_strategy():
+    req_data = request.get_json()
+    user_id = req_data.get("user_id")
+    anxiety_level = req_data.get("anxiety_level")
+    # 这里可以根据焦虑等级调整全局参数或返回建议，目前先做记录
+    print(f"User {user_id} mood adjusted to {anxiety_level}")
+    return jsonify({"code": 200, "msg": "AI策略已根据情绪调整"})
+
+# 接口7：获取情绪寄语
+@app.route("/ai/mood-quote", methods=["POST"])
+def ai_mood_quote():
+    req_data = request.get_json()
+    anxiety_level = req_data.get("anxiety_level", 5)
+    username = req_data.get("username", "同学")
+    
+    prompt = f"""
+    你是一个温暖的成长陪伴教练。用户【{username}】现在的焦虑等级是【{anxiety_level}/10】。
+    请根据这个焦虑等级，给用户写一句极其简短（15字以内）、个性化、有温度的鼓励或建议。
+    要求：
+    1. 严禁使用空洞的鸡汤。
+    2. 如果焦虑值高(>7)，语气要极其温柔且建议休息。
+    3. 如果焦虑值低(<4)，语气要活泼且鼓励进取。
+    4. 只输出这句寄语，不要任何其他字符。
+    """
+    raw_res = call_llm(prompt)
+    return jsonify({"code": 200, "msg": "success", "data": raw_res.strip()})
 
 if __name__ == "__main__":
     # 本地运行，端口5000

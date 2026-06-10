@@ -72,7 +72,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { getDashboardStats, getFeedbackReport } from "../../services/api";
+import { getDashboardStats, getFeedbackReport, updateMood } from "../../services/api";
 import { getApiBaseUrl, getToken, getUser, logout } from "../../services/http";
 
 const user = ref(getUser());
@@ -87,10 +87,18 @@ const report = ref({
   suggestion: "先从今天的一条记录开始。",
 });
 const apiBase = ref(getApiBaseUrl());
+const moodLevel = ref(1);
 
 const username = computed(() => user.value.username || "林同学");
 const avatarText = computed(() => username.value.slice(0, 1));
 const hasToken = computed(() => Boolean(getToken()));
+
+const moodText = computed(() => {
+  if (moodLevel.value <= 3) return "非常放松，动力十足";
+  if (moodLevel.value <= 6) return "有点压力，正常节奏";
+  if (moodLevel.value <= 8) return "比较焦虑，需要调整";
+  return "极度焦虑，建议休息";
+});
 
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
@@ -103,6 +111,17 @@ async function loadProfile() {
     report.value = nextReport || report.value;
   } catch (error) {
     console.warn("load profile failed", error);
+  }
+}
+
+async function handleMoodChange(e) {
+  const next = e.detail.value;
+  moodLevel.value = next;
+  try {
+    await updateMood(next);
+    uni.showToast({ title: "焦虑值已同步", icon: "none" });
+  } catch (error) {
+    console.warn("update mood failed", error);
   }
 }
 
@@ -187,6 +206,32 @@ onMounted(loadProfile);
 .small {
   color: rgba(45, 62, 80, 0.58);
   font-size: 22rpx;
+}
+
+.mood-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.mood-desc {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.mood-desc text:first-child {
+  color: #236894;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.mood-desc text:last-child {
+  font-size: 24rpx;
+}
+
+.mood-slider {
+  margin: 10rpx 0;
 }
 
 .report-card {

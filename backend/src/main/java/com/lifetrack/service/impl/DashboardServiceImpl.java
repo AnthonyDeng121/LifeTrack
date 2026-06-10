@@ -6,9 +6,11 @@ import com.lifetrack.dto.SubTaskContributionResponse;
 import com.lifetrack.entity.ActionLog;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
+import com.lifetrack.entity.UserProfile;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
 import com.lifetrack.repository.TaskRepository;
+import com.lifetrack.repository.UserProfileRepository;
 import com.lifetrack.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,10 +33,13 @@ public class DashboardServiceImpl implements DashboardService {
     private final ActionLogRepository actionLogRepository;
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
+    private final UserProfileRepository userProfileRepository;
+    private final com.lifetrack.service.AIService aiService;
 
     @Override
     public DashboardStatsResponse getStats() {
         Long userId = UserContext.getUserId();
+        String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
         LocalDate today = LocalDate.now();
 
         // 1. 今日累计进度增量 (百分制)
@@ -88,12 +93,24 @@ public class DashboardServiceImpl implements DashboardService {
                     .build());
         }
 
+        // 4. 获取当前焦虑等级
+        Integer anxietyLevel = userProfileRepository.findByUserId(userId)
+                .map(UserProfile::getCurrentAnxietyLevel)
+                .orElse(1);
+
         return DashboardStatsResponse.builder()
                 .todayTotalProgress(todayProgress)
                 .timeDistribution(distribution)
                 .weeklyTrend(weeklyTrend)
+                .currentAnxietyLevel(anxietyLevel)
                 .dailyQuote(generateQuote(todayProgress))
+                .moodQuote(aiService.generateMoodQuote(anxietyLevel, username))
                 .build();
+    }
+
+    private String generateMoodQuote(Integer anxietyLevel) {
+        // 原有的静态方法保留作为 DTO 引用，但逻辑已被 AI 接管
+        return "AI 生成中...";
     }
 
     @Override

@@ -11,12 +11,26 @@
       </view>
 
       <view class="glass-card input-card">
-        <textarea
-          v-model="rawInput"
-          class="glass-input action-input"
-          maxlength="300"
-          placeholder="例如：今天写完了登录接口，整理了数据库表，还背了 30 个英语单词"
-        />
+        <view class="input-group">
+          <text class="input-label">行为描述</text>
+          <textarea
+            v-model="rawInput"
+            class="glass-input action-input"
+            maxlength="300"
+            placeholder="例如：我刚才写完了登录接口，整理了数据库表"
+          />
+        </view>
+
+        <view class="input-group">
+          <text class="input-label">所用时长 (支持自然语言)</text>
+          <input
+            v-model="duration"
+            type="text"
+            class="glass-input duration-input"
+            placeholder="例如：30分钟、1.5小时、一小会儿"
+          />
+        </view>
+
         <button class="glass-button sync-btn" :loading="syncing" @tap="submitRecord">
           交给 AI 分析并写入数据库
         </button>
@@ -45,17 +59,18 @@
       </view>
       <view class="glass-card mood-card">
         <view class="mood-top">
-          <text>焦虑程度</text>
-          <text>{{ anxietyLevel }}/10</text>
+          <text>焦虑程度: {{ anxietyLevel }}/10</text>
+          <text class="mood-text">{{ moodText }}</text>
         </view>
         <slider
+          class="mood-slider"
           :value="anxietyLevel"
           min="1"
           max="10"
           step="1"
           activeColor="#6BBEFF"
           backgroundColor="rgba(255,255,255,.45)"
-          block-color="#FFFFFF"
+          block-size="20"
           @change="changeMood"
         />
         <button class="glass-button mood-btn" @tap="saveMood">保存情绪记录</button>
@@ -90,16 +105,25 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, updateMood } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats } from "../../services/api";
 
 const rawInput = ref("");
+const duration = ref("");
 const syncing = ref(false);
 const syncResult = ref(null);
 const history = ref([]);
 const historyLoading = ref(false);
-const anxietyLevel = ref(6);
+const anxietyLevel = ref(1);
+
+const moodText = computed(() => {
+  if (anxietyLevel.value <= 3) return "非常放松，动力十足";
+  if (anxietyLevel.value <= 6) return "有点压力，正常节奏";
+  if (anxietyLevel.value <= 8) return "比较焦虑，需要调整";
+  return "极度焦虑，建议休息";
+});
 
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
@@ -107,15 +131,23 @@ function formatProgress(value) {
 
 async function submitRecord() {
   const value = rawInput.value.trim();
+  const mins = duration.value.trim();
+
   if (!value) {
     uni.showToast({ title: "先写一点今天的行为", icon: "none" });
     return;
   }
+  if (!mins) {
+    uni.showToast({ title: "请输入大概的时长", icon: "none" });
+    return;
+  }
+
   syncing.value = true;
   try {
-    syncResult.value = await syncAction(value);
+    syncResult.value = await syncAction(value, mins);
     rawInput.value = "";
-    await loadHistory();
+    duration.value = "";
+    await loadData();
     uni.showToast({ title: "已同步行为记录", icon: "none" });
   } catch (error) {
     console.warn("sync action failed", error);
@@ -137,13 +169,22 @@ async function saveMood() {
   }
 }
 
-async function loadHistory() {
+async function loadData() {
   historyLoading.value = true;
   try {
-    const data = await getActionHistory(0, 20);
-    history.value = Array.isArray(data) ? data : data && Array.isArray(data.list) ? data.list : [];
+    const [stats, historyData] = await Promise.all([
+      getDashboardStats(),
+      getActionHistory(0, 20)
+    ]);
+    
+    // 初始化滑块位置为后端存的真实值
+    if (stats && stats.currentAnxietyLevel) {
+      anxietyLevel.value = stats.currentAnxietyLevel;
+    }
+    
+    history.value = Array.isArray(historyData) ? historyData : historyData && Array.isArray(historyData.list) ? historyData.list : [];
   } catch (error) {
-    console.warn("load history failed", error);
+    console.warn("load record data failed", error);
   } finally {
     historyLoading.value = false;
   }
@@ -159,7 +200,7 @@ async function removeHistory(id) {
   }
 }
 
-onMounted(loadHistory);
+onShow(loadData);
 </script>
 
 <style scoped>
@@ -220,8 +261,28 @@ onMounted(loadHistory);
 
 .action-input {
   width: 100%;
-  min-height: 220rpx;
+  min-height: 200rpx;
   line-height: 1.5;
+  font-size: 26rpx;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.input-label {
+  font-size: 24rpx;
+  color: #236894;
+  font-weight: 800;
+  margin-left: 4rpx;
+}
+
+.duration-input {
+  width: 100%;
+  height: 80rpx;
+  padding: 0 24rpx;
   font-size: 26rpx;
 }
 
@@ -294,9 +355,20 @@ onMounted(loadHistory);
 .mood-top {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   color: #236894;
   font-size: 28rpx;
   font-weight: 900;
+}
+
+.mood-text {
+  font-size: 24rpx;
+  font-weight: normal;
+  color: rgba(45, 62, 80, 0.56);
+}
+
+.mood-slider {
+  margin: 10rpx 0;
 }
 
 .history-list {
@@ -360,5 +432,5 @@ onMounted(loadHistory);
   display: flex;
   align-items: center;
   justify-content: center;
-}
+  }
 </style>

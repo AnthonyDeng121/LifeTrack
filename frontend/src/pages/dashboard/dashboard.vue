@@ -14,6 +14,7 @@
           <text class="pill">今日成长值</text>
           <text class="hero-number">{{ formatProgress(stats.todayTotalProgress) }}%</text>
           <text class="hero-desc">{{ stats.dailyQuote }}</text>
+          <text class="hero-desc mood-quote">{{ stats.moodQuote }}</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -30,7 +31,7 @@
           <text class="metric-label">今日进度</text>
         </view>
         <view class="metric-card glass-card">
-          <text class="metric-value">6/10</text>
+          <text class="metric-value">{{ stats.currentAnxietyLevel || 1 }}/10</text>
           <text class="metric-label">当前焦虑</text>
         </view>
       </view>
@@ -114,7 +115,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
 import { getDashboardStats, getFeedbackReport, getTasks } from "../../services/api";
 import { getUser } from "../../services/http";
@@ -180,7 +182,7 @@ async function loadPage() {
   }
 }
 
-onMounted(loadPage);
+onShow(loadPage);
 </script>
 
 <style scoped>
@@ -235,6 +237,13 @@ onMounted(loadPage);
   color: rgba(45, 62, 80, 0.68);
   font-size: 26rpx;
   line-height: 1.55;
+}
+
+.mood-quote {
+  margin-top: 8rpx;
+  font-style: italic;
+  color: #236894;
+  font-weight: 700;
 }
 
 .hero-orb {

@@ -76,7 +76,7 @@ export function request({ method = "GET", path, data, mock, showError = true }) 
       url: buildUrl(path),
       method,
       data,
-      timeout: 8000,
+      timeout: 30000,
       header: {
         "content-type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -96,10 +96,6 @@ export function request({ method = "GET", path, data, mock, showError = true }) 
         reject(new Error(message));
       },
       fail: (error) => {
-        if (mock !== undefined) {
-          resolve(mock);
-          return;
-        }
         if (showError) uni.showToast({ title: "后端服务暂不可用", icon: "none" });
         reject(error);
       },

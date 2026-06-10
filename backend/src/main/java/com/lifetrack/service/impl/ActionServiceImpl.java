@@ -55,7 +55,7 @@ public class ActionServiceImpl implements ActionService {
         }
 
         // 2. 调用 AI 进行 1 对 N 匹配分析
-        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), allCandidateSubTasks);
+        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationInput(), allCandidateSubTasks);
         
         if (aiResult.getMatches() == null || aiResult.getMatches().isEmpty()) {
             return ActionSyncResponse.builder()
@@ -68,7 +68,13 @@ public class ActionServiceImpl implements ActionService {
         List<ActionSyncResponse.TaskUpdateDetail> updateDetails = new ArrayList<>();
         Map<Long, Task> taskMap = activeTasks.stream().collect(Collectors.toMap(Task::getId, t -> t));
 
+        // 对 AI 返回的匹配项进行去重，防止同一子任务被多次更新
+        Map<Long, AIMatchResult.MatchDetail> uniqueMatches = new LinkedHashMap<>();
         for (AIMatchResult.MatchDetail match : aiResult.getMatches()) {
+            uniqueMatches.putIfAbsent(match.getSubTaskId(), match);
+        }
+
+        for (AIMatchResult.MatchDetail match : uniqueMatches.values()) {
             SubTask subTask = subTaskRepository.findById(match.getSubTaskId()).orElse(null);
             if (subTask == null) continue;
 
@@ -83,7 +89,7 @@ public class ActionServiceImpl implements ActionService {
                     .rawInput(request.getRawInput())
                     .contribution(match.getIncrement())
                     .category(task.getCategory())
-                    .durationMinutes(0) // 可根据 AI 分析扩展时长
+                    .durationMinutes(aiResult.getDurationMinutes() != null ? aiResult.getDurationMinutes() : 0) // 由 AI 解析模糊时长输入
                     .aiAnalysis(aiResult.getAiAnalysis())
                     .build();
             actionLogRepository.save(actionLog);

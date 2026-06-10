@@ -14,6 +14,7 @@ import java.util.List;
 public class AIMatchResult {
     private List<MatchDetail> matches;
     private String aiAnalysis;
+    private Integer durationMinutes;
 
     @Data
     @Builder

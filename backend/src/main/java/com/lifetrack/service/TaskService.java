@@ -32,6 +32,64 @@ public class TaskService {
     private final AIService aiService;
 
     /**
+     * 手动创建任务
+     */
+    @Transactional
+    public TaskDeconstructResponse createManualTask(com.lifetrack.dto.ManualTaskCreateRequest request) {
+        Long userId = UserContext.getUserId();
+        
+        // 1. 创建主任务
+        Task task = Task.builder()
+                .userId(userId)
+                .title(request.getTitle())
+                .category(Task.Category.valueOf(request.getCategory()))
+                .status(0)
+                .totalProgress(BigDecimal.ZERO)
+                .aiSuggestion("手动创建的任务，请按计划执行。")
+                .build();
+        Task savedTask = taskRepository.save(task);
+
+        // 2. 准备子任务
+        List<SubTask> subTaskList = new ArrayList<>();
+        List<com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO> dtoList = request.getSubTasks();
+        
+        // 如果用户没填权重，平均分配
+        BigDecimal defaultWeight = BigDecimal.ONE.divide(new BigDecimal(dtoList.size()), 4, RoundingMode.HALF_UP);
+
+        for (int i = 0; i < dtoList.size(); i++) {
+            com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO dto = dtoList.get(i);
+            subTaskList.add(SubTask.builder()
+                    .taskId(savedTask.getId())
+                    .content(dto.getContent())
+                    .weight(dto.getWeight() != null ? dto.getWeight() : defaultWeight)
+                    .currentProgress(BigDecimal.ZERO)
+                    .isCompleted(0)
+                    .orderNum(i)
+                    .build());
+        }
+
+        // 校验总权重是否为 1.0，如果不是，修正最后一个
+        BigDecimal totalWeight = subTaskList.stream()
+                .map(SubTask::getWeight)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        if (totalWeight.compareTo(BigDecimal.ONE) != 0) {
+            SubTask last = subTaskList.get(subTaskList.size() - 1);
+            last.setWeight(last.getWeight().add(BigDecimal.ONE.subtract(totalWeight)));
+        }
+
+        subTaskRepository.saveAll(subTaskList);
+
+        return TaskDeconstructResponse.builder()
+                .taskId(savedTask.getId())
+                .subTasks(subTaskList.stream()
+                        .map(st -> new TaskDeconstructResponse.SubTaskDTO(st.getContent(), st.getWeight()))
+                        .collect(Collectors.toList()))
+                .aiSuggestion(task.getAiSuggestion())
+                .build();
+    }
+
+    /**
      * 获取当前用户所有进行中的任务列表
      */
     public List<TaskListResponse> getTaskList() {
@@ -82,7 +140,10 @@ public class TaskService {
     public TaskDeconstructResponse deconstructTask(TaskDeconstructRequest request) {
         // 1. 调用 AI 服务获取拆解结果
         TaskDeconstructResponse.SubTaskDTO[] subTaskDTOs = aiService.deconstructTask(request.getTitle());
-        String aiSuggestion = aiService.generateSuggestion(request.getTitle());
+        
+        // 获取当前用户进度并生成激励语
+        String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
+        String aiSuggestion = aiService.generateSuggestion(0, 0, username);
 
         // 2. 创建并保存主任务
         Long userId = UserContext.getUserId();

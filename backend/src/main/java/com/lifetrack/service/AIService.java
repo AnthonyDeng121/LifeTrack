@@ -1,5 +1,6 @@
 package com.lifetrack.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifetrack.dto.AIMatchResult;
 import com.lifetrack.dto.FeedbackReportResponse;
 import com.lifetrack.dto.TaskDeconstructResponse;
@@ -19,6 +20,9 @@ public class AIService {
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private final String PYTHON_HOST = "http://127.0.0.1:5000/ai";
 
@@ -51,11 +55,11 @@ public class AIService {
             return dtos;
 
         } catch (Exception e) {
-            log.error("AI拆解失败", e);
+            log.error("AI拆解失败，使用兜底逻辑", e);
             return new TaskDeconstructResponse.SubTaskDTO[]{
-                new TaskDeconstructResponse.SubTaskDTO("步骤1", new BigDecimal("0.3")),
-                new TaskDeconstructResponse.SubTaskDTO("步骤2", new BigDecimal("0.4")),
-                new TaskDeconstructResponse.SubTaskDTO("步骤3", new BigDecimal("0.3"))
+                new TaskDeconstructResponse.SubTaskDTO("基础准备与规划", new BigDecimal("0.2")),
+                new TaskDeconstructResponse.SubTaskDTO("核心环节执行", new BigDecimal("0.5")),
+                new TaskDeconstructResponse.SubTaskDTO("成果验收与复盘", new BigDecimal("0.3"))
             };
         }
     }
@@ -63,7 +67,7 @@ public class AIService {
     // ==========================
     // 2. 行为匹配 & 进度判断（progress_judge）
     // ==========================
-    public AIMatchResult analyzeAction(String rawInput, List<SubTask> candidateSubTasks) {
+    public AIMatchResult analyzeAction(String rawInput, String durationInput, List<SubTask> candidateSubTasks) {
         try {
             String url = PYTHON_HOST + "/progress-judge";
 
@@ -77,60 +81,132 @@ public class AIService {
 
             Map<String, Object> req = new HashMap<>();
             req.put("user_action", rawInput);
-            req.put("sub_tasks", subTaskList.toString());
+            req.put("duration_input", durationInput);
+            req.put("sub_tasks", objectMapper.writeValueAsString(subTaskList));
 
             Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
-            String data = (String) resp.get("data");
+            if (resp == null || (Integer) resp.get("code") != 200) {
+                throw new RuntimeException("AI Server Error: " + (resp != null ? resp.get("msg") : "null"));
+            }
 
-            // 这里你可以自己解析JSON，我先给你返回可用结构
+            String jsonData = (String) resp.get("data");
+
+            // 解析 Python 返回的 JSON 字符串
+            Map<String, Object> dataMap = objectMapper.readValue(jsonData, Map.class);
+            List<Map<String, Object>> matchesRaw = (List<Map<String, Object>>) dataMap.get("matches");
+            String suggestedReply = (String) dataMap.get("suggested_reply");
+            Integer durationMinutes = (Integer) dataMap.get("duration_minutes");
+
+            List<AIMatchResult.MatchDetail> matches = new ArrayList<>();
+            if (matchesRaw != null) {
+                for (Map<String, Object> m : matchesRaw) {
+                    Object tid = m.get("task_id");
+                    Object cont = m.get("contribution");
+                    if (tid != null && cont != null) {
+                        matches.add(AIMatchResult.MatchDetail.builder()
+                                .subTaskId(((Number) tid).longValue())
+                                .increment(BigDecimal.valueOf(((Number) cont).doubleValue()))
+                                .build());
+                    }
+                }
+            }
+
             return AIMatchResult.builder()
-                .matches(new ArrayList<>())
-                .aiAnalysis("AI已分析：" + data)
+                .matches(matches)
+                .aiAnalysis(suggestedReply)
+                .durationMinutes(durationMinutes)
                 .build();
 
         } catch (Exception e) {
             log.error("进度判断AI失败", e);
             return AIMatchResult.builder()
                 .matches(Collections.emptyList())
-                .aiAnalysis("AI分析异常")
+                .aiAnalysis("AI 分析记录失败，请稍后重试")
                 .build();
         }
     }
 
     // ==========================
-    // 3. 周报总结（保留，可扩展）
+    // 3. 周报总结（AI 生成）
     // ==========================
     public FeedbackReportResponse generateWeeklyReport(Long userId, List<ActionLog> logs) {
+        try {
+            String url = PYTHON_HOST + "/report";
+            
+            List<String> logTexts = logs.stream()
+                    .map(log -> log.getRawInput() + " (贡献度:" + log.getContribution() + ")")
+                    .toList();
+            
+            Map<String, Object> req = Map.of("logs", logTexts);
+            Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
+
+            if (resp != null && (Integer) resp.get("code") == 200) {
+                Map<String, Object> data = (Map<String, Object>) resp.get("data");
+                return FeedbackReportResponse.builder()
+                        .title((String) data.get("title"))
+                        .aiSummary((String) data.get("ai_summary"))
+                        .achievementTags((List<String>) data.get("achievement_tags"))
+                        .suggestion((String) data.get("suggestion"))
+                        .build();
+            }
+        } catch (Exception e) {
+            log.error("AI 生成周报失败", e);
+        }
+        
+        // 兜底逻辑
         return FeedbackReportResponse.builder()
-            .title("AI 周报告")
-            .aiSummary("本周共记录 " + logs.size() + " 次行为")
-            .achievementTags(List.of("AI自动生成"))
-            .suggestion("继续保持")
+            .title("AI 周报告 (生成失败)")
+            .aiSummary("本周共记录 " + logs.size() + " 次行为，暂无法生成深度分析。")
+            .achievementTags(List.of("系统生成"))
+            .suggestion("请检查 AI 服务状态")
             .build();
     }
 
     // ==========================
     // 4. 激励文案（prompt_motivation）✅
     // ==========================
-    public String generateSuggestion(String title) {
+    public String generateSuggestion(int todayProgress, int weekProgress, String username) {
         try {
             String url = PYTHON_HOST + "/motivation";
             Map<String, Object> req = Map.of(
-                "today_progress", 50,
-                "week_progress", 45,
-                "user_name", "用户"
+                "today_progress", todayProgress,
+                "week_progress", weekProgress,
+                "user_name", username
             );
             Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
             return resp.get("data").toString();
         } catch (Exception e) {
-            return "加油！你离目标越来越近！";
+            return "加油！每一小步都在让你变得更好！";
         }
     }
 
     // ==========================
-    // 5. 情绪策略（保留）
+    // 5. 情绪策略（通知 AI 引擎）
     // ==========================
     public void adjustStrategyByMood(Long userId, Integer anxietyLevel) {
-        log.info("用户{} 焦虑等级：{}", userId, anxietyLevel);
+        try {
+            String url = PYTHON_HOST + "/adjust-strategy";
+            Map<String, Object> req = Map.of(
+                "user_id", userId,
+                "anxiety_level", anxietyLevel
+            );
+            restTemplate.postForObject(url, req, Map.class);
+        } catch (Exception e) {
+            log.error("通知 AI 情绪策略失败", e);
+        }
+    }
+
+    public String generateMoodQuote(Integer anxietyLevel, String username) {
+        try {
+            String url = PYTHON_HOST + "/mood-quote";
+            Map<String, Object> req = Map.of(
+                "anxiety_level", anxietyLevel,
+                "username", username
+            );
+            Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
+            return resp.get("data").toString();
+        } catch (Exception e) {
+            return "愿你今天拥有好心情。";
+        }
     }
 }

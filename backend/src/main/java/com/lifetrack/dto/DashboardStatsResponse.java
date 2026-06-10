@@ -19,8 +19,14 @@ public class DashboardStatsResponse {
     @Schema(description = "周趋势数据 (过去7天每日进度增量)")
     private List<WeeklyTrend> weeklyTrend;
 
+    @Schema(description = "当前焦虑等级 (1-10)", example = "5")
+    private Integer currentAnxietyLevel;
+
     @Schema(description = "每日寄语", example = "你已经完成了67%的计划，晚上放心休息吧。")
     private String dailyQuote;
+
+    @Schema(description = "情绪寄语", example = "别太焦虑，慢慢来，一切都会好起来的。")
+    private String moodQuote;
 
     @Data
     @Builder

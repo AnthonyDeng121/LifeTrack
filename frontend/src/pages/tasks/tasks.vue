@@ -120,8 +120,33 @@
             将调用后端 /tasks/deconstruct，保存主任务并生成 AI 子任务。
           </text>
           <text v-else>
-            当前后端没有纯手动新增接口，因此保存仍走 /tasks/deconstruct，保证数据库任务和子任务结构一致。
+            手动模式下，你可以自定义主任务和每一个具体的执行步骤。
           </text>
+        </view>
+
+        <view v-if="creatorMode === 'manual'" class="manual-subtasks-editor">
+          <view class="field-label-row">
+            <text class="field-label">拆解步骤 (至少一个)</text>
+            <text class="add-subtask-link" @tap="addManualSubtask">+ 添加步骤</text>
+          </view>
+          <view
+            v-for="(st, index) in manualSubtasks"
+            :key="index"
+            class="manual-subtask-row"
+          >
+            <input
+              v-model="st.content"
+              class="glass-input st-content-input"
+              placeholder="步骤描述"
+            />
+            <input
+              v-model="st.weight"
+              type="number"
+              class="glass-input st-weight-input"
+              placeholder="权重(%)"
+            />
+            <text class="remove-st-icon" @tap="removeManualSubtask(index)">×</text>
+          </view>
         </view>
 
         <view v-if="aiResult" class="ai-result">
@@ -159,6 +184,7 @@ const creating = ref(false);
 const newTitle = ref("");
 const newCategory = ref("学习");
 const aiResult = ref(null);
+const manualSubtasks = ref([{ content: "", weight: "" }]);
 
 const filteredTasks = computed(() => {
   if (activeCategory.value === "全部") return tasks.value;
@@ -198,6 +224,19 @@ function openCreator() {
 function closeCreator() {
   if (creating.value) return;
   showCreator.value = false;
+  manualSubtasks.value = [{ content: "", weight: "" }];
+}
+
+function addManualSubtask() {
+  manualSubtasks.value.push({ content: "", weight: "" });
+}
+
+function removeManualSubtask(index) {
+  if (manualSubtasks.value.length <= 1) {
+    uni.showToast({ title: "至少需要一个步骤", icon: "none" });
+    return;
+  }
+  manualSubtasks.value.splice(index, 1);
 }
 
 function appendCreatedTask(result, title, category) {
@@ -229,8 +268,29 @@ async function createTask() {
 
   creating.value = true;
   try {
-    const action = creatorMode.value === "ai" ? createTaskByAI : createTaskManually;
-    const result = await action(title, newCategory.value);
+    let result;
+    if (creatorMode.value === "ai") {
+      result = await createTaskByAI(title, newCategory.value);
+    } else {
+      // 校验手动输入的子任务
+      const validSubtasks = manualSubtasks.value.filter(st => st.content.trim());
+      if (validSubtasks.length === 0) {
+        uni.showToast({ title: "请至少填写一个子任务步骤", icon: "none" });
+        creating.value = false;
+        return;
+      }
+      
+      const data = {
+        title,
+        category: newCategory.value,
+        subTasks: validSubtasks.map(st => ({
+          content: st.content.trim(),
+          weight: st.weight ? Number(st.weight) / 100 : null // 转换为 0-1 的小数
+        }))
+      };
+      result = await createTaskManually(data);
+    }
+    
     aiResult.value = result;
     await loadTasks();
     appendCreatedTask(result, title, newCategory.value);
@@ -493,5 +553,45 @@ onMounted(loadTasks);
   color: rgba(45, 62, 80, 0.66);
   font-size: 23rpx;
   line-height: 1.45;
+}
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.add-subtask-link {
+  font-size: 24rpx;
+  color: #236894;
+  font-weight: 700;
+}
+
+.manual-subtasks-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.manual-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.st-content-input {
+  flex: 1;
+  height: 80rpx;
+}
+
+.st-weight-input {
+  width: 140rpx;
+  height: 80rpx;
+  text-align: center;
+}
+
+.remove-st-icon {
+  font-size: 40rpx;
+  color: #ff5a5f;
+  padding: 10rpx;
 }
 </style>
