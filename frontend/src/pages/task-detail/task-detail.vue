@@ -31,6 +31,57 @@
         <button class="glass-button plan-edit-btn" @tap="openPlanEdit">编辑计划</button>
       </view>
 
+      <view class="section-head">
+        <text class="section-title">打卡概览</text>
+        <text class="text-muted small">真实打卡记录统计</text>
+      </view>
+      <view class="checkin-metrics">
+        <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
+        <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
+        <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
+        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>完成率</text></view>
+      </view>
+
+      <view class="glass-card checkin-card">
+        <view class="checkin-title-row">
+          <text class="section-title">每日打卡</text>
+          <text class="pill">{{ checkInDate }}</text>
+        </view>
+        <textarea v-model="checkInContent" class="glass-input checkin-content" maxlength="500" placeholder="记录今天学习了什么" />
+        <view class="checkin-fields">
+          <input v-model="checkInDuration" type="number" class="glass-input" placeholder="学习分钟数" />
+          <input v-model="checkInMood" class="glass-input" maxlength="20" placeholder="心情（可选）" />
+        </view>
+        <button class="glass-button checkin-btn" :disabled="!canCheckIn" :loading="checkingIn" @tap="submitCheckIn">
+          {{ canCheckIn ? "完成今日打卡" : `当前状态不可打卡（${task.statusDescription}）` }}
+        </button>
+      </view>
+
+      <view class="section-head">
+        <text class="section-title">最近七天</text>
+        <text class="text-muted small">每日打卡与学习时长</text>
+      </view>
+      <view class="glass-card seven-day-card">
+        <view v-for="day in checkInStats.recentSevenDays" :key="day.date" class="day-item" :class="{ checked: day.checkedIn }">
+          <text>{{ shortDate(day.date) }}</text>
+          <view class="day-dot">{{ day.checkedIn ? "✓" : "" }}</view>
+          <text>{{ day.durationMinutes }}分</text>
+        </view>
+      </view>
+
+      <view class="section-head">
+        <text class="section-title">打卡历史</text>
+        <text class="text-muted small">按日期倒序</text>
+      </view>
+      <view v-if="checkInHistory.length === 0" class="glass-card empty-card"><text>还没有正式打卡记录</text></view>
+      <view v-else class="checkin-history">
+        <view v-for="record in checkInHistory" :key="record.id" class="glass-card history-item">
+          <view class="history-head"><text>{{ record.checkInDate }}</text><text class="pill">{{ record.durationMinutes }} 分钟</text></view>
+          <text class="history-content">{{ record.content }}</text>
+          <text v-if="record.mood" class="text-muted small">心情：{{ record.mood }}</text>
+        </view>
+      </view>
+
       <view v-if="showPlanEdit" class="modal-mask" @tap="closePlanEdit">
         <view class="edit-dialog glass-card" @tap.stop>
           <view class="modal-head">
@@ -131,7 +182,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask } from "../../services/api";
+import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, createCheckIn, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 
 const task = ref({
@@ -158,6 +209,20 @@ const planForm = ref({ title: "", category: "学习", startDate: "", endDate: ""
 const categoryIndex = computed(() => Math.max(0, categories.indexOf(planForm.value.category)));
 const statusIndex = computed(() => Math.max(0, statusOptions.findIndex(item => item.value === planForm.value.status)));
 const currentStatusLabel = computed(() => statusOptions[statusIndex.value].label);
+const formatLocalDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const checkInDate = formatLocalDate(new Date());
+const checkInContent = ref("");
+const checkInDuration = ref("");
+const checkInMood = ref("");
+const checkingIn = ref(false);
+const checkInHistory = ref([]);
+const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
+const canCheckIn = computed(() => task.value.status === "IN_PROGRESS");
 const subtasks = ref([]);
 const loading = ref(false);
 const showEditDialog = ref(false);
@@ -206,6 +271,52 @@ async function loadTask() {
   }
 }
 
+function shortDate(date) {
+  if (!date) return "";
+  const parts = date.split("-");
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+async function loadCheckIns() {
+  if (!task.value.id) return;
+  try {
+    const [history, stats] = await Promise.all([
+      getCheckInHistory({ taskId: task.value.id }),
+      getCheckInStats(task.value.id),
+    ]);
+    checkInHistory.value = Array.isArray(history) ? history : [];
+    checkInStats.value = stats || checkInStats.value;
+  } catch (error) {
+    console.warn("load check-ins failed", error);
+  }
+}
+
+async function submitCheckIn() {
+  const content = checkInContent.value.trim();
+  const duration = Number(checkInDuration.value || 0);
+  if (!content) return uni.showToast({ title: "请填写打卡内容", icon: "none" });
+  if (!Number.isInteger(duration) || duration < 0) return uni.showToast({ title: "学习时长不能为负数", icon: "none" });
+  checkingIn.value = true;
+  try {
+    await createCheckIn({
+      taskId: Number(task.value.id),
+      checkInDate,
+      content,
+      durationMinutes: duration,
+      mood: checkInMood.value.trim() || null,
+    });
+    checkInContent.value = "";
+    checkInDuration.value = "";
+    checkInMood.value = "";
+    await loadCheckIns();
+    uni.showToast({ title: "打卡成功", icon: "success" });
+  } catch (error) {
+    console.warn("check-in failed", error);
+  } finally {
+    checkingIn.value = false;
+  }
+}
+
 function openPlanEdit() {
   planForm.value = {
     title: task.value.title,
@@ -227,6 +338,7 @@ async function savePlan() {
     task.value = await updateTask(task.value.id, { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) });
     showPlanEdit.value = false;
     uni.showToast({ title: "计划已更新", icon: "none" });
+    await loadCheckIns();
   } catch (error) {
     console.warn("update task failed", error);
   } finally { savingPlan.value = false; }
@@ -362,6 +474,7 @@ onLoad((options) => {
   };
   loadSubtasks();
   loadTask();
+  loadCheckIns();
 });
 </script>
 
@@ -437,6 +550,27 @@ onLoad((options) => {
 .plan-info { display: flex; flex-direction: column; gap: 8rpx; color: rgba(45, 62, 80, 0.68); font-size: 23rpx; }
 .plan-edit-btn { width: 150rpx; height: 66rpx; line-height: 66rpx; font-size: 22rpx; }
 .date-picker { height: 82rpx; line-height: 82rpx; padding: 0 20rpx; }
+
+.checkin-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16rpx; }
+.metric-card { min-height: 112rpx; display: flex; flex-direction: column; justify-content: center; gap: 6rpx; }
+.metric-card text:first-child { color: #236894; font-size: 34rpx; font-weight: 900; }
+.metric-card text:last-child { color: rgba(45, 62, 80, 0.58); font-size: 21rpx; }
+.checkin-card { margin-top: 20rpx; display: flex; flex-direction: column; gap: 18rpx; }
+.checkin-title-row, .history-head { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
+.checkin-content { width: 100%; min-height: 150rpx; }
+.checkin-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14rpx; }
+.checkin-fields .glass-input { width: 100%; height: 78rpx; padding: 18rpx 20rpx; }
+.checkin-btn { width: 100%; min-height: 82rpx; font-size: 24rpx; }
+.checkin-btn[disabled] { opacity: 0.55; }
+.seven-day-card { display: flex; justify-content: space-between; gap: 8rpx; padding: 24rpx 18rpx; }
+.day-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; color: rgba(45, 62, 80, 0.52); font-size: 18rpx; }
+.day-dot { width: 38rpx; height: 38rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.38); }
+.day-item.checked { color: #236894; font-weight: 800; }
+.day-item.checked .day-dot { background: rgba(107,190,255,.5); }
+.checkin-history { display: flex; flex-direction: column; gap: 16rpx; }
+.history-item { display: flex; flex-direction: column; gap: 12rpx; }
+.history-head { color: #236894; font-weight: 800; }
+.history-content { color: rgba(45, 62, 80, 0.78); font-size: 24rpx; line-height: 1.55; }
 
 .small {
   font-size: 22rpx;

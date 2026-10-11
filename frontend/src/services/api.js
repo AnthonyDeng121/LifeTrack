@@ -67,6 +67,18 @@ export function updateSubtask(subTaskId, data) {
   return request({ ...endpoints.tasks.updateSubtask(subTaskId, data) });
 }
 
+export function createCheckIn(data) {
+  return request({ ...endpoints.checkIns.create(data) });
+}
+
+export function getCheckInHistory(filters = {}) {
+  return request({ ...endpoints.checkIns.history(filters) });
+}
+
+export function getCheckInStats(taskId) {
+  return request({ ...endpoints.checkIns.stats(taskId) });
+}
+
 export function syncAction(rawInput, durationMinutes) {
   return request({ ...endpoints.actions.sync(rawInput, durationMinutes) });
 }

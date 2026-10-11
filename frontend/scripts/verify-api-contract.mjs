@@ -60,6 +60,15 @@ assert.deepEqual(endpoints.tasks.completeSubtask(7), {
   method: "PUT",
   path: "/tasks/subtasks/7/complete",
 });
+assert.deepEqual(endpoints.checkIns.create({ taskId: 101, content: "学习一小时" }), {
+  method: "POST", path: "/check-ins", data: { taskId: 101, content: "学习一小时" },
+});
+assert.deepEqual(endpoints.checkIns.history({ taskId: 101, startDate: "2026-10-01" }), {
+  method: "GET", path: "/check-ins", data: { taskId: 101, startDate: "2026-10-01" },
+});
+assert.deepEqual(endpoints.checkIns.stats(101), {
+  method: "GET", path: "/check-ins/tasks/101/stats",
+});
 assert.deepEqual(endpoints.actions.sync("今天写了两个 Controller 接口"), {
   method: "POST",
   path: "/actions/sync",

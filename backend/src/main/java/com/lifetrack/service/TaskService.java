@@ -15,6 +15,7 @@ import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
 import com.lifetrack.repository.TaskRepository;
+import com.lifetrack.repository.CheckInRecordRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class TaskService {
     private final SubTaskRepository subTaskRepository;
     private final ActionLogRepository actionLogRepository;
     private final AIService aiService;
+    private final CheckInRecordRepository checkInRecordRepository;
 
     /**
      * 手动创建任务
@@ -469,7 +471,10 @@ public class TaskService {
         // 3. 级联删除关联的行为日志
         actionLogRepository.deleteByTaskId(taskId);
 
-        // 4. 删除主任务
+        // 4. 删除正式打卡记录
+        checkInRecordRepository.deleteByTaskId(taskId);
+
+        // 5. 删除主任务
         taskRepository.delete(task);
     }
 

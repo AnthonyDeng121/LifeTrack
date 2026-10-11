@@ -8,6 +8,7 @@ import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
 import com.lifetrack.repository.TaskRepository;
+import com.lifetrack.repository.CheckInRecordRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ class TaskServiceTest {
     @Mock private SubTaskRepository subTaskRepository;
     @Mock private ActionLogRepository actionLogRepository;
     @Mock private AIService aiService;
+    @Mock private CheckInRecordRepository checkInRecordRepository;
     @InjectMocks private TaskService taskService;
 
     @BeforeEach

@@ -56,7 +56,28 @@ CREATE TABLE `tasks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='主任务(目标)表';
 
 -- ----------------------------
--- 3. 子任务表 (sub_tasks)
+-- 3. 正式学习打卡记录表
+-- ----------------------------
+DROP TABLE IF EXISTS `check_in_records`;
+CREATE TABLE `check_in_records` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint NOT NULL COMMENT '打卡用户ID',
+  `task_id` bigint NOT NULL COMMENT '学习计划ID',
+  `check_in_date` date NOT NULL COMMENT '业务打卡日期（Asia/Shanghai）',
+  `content` varchar(500) NOT NULL COMMENT '打卡内容',
+  `duration_minutes` int NOT NULL DEFAULT '0' COMMENT '学习时长（分钟）',
+  `mood` varchar(20) DEFAULT NULL COMMENT '打卡心情',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_task_check_date` (`user_id`, `task_id`, `check_in_date`),
+  KEY `idx_check_user_date` (`user_id`, `check_in_date`),
+  KEY `idx_check_task_date` (`task_id`, `check_in_date`),
+  CONSTRAINT `fk_check_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_duration_nonnegative` CHECK (`duration_minutes` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='学习计划正式每日打卡记录';
+
+-- ----------------------------
+-- 4. 子任务表 (sub_tasks)
 -- 对应 UI：子任务贡献度、任务拆解详情
 -- ----------------------------
 DROP TABLE IF EXISTS `sub_tasks`;
@@ -73,7 +94,7 @@ CREATE TABLE `sub_tasks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='子任务(AI拆解步骤)表';
 
 -- ----------------------------
--- 4. 行为日志表 (action_logs)
+-- 5. 行为日志表 (action_logs)
 -- 对应 UI：本周成长趋势、今日时间分布、行为流
 -- ----------------------------
 DROP TABLE IF EXISTS `action_logs`;
@@ -92,7 +113,7 @@ CREATE TABLE `action_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户行为记录与AI分析日志';
 
 -- ----------------------------
--- 5. 用户画像与今日状态表 (user_profiles)
+-- 6. 用户画像与今日状态表 (user_profiles)
 -- 对应 UI：顶部的紫色激励卡片、用户标签
 -- ----------------------------
 DROP TABLE IF EXISTS `user_profiles`;

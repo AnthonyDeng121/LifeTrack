@@ -66,6 +66,11 @@ export const endpoints = {
       data,
     }),
   },
+  checkIns: {
+    create: (data) => ({ method: "POST", path: "/check-ins", data }),
+    history: (filters = {}) => ({ method: "GET", path: "/check-ins", data: filters }),
+    stats: (taskId) => ({ method: "GET", path: `/check-ins/tasks/${taskId}/stats` }),
+  },
   actions: {
     sync: (rawInput) => ({
       method: "POST",
