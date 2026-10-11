@@ -25,6 +25,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
@@ -88,6 +89,33 @@ class TaskServiceTest {
         var response = taskService.updateTask(1L, request);
         assertEquals("Java 学习计划", response.getTitle());
         assertEquals(15, response.getTargetDays());
+    }
+
+    @Test
+    void shouldRejectUpdatingAnotherUsersPlan() {
+        Task task = planOwnedByCurrentUser();
+        task.setUserId(99L);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        TaskUpdateRequest request = new TaskUpdateRequest();
+        request.setTitle("不能修改的计划");
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> taskService.updateTask(1L, request));
+
+        assertEquals(403, error.getCode());
+        verifyNoInteractions(subTaskRepository, actionLogRepository, checkInRecordRepository);
+    }
+
+    @Test
+    void shouldAllowTransitionFromInProgressToCompleted() {
+        Task task = planOwnedByCurrentUser();
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TaskUpdateRequest request = new TaskUpdateRequest();
+        request.setStatus("COMPLETED");
+
+        assertEquals("COMPLETED", taskService.updateTask(1L, request).getStatus());
     }
 
     private Task planOwnedByCurrentUser() {

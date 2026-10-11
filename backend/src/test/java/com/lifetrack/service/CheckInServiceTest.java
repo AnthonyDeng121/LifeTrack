@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -23,6 +24,8 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -124,6 +127,64 @@ class CheckInServiceTest {
         assertEquals(7, stats.getRecentSevenDays().size());
         assertTrue(stats.getRecentSevenDays().get(6).getCheckedIn());
         assertEquals(60, stats.getRecentSevenDays().get(6).getDurationMinutes());
+    }
+
+    @Test
+    void shouldRejectFutureCheckInDate() {
+        LocalDate today = LocalDate.now();
+        Task task = activePlan(today.minusDays(1), today.plusDays(5));
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> checkInService.create(request(today.plusDays(1))));
+
+        assertEquals(400, error.getCode());
+        verifyNoInteractions(checkInRecordRepository);
+    }
+
+    @Test
+    void shouldTranslateDatabaseUniqueConstraintConflictToDuplicateCheckIn() {
+        LocalDate today = LocalDate.now();
+        Task task = activePlan(today.minusDays(1), today.plusDays(1));
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(checkInRecordRepository.existsByUserIdAndTaskIdAndCheckInDate(7L, 1L, today))
+                .thenReturn(false);
+        when(checkInRecordRepository.saveAndFlush(any(CheckInRecord.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_check_in_user_task_date"));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> checkInService.create(request(today)));
+
+        assertEquals(409, error.getCode());
+    }
+
+    @Test
+    void shouldRejectCheckInAndStatsForAnotherUsersPlan() {
+        LocalDate today = LocalDate.now();
+        Task task = activePlan(today.minusDays(1), today.plusDays(1));
+        task.setUserId(99L);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        BusinessException createError = assertThrows(BusinessException.class,
+                () -> checkInService.create(request(today)));
+        BusinessException statsError = assertThrows(BusinessException.class,
+                () -> checkInService.stats(1L));
+
+        assertEquals(403, createError.getCode());
+        assertEquals(403, statsError.getCode());
+        verifyNoInteractions(checkInRecordRepository);
+    }
+
+    @Test
+    void shouldCapCompletionRateAtOneHundredPercent() {
+        LocalDate today = LocalDate.now();
+        Task task = activePlan(today.minusDays(3), today.plusDays(3));
+        task.setTargetDays(2);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(checkInRecordRepository.findByUserIdAndTaskIdOrderByCheckInDateAsc(7L, 1L))
+                .thenReturn(List.of(record(today.minusDays(2), 20), record(today.minusDays(1), 20), record(today, 20)));
+
+        assertEquals("100", checkInService.stats(1L).getCompletionRate().toPlainString());
     }
 
     private CheckInCreateRequest request(LocalDate date) {

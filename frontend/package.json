@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test:contracts": "node scripts/verify-api-contract.mjs",
-    "verify": "npm run test:contracts && npm run build:h5",
+    "test:flows": "node scripts/verify-plan-flow.mjs",
+    "verify": "npm run test:contracts && npm run test:flows && npm run build:h5",
     "dev:custom": "uni -p",
     "dev:h5": "uni",
     "dev:h5:lan": "uni --host 0.0.0.0 --port 5173",

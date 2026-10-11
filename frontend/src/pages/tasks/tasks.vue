@@ -201,6 +201,7 @@ import { computed, onMounted, ref } from "vue";
 import LifeTabBar from "../../components/LifeTabBar.vue";
 import { createTaskByAI, createTaskManually, getTasks } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
+import { validatePlanPeriod } from "../../services/planRules";
 
 const categories = ["全部", ...TASK_CATEGORIES];
 const selectableCategories = TASK_CATEGORIES;
@@ -320,16 +321,9 @@ async function createTask() {
     uni.showToast({ title: "请选择后端支持的分类", icon: "none" });
     return;
   }
-  const periodDays = Math.floor((new Date(newEndDate.value) - new Date(newStartDate.value)) / 86400000) + 1;
   const targetDays = Number(newTargetDays.value);
-  if (periodDays < 1) {
-    uni.showToast({ title: "开始日期不能晚于结束日期", icon: "none" });
-    return;
-  }
-  if (!Number.isInteger(targetDays) || targetDays < 1 || targetDays > periodDays) {
-    uni.showToast({ title: `目标天数应为1-${periodDays}天`, icon: "none" });
-    return;
-  }
+  const periodError = validatePlanPeriod(newStartDate.value, newEndDate.value, targetDays);
+  if (periodError) return uni.showToast({ title: periodError, icon: "none" });
 
   creating.value = true;
   try {

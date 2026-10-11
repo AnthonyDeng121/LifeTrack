@@ -184,6 +184,7 @@ import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, createCheckIn, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
+import { validateCheckInForm } from "../../services/planRules";
 
 const task = ref({
   id: "",
@@ -294,8 +295,8 @@ async function loadCheckIns() {
 async function submitCheckIn() {
   const content = checkInContent.value.trim();
   const duration = Number(checkInDuration.value || 0);
-  if (!content) return uni.showToast({ title: "请填写打卡内容", icon: "none" });
-  if (!Number.isInteger(duration) || duration < 0) return uni.showToast({ title: "学习时长不能为负数", icon: "none" });
+  const formError = validateCheckInForm({ content, durationMinutes: duration, status: task.value.status });
+  if (formError) return uni.showToast({ title: formError, icon: "none" });
   checkingIn.value = true;
   try {
     await createCheckIn({

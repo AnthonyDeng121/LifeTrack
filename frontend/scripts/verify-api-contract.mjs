@@ -5,7 +5,7 @@ const packageJson = JSON.parse(await readFile(new URL("../package.json", import.
 const frontendReadme = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
 assert.equal(packageJson.scripts["dev:h5:lan"], "uni --host 0.0.0.0 --port 5173");
-assert.equal(packageJson.scripts.verify, "npm run test:contracts && npm run build:h5");
+assert.equal(packageJson.scripts.verify, "npm run test:contracts && npm run test:flows && npm run build:h5");
 assert.match(frontendReadme, /Windows/);
 assert.match(frontendReadme, /npm run dev:h5:lan/);
 assert.match(frontendReadme, /10\.0\.2\.2:5173/);
