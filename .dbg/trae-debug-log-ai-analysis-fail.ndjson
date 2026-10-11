@@ -1,0 +1,27 @@
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781574909058}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ?????1??Spring Boot, duration: 1??, sub_tasks_len: 1872", "ts": 1781574909066}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781574909082}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 60,\n ...", "ts": 1781574917887}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781574928531}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ?????1??Spring Boot, duration: 1??, sub_tasks_len: 1872", "ts": 1781574928566}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781574928593}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 60,\n ...", "ts": 1781574938165}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781575078348}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ?????1??Spring Boot, duration: 1??, sub_tasks_len: 1872", "ts": 1781575078357}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781575078384}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 60,\n ...", "ts": 1781575085416}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781575510723}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ??????????, duration: 30??, sub_tasks_len: 1872", "ts": 1781575510732}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781575510765}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 30,\n ...", "ts": 1781575517167}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781575613554}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ??????????, duration: 30??, sub_tasks_len: 1872", "ts": 1781575613564}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781575613592}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 30,\n ...", "ts": 1781575619893}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781575694149}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ??????????, duration: 30??, sub_tasks_len: 1872", "ts": 1781575694157}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781575694185}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Python progress-judge start", "ts": 1781575839479}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Received user_action: ??????????, duration: 30??, sub_tasks_len: 1872", "ts": 1781575839488}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "Calling LLM...", "ts": 1781575839516}
+{"sessionId": "ai-analysis-fail", "type": "log", "message": "LLM raw response: {\n  \"matches\": [{\"task_id\": 13, \"contribution\": 0.05}, {\"task_id\": 14, \"contribution\": 0.05}, {\"task_id\": 15, \"contribution\": 0.05}, {\"task_id\": 16, \"contribution\": 0.05}],\n  \"duration_minutes\": 30,\n ...", "ts": 1781575846757}

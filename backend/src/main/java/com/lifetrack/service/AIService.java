@@ -84,18 +84,45 @@ public class AIService {
             req.put("duration_input", durationInput);
             req.put("sub_tasks", objectMapper.writeValueAsString(subTaskList));
 
-            Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
-            if (resp == null || (Integer) resp.get("code") != 200) {
-                throw new RuntimeException("AI Server Error: " + (resp != null ? resp.get("msg") : "null"));
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.valueOf("application/json;charset=UTF-8"));
+            org.springframework.http.HttpEntity<Map<String, Object>> entity = new org.springframework.http.HttpEntity<>(req, headers);
+
+            Map<String, Object> resp = restTemplate.postForObject(url, entity, Map.class);
+
+            if (resp == null || resp.get("code") == null) {
+                throw new RuntimeException("AI Server 无响应");
+            }
+            
+            int code = ((Number) resp.get("code")).intValue();
+            if (code != 200) {
+                throw new RuntimeException("AI Server Error: " + resp.get("msg"));
             }
 
             String jsonData = (String) resp.get("data");
+            if (jsonData == null || jsonData.isEmpty()) {
+                throw new RuntimeException("AI Server 返回数据为空");
+            }
 
             // 解析 Python 返回的 JSON 字符串
             Map<String, Object> dataMap = objectMapper.readValue(jsonData, Map.class);
             List<Map<String, Object>> matchesRaw = (List<Map<String, Object>>) dataMap.get("matches");
-            String suggestedReply = (String) dataMap.get("suggested_reply");
-            Integer durationMinutes = (Integer) dataMap.get("duration_minutes");
+            
+            String suggestedReply = "AI 分析记录成功";
+            Object replyObj = dataMap.get("suggested_reply");
+            if (replyObj != null) {
+                suggestedReply = replyObj.toString();
+            }
+            
+            Integer durationMinutes = 0;
+            Object durObj = dataMap.get("duration_minutes");
+            if (durObj instanceof Number) {
+                durationMinutes = ((Number) durObj).intValue();
+            } else if (durObj instanceof String) {
+                try {
+                    durationMinutes = (int) Double.parseDouble((String) durObj);
+                } catch (Exception e) {}
+            }
 
             List<AIMatchResult.MatchDetail> matches = new ArrayList<>();
             if (matchesRaw != null) {
@@ -103,10 +130,30 @@ public class AIService {
                     Object tid = m.get("task_id");
                     Object cont = m.get("contribution");
                     if (tid != null && cont != null) {
-                        matches.add(AIMatchResult.MatchDetail.builder()
-                                .subTaskId(((Number) tid).longValue())
-                                .increment(BigDecimal.valueOf(((Number) cont).doubleValue()))
-                                .build());
+                        Long subTaskId = 0L;
+                        if (tid instanceof Number) {
+                            subTaskId = ((Number) tid).longValue();
+                        } else if (tid instanceof String) {
+                            try {
+                                subTaskId = Long.parseLong((String) tid);
+                            } catch (Exception e) {}
+                        }
+
+                        BigDecimal increment = BigDecimal.ZERO;
+                        if (cont instanceof Number) {
+                            increment = BigDecimal.valueOf(((Number) cont).doubleValue());
+                        } else if (cont instanceof String) {
+                            try {
+                                increment = new BigDecimal((String) cont);
+                            } catch (Exception e) {}
+                        }
+
+                        if (subTaskId != 0L) {
+                            matches.add(AIMatchResult.MatchDetail.builder()
+                                    .subTaskId(subTaskId)
+                                    .increment(increment)
+                                    .build());
+                        }
                     }
                 }
             }

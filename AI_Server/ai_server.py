@@ -264,9 +264,20 @@ def call_llm(prompt):
         "messages": [{"role": "user", "content": prompt}],
         "temperature": TEMPERATURE
     }
-    resp = requests.post(URL, json=payload, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    try:
+        resp = requests.post(URL, json=payload, headers=HEADERS, timeout=20)
+        if resp.status_code != 200:
+            print(f"LLM API Error: {resp.status_code} - {resp.text}")
+            resp.raise_for_status()
+        
+        res_json = resp.json()
+        if "choices" not in res_json or not res_json["choices"]:
+            raise Exception(f"Unexpected LLM response format: {res_json}")
+            
+        return res_json["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"Error calling LLM: {e}")
+        raise e
 
 # 初始化Flask服务
 app = Flask(__name__)
@@ -274,26 +285,35 @@ app = Flask(__name__)
 # 接口1：任务拆解
 @app.route("/ai/deconstruct", methods=["POST"])
 def ai_deconstruct():
-    req_data = request.get_json()
-    user_goal = req_data.get("title", "")
-    final_prompt = GOAL_BREAKER_PROMPT.replace("{{user_goal}}", user_goal)
-    raw_res = call_llm(final_prompt)
-    res_text = clean_output(raw_res)
     try:
+        req_data = request.get_json()
+        user_goal = req_data.get("title", "")
+        if not user_goal:
+            return jsonify({"code": 400, "msg": "标题不能为空", "data": None})
+            
+        final_prompt = GOAL_BREAKER_PROMPT.replace("{{user_goal}}", user_goal)
+        raw_res = call_llm(final_prompt)
+        res_text = clean_output(raw_res)
+        
         data = json.loads(res_text)
         return jsonify({"code": 200, "msg": "success", "data": data})
     except json.JSONDecodeError:
-        return jsonify({"code": 400, "msg": res_text, "data": None})
+        return jsonify({"code": 400, "msg": f"AI返回格式错误: {raw_res}", "data": None})
+    except Exception as e:
+        return jsonify({"code": 500, "msg": str(e), "data": None})
 
 # 接口2：意图识别
 @app.route("/ai/intent", methods=["POST"])
 def ai_intent():
-    req_data = request.get_json()
-    user_input = req_data.get("user_input", "")
-    final_prompt = INTENT_PROMPT.replace("{{user_input}}", user_input)
-    raw_res = call_llm(final_prompt)
-    res_text = clean_output(raw_res)
-    return jsonify({"code": 200, "msg": "success", "data": res_text})
+    try:
+        req_data = request.get_json()
+        user_input = req_data.get("user_input", "")
+        final_prompt = INTENT_PROMPT.replace("{{user_input}}", user_input)
+        raw_res = call_llm(final_prompt)
+        res_text = clean_output(raw_res)
+        return jsonify({"code": 200, "msg": "success", "data": res_text})
+    except Exception as e:
+        return jsonify({"code": 500, "msg": str(e), "data": None})
 
 # 接口3：进度判断/行为匹配
 @app.route("/ai/progress-judge", methods=["POST"])
@@ -303,13 +323,31 @@ def ai_progress_judge():
         user_action = req_data.get("user_action", "")
         duration_input = req_data.get("duration_input", "")
         sub_tasks = req_data.get("sub_tasks", "")
+        
         final_prompt = PROGRESS_JUDGE_PROMPT\
             .replace("{{user_action}}", user_action)\
             .replace("{{duration_input}}", duration_input)\
             .replace("{{sub_tasks}}", sub_tasks)
+            
         raw_res = call_llm(final_prompt)
         res_text = clean_output(raw_res)
-        return jsonify({"code": 200, "msg": "success", "data": res_text})
+        
+        # 尝试解析一次，确保是合法的 JSON，即使最后返回的是字符串
+        try:
+            json.loads(res_text)
+        except:
+            print(f"Warning: AI returned invalid JSON for progress-judge: {res_text}")
+            # 如果不是 JSON，尝试包装成 JSON
+            res_text = json.dumps({
+                "matches": [],
+                "duration_minutes": 0,
+                "is_entertainment": False,
+                "suggested_reply": res_text if res_text else "AI 分析失败"
+            })
+            
+        resp = jsonify({"code": 200, "msg": "success", "data": res_text})
+        resp.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return resp
     except Exception as e:
         print(f"Error in progress-judge: {e}")
         return jsonify({"code": 500, "msg": str(e), "data": None})
