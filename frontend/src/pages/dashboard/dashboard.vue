@@ -11,10 +11,9 @@
 
       <view class="hero-card glass-card">
         <view class="hero-copy">
-          <text class="pill">今日成长值</text>
-          <text class="hero-number">{{ formatProgress(stats.todayTotalProgress) }}%</text>
-          <text class="hero-desc">{{ stats.dailyQuote }}</text>
-          <text class="hero-desc mood-quote">{{ stats.moodQuote }}</text>
+          <text class="pill">学习计划完成率</text>
+          <text class="hero-number">{{ formatProgress(stats.checkInCompletionRate) }}%</text>
+          <text class="hero-desc">根据目标天数和真实打卡记录计算</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -23,29 +22,30 @@
 
       <view class="metric-grid">
         <view class="metric-card glass-card">
-          <text class="metric-value">{{ tasks.length }}</text>
-          <text class="metric-label">进行中任务</text>
+          <text class="metric-value">{{ stats.checkedInDays || 0 }}</text>
+          <text class="metric-label">累计打卡</text>
         </view>
         <view class="metric-card glass-card">
-          <text class="metric-value">{{ formatProgress(stats.todayTotalProgress) }}</text>
-          <text class="metric-label">今日进度</text>
+          <text class="metric-value">{{ stats.currentCheckInStreak || 0 }}</text>
+          <text class="metric-label">当前连续</text>
         </view>
         <view class="metric-card glass-card">
-          <text class="metric-value">{{ stats.currentAnxietyLevel || 1 }}/10</text>
-          <text class="metric-label">当前焦虑</text>
+          <text class="metric-value">{{ stats.longestCheckInStreak || 0 }}</text>
+          <text class="metric-label">最长连续</text>
         </view>
       </view>
 
       <view class="section-head">
-        <text class="section-title">一周趋势</text>
-        <text class="text-muted small">来自 /dashboard/stats</text>
+        <text class="section-title">最近七天打卡</text>
+        <text class="text-muted small">真实持久化记录</text>
       </view>
       <view class="glass-card trend-card">
         <view class="trend-chart">
-          <view v-for="item in stats.weeklyTrend" :key="item.date" class="trend-column">
+          <view v-for="item in stats.checkInTrend" :key="item.date" class="trend-column">
             <view class="trend-bar-wrap">
-              <view class="trend-bar" :style="{ height: trendHeight(item.progress) }"></view>
+              <view class="trend-bar" :style="{ height: checkInTrendHeight(item.checkInCount) }"></view>
             </view>
+            <text>{{ item.checkInCount }}次</text>
             <text>{{ item.date }}</text>
           </view>
         </view>
@@ -126,6 +126,11 @@ const stats = ref({
   dailyQuote: "记录一下今天做了什么，AI 会帮你同步任务进度。",
   timeDistribution: [],
   weeklyTrend: [],
+  checkInTrend: [],
+  checkInCompletionRate: 0,
+  checkedInDays: 0,
+  currentCheckInStreak: 0,
+  longestCheckInStreak: 0,
 });
 const report = ref({
   title: "等待你的第一条记录",
@@ -150,8 +155,9 @@ function clampProgress(value) {
   return Math.max(0, Math.min(100, Number(value || 0)));
 }
 
-function trendHeight(value) {
-  return `${Math.max(18, clampProgress(value))}%`;
+function checkInTrendHeight(value) {
+  const max = Math.max(1, ...stats.value.checkInTrend.map(item => Number(item.checkInCount || 0)));
+  return `${Number(value || 0) === 0 ? 0 : Math.max(18, Number(value) / max * 100)}%`;
 }
 
 function goRecord() {
@@ -172,7 +178,7 @@ async function loadPage() {
     const [nextStats, nextReport, nextTasks] = await Promise.all([
       getDashboardStats(),
       getFeedbackReport(),
-      getTasks(),
+      getTasks({ status: "IN_PROGRESS" }),
     ]);
     stats.value = nextStats || stats.value;
     report.value = nextReport || report.value;

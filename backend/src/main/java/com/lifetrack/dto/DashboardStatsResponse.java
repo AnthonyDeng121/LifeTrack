@@ -19,6 +19,21 @@ public class DashboardStatsResponse {
     @Schema(description = "周趋势数据 (过去7天每日进度增量)")
     private List<WeeklyTrend> weeklyTrend;
 
+    @Schema(description = "全部有效学习计划的真实打卡完成率")
+    private BigDecimal checkInCompletionRate;
+
+    @Schema(description = "累计正式打卡次数")
+    private Integer checkedInDays;
+
+    @Schema(description = "当前连续打卡天数")
+    private Integer currentCheckInStreak;
+
+    @Schema(description = "最长连续打卡天数")
+    private Integer longestCheckInStreak;
+
+    @Schema(description = "最近七天正式打卡趋势")
+    private List<CheckInTrend> checkInTrend;
+
     @Schema(description = "当前焦虑等级 (1-10)", example = "5")
     private Integer currentAnxietyLevel;
 
@@ -57,5 +72,13 @@ public class DashboardStatsResponse {
         private String date;
         @Schema(description = "当日进度增量", example = "20.0")
         private BigDecimal progress;
+    }
+
+    @Data
+    @Builder
+    public static class CheckInTrend {
+        private String date;
+        private Integer checkInCount;
+        private Integer durationMinutes;
     }
 }

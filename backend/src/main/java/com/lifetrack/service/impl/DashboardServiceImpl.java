@@ -7,10 +7,14 @@ import com.lifetrack.entity.ActionLog;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
 import com.lifetrack.entity.UserProfile;
+import com.lifetrack.entity.CheckInRecord;
+import com.lifetrack.entity.PlanStatus;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
 import com.lifetrack.repository.TaskRepository;
 import com.lifetrack.repository.UserProfileRepository;
+import com.lifetrack.repository.CheckInRecordRepository;
+import com.lifetrack.service.CheckInService;
 import com.lifetrack.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,26 +25,70 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardServiceImpl implements DashboardService {
 
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+
     private final ActionLogRepository actionLogRepository;
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
     private final UserProfileRepository userProfileRepository;
     private final com.lifetrack.service.AIService aiService;
+    private final CheckInRecordRepository checkInRecordRepository;
 
     @Override
     public DashboardStatsResponse getStats() {
         Long userId = UserContext.getUserId();
         String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+
+        List<Task> validPlans = taskRepository.findByUserId(userId).stream()
+                .filter(task -> task.getStatus() != PlanStatus.CANCELLED)
+                .filter(task -> task.getTargetDays() != null && task.getTargetDays() > 0)
+                .toList();
+        Set<Long> validTaskIds = validPlans.stream().map(Task::getId).collect(Collectors.toSet());
+        List<CheckInRecord> allCheckIns = checkInRecordRepository
+                .findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
+                        userId, LocalDate.of(1970, 1, 1), today)
+                .stream()
+                .filter(record -> validTaskIds.contains(record.getTaskId()))
+                .toList();
+        int totalTargetDays = validPlans.stream().mapToInt(Task::getTargetDays).sum();
+        int checkedInDays = allCheckIns.size();
+        BigDecimal checkInCompletionRate = totalTargetDays == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf(checkedInDays).multiply(BigDecimal.valueOf(100))
+                        .divide(BigDecimal.valueOf(totalTargetDays), 1, RoundingMode.HALF_UP)
+                        .min(BigDecimal.valueOf(100));
+        SortedSet<LocalDate> checkInDates = allCheckIns.stream()
+                .map(CheckInRecord::getCheckInDate)
+                .collect(Collectors.toCollection(TreeSet::new));
+        int[] checkInStreaks = CheckInService.calculateStreaks(checkInDates, today);
+
+        Map<LocalDate, List<CheckInRecord>> checkInsByDate = allCheckIns.stream()
+                .collect(Collectors.groupingBy(CheckInRecord::getCheckInDate));
+        List<DashboardStatsResponse.CheckInTrend> checkInTrend = new ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate date = today.minusDays(i);
+            List<CheckInRecord> records = checkInsByDate.getOrDefault(date, List.of());
+            checkInTrend.add(DashboardStatsResponse.CheckInTrend.builder()
+                    .date(date.format(DateTimeFormatter.ofPattern("M/d")))
+                    .checkInCount(records.size())
+                    .durationMinutes(records.stream().mapToInt(record ->
+                            record.getDurationMinutes() == null ? 0 : record.getDurationMinutes()).sum())
+                    .build());
+        }
 
         // 1. 今日累计进度增量 (百分制)
         BigDecimal todayProgress = sumContribution(userId, today, today);
@@ -102,6 +150,11 @@ public class DashboardServiceImpl implements DashboardService {
                 .todayTotalProgress(todayProgress)
                 .timeDistribution(distribution)
                 .weeklyTrend(weeklyTrend)
+                .checkInCompletionRate(checkInCompletionRate)
+                .checkedInDays(checkedInDays)
+                .currentCheckInStreak(checkInStreaks[0])
+                .longestCheckInStreak(checkInStreaks[1])
+                .checkInTrend(checkInTrend)
                 .currentAnxietyLevel(anxietyLevel)
                 .dailyQuote(generateQuote(todayProgress))
                 .moodQuote(aiService.generateMoodQuote(anxietyLevel, username))

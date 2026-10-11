@@ -134,7 +134,7 @@ public class CheckInService {
                 .build();
     }
 
-    static int[] calculateStreaks(SortedSet<LocalDate> dates, LocalDate today) {
+    public static int[] calculateStreaks(SortedSet<LocalDate> dates, LocalDate today) {
         if (dates.isEmpty()) return new int[]{0, 0};
 
         int longest = 0;
