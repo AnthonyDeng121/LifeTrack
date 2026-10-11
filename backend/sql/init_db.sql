@@ -41,13 +41,18 @@ CREATE TABLE `tasks` (
   `user_id` bigint NOT NULL COMMENT '所属用户ID',
   `title` varchar(100) NOT NULL COMMENT '目标/任务名称',
   `category` enum('学习', '娱乐', '休息', '运动', '琐事') DEFAULT '学习' COMMENT '任务分类',
-  `status` tinyint DEFAULT '0' COMMENT '状态: 0-进行中, 1-已完成',
+  `start_date` date NOT NULL COMMENT '计划开始日期',
+  `end_date` date NOT NULL COMMENT '计划结束日期',
+  `target_days` int NOT NULL COMMENT '目标打卡天数',
+  `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-进行中, 1-已完成, 2-未开始, 3-已取消, 4-已过期',
   `total_progress` decimal(5,2) DEFAULT '0.00' COMMENT '当前总进度百分比 (0-100.00)',
   `ai_suggestion` text COMMENT 'AI 对该目标的初步分析或建议',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`)
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_user_status` (`user_id`, `status`),
+  KEY `idx_plan_period` (`start_date`, `end_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='主任务(目标)表';
 
 -- ----------------------------

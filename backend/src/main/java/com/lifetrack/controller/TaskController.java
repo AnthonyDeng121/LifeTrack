@@ -7,6 +7,8 @@ import com.lifetrack.dto.SubTaskUpdateRequest;
 import com.lifetrack.dto.TaskDeconstructRequest;
 import com.lifetrack.dto.TaskDeconstructResponse;
 import com.lifetrack.dto.TaskListResponse;
+import com.lifetrack.dto.TaskDetailResponse;
+import com.lifetrack.dto.TaskUpdateRequest;
 import com.lifetrack.service.TaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -16,6 +18,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.LocalDate;
 
 @Tag(name = "任务管理", description = "提供任务拆解、AI 辅助等功能")
 @RestController
@@ -39,9 +42,26 @@ public class TaskController {
      */
     @Operation(summary = "获取任务列表", description = "获取当前用户所有进行中的任务及其总进度")
     @GetMapping
-    public Result<List<TaskListResponse>> getTaskList() {
-        List<TaskListResponse> response = taskService.getTaskList();
+    public Result<List<TaskListResponse>> getTaskList(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate) {
+        List<TaskListResponse> response = taskService.getTaskList(status, startDate, endDate);
         return Result.success(response);
+    }
+
+    @Operation(summary = "获取学习计划详情")
+    @GetMapping("/{taskId}")
+    public Result<TaskDetailResponse> getTaskDetail(@PathVariable Long taskId) {
+        return Result.success(taskService.getTaskDetail(taskId));
+    }
+
+    @Operation(summary = "编辑学习计划", description = "可修改标题、分类、周期、目标天数和状态")
+    @PutMapping("/{taskId}")
+    public Result<TaskDetailResponse> updateTask(
+            @PathVariable Long taskId,
+            @RequestBody @Validated TaskUpdateRequest request) {
+        return Result.success(taskService.updateTask(taskId, request));
     }
 
     /**

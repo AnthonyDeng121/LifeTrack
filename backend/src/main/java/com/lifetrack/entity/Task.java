@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 @Entity
@@ -39,8 +40,21 @@ public class Task {
     @Schema(description = "任务分类")
     private Category category;
 
-    @Schema(description = "任务状态 (0-进行中, 1-已完成)", example = "0")
-    private Integer status; // 0-进行中, 1-已完成
+    @Convert(converter = PlanStatusConverter.class)
+    @Schema(description = "计划状态")
+    private PlanStatus status;
+
+    @Column(name = "start_date")
+    @Schema(description = "计划开始日期", example = "2026-10-11")
+    private LocalDate startDate;
+
+    @Column(name = "end_date")
+    @Schema(description = "计划结束日期", example = "2026-11-11")
+    private LocalDate endDate;
+
+    @Column(name = "target_days")
+    @Schema(description = "目标打卡天数", example = "20")
+    private Integer targetDays;
 
     @Column(name = "total_progress")
     @Schema(description = "总进度 (0.00-1.00)", example = "0.50")
@@ -71,7 +85,7 @@ public class Task {
             totalProgress = BigDecimal.ZERO;
         }
         if (status == null) {
-            status = 0;
+            status = PlanStatus.NOT_STARTED;
         }
     }
 

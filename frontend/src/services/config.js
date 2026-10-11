@@ -4,6 +4,7 @@ export const API_BASE_STORAGE_KEY = "lifetrack_api_base_url";
 export const TOKEN_KEY = "lifetrack_token";
 export const USER_KEY = "lifetrack_user";
 export const TASK_CATEGORIES = ["学习", "娱乐", "休息", "运动", "琐事"];
+export const PLAN_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED"];
 
 export function resolveApiBaseUrl({ storedBase = "", runtimeHost = "" } = {}) {
   if (storedBase) return storedBase;
@@ -36,12 +37,14 @@ export const endpoints = {
     }),
   },
   tasks: {
-    list: { method: "GET", path: "/tasks" },
+    list: (filters = {}) => ({ method: "GET", path: "/tasks", data: filters }),
+    detail: (taskId) => ({ method: "GET", path: `/tasks/${taskId}` }),
+    update: (taskId, data) => ({ method: "PUT", path: `/tasks/${taskId}`, data }),
     subtasks: (taskId) => ({ method: "GET", path: `/tasks/${taskId}/subtasks` }),
-    deconstruct: (title, category) => ({
+    deconstruct: (title, category, startDate, endDate, targetDays) => ({
       method: "POST",
       path: "/tasks/deconstruct",
-      data: { title, category },
+      data: { title, category, startDate, endDate, targetDays },
     }),
     createManual: (data) => ({
       method: "POST",

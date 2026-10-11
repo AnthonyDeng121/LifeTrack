@@ -22,6 +22,31 @@
         </view>
       </view>
 
+      <view class="glass-card plan-card">
+        <view class="plan-info">
+          <text>周期：{{ task.startDate }} 至 {{ task.endDate }}</text>
+          <text>目标打卡：{{ task.targetDays }} 天</text>
+          <text>状态：{{ task.statusDescription }}</text>
+        </view>
+        <button class="glass-button plan-edit-btn" @tap="openPlanEdit">编辑计划</button>
+      </view>
+
+      <view v-if="showPlanEdit" class="modal-mask" @tap="closePlanEdit">
+        <view class="edit-dialog glass-card" @tap.stop>
+          <view class="modal-head">
+            <text class="modal-title">编辑学习计划</text>
+            <button class="close-btn" @tap="closePlanEdit">×</button>
+          </view>
+          <view class="form-block"><text class="field-label">计划名称</text><input v-model="planForm.title" class="glass-input edit-input" /></view>
+          <view class="form-block"><text class="field-label">分类</text><picker :range="categories" :value="categoryIndex" @change="planForm.category = categories[$event.detail.value]"><view class="glass-input date-picker">{{ planForm.category }}</view></picker></view>
+          <view class="form-block"><text class="field-label">开始日期</text><picker mode="date" :value="planForm.startDate" @change="planForm.startDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.startDate }}</view></picker></view>
+          <view class="form-block"><text class="field-label">结束日期</text><picker mode="date" :value="planForm.endDate" @change="planForm.endDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.endDate }}</view></picker></view>
+          <view class="form-block"><text class="field-label">目标打卡天数</text><input v-model="planForm.targetDays" type="number" class="glass-input edit-input" /></view>
+          <view class="form-block"><text class="field-label">状态</text><picker :range="statusLabels" :value="statusIndex" @change="planForm.status = statusOptions[$event.detail.value].value"><view class="glass-input date-picker">{{ currentStatusLabel }}</view></picker></view>
+          <button class="glass-button save-btn" :loading="savingPlan" @tap="savePlan">保存计划</button>
+        </view>
+      </view>
+
       <view class="section-head">
         <text class="section-title">拆解步骤</text>
         <text class="text-muted small">来自 /tasks/{id}/subtasks</text>
@@ -104,16 +129,35 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { completeSubtask, getSubtasks, deleteTask, deleteSubtask, updateSubtask } from "../../services/api";
+import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask } from "../../services/api";
+import { TASK_CATEGORIES } from "../../services/config";
 
 const task = ref({
   id: "",
   title: "任务详情",
   category: "任务",
   totalProgress: 0,
+  startDate: "",
+  endDate: "",
+  targetDays: 0,
+  status: "IN_PROGRESS",
+  statusDescription: "进行中",
 });
+const categories = TASK_CATEGORIES;
+const statusOptions = [
+  { value: "NOT_STARTED", label: "未开始" }, { value: "IN_PROGRESS", label: "进行中" },
+  { value: "COMPLETED", label: "已完成" }, { value: "CANCELLED", label: "已取消" },
+  { value: "EXPIRED", label: "已过期" },
+];
+const statusLabels = statusOptions.map(item => item.label);
+const showPlanEdit = ref(false);
+const savingPlan = ref(false);
+const planForm = ref({ title: "", category: "学习", startDate: "", endDate: "", targetDays: 1, status: "IN_PROGRESS" });
+const categoryIndex = computed(() => Math.max(0, categories.indexOf(planForm.value.category)));
+const statusIndex = computed(() => Math.max(0, statusOptions.findIndex(item => item.value === planForm.value.status)));
+const currentStatusLabel = computed(() => statusOptions[statusIndex.value].label);
 const subtasks = ref([]);
 const loading = ref(false);
 const showEditDialog = ref(false);
@@ -151,6 +195,41 @@ function goBack() {
 
 function goRecord() {
   uni.redirectTo({ url: "/pages/record/record" });
+}
+
+async function loadTask() {
+  if (!task.value.id) return;
+  try {
+    task.value = await getTaskDetail(task.value.id);
+  } catch (error) {
+    console.warn("load task detail failed", error);
+  }
+}
+
+function openPlanEdit() {
+  planForm.value = {
+    title: task.value.title,
+    category: task.value.category,
+    startDate: task.value.startDate,
+    endDate: task.value.endDate,
+    targetDays: task.value.targetDays,
+    status: task.value.status,
+  };
+  showPlanEdit.value = true;
+}
+
+function closePlanEdit() { if (!savingPlan.value) showPlanEdit.value = false; }
+
+async function savePlan() {
+  if (!planForm.value.title.trim()) return uni.showToast({ title: "计划名称不能为空", icon: "none" });
+  savingPlan.value = true;
+  try {
+    task.value = await updateTask(task.value.id, { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) });
+    showPlanEdit.value = false;
+    uni.showToast({ title: "计划已更新", icon: "none" });
+  } catch (error) {
+    console.warn("update task failed", error);
+  } finally { savingPlan.value = false; }
 }
 
 async function loadSubtasks() {
@@ -282,6 +361,7 @@ onLoad((options) => {
     totalProgress: Number(options.progress || 0),
   };
   loadSubtasks();
+  loadTask();
 });
 </script>
 
@@ -347,6 +427,16 @@ onLoad((options) => {
   font-size: 24rpx;
   line-height: 1.55;
 }
+.plan-card {
+  margin-top: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+.plan-info { display: flex; flex-direction: column; gap: 8rpx; color: rgba(45, 62, 80, 0.68); font-size: 23rpx; }
+.plan-edit-btn { width: 150rpx; height: 66rpx; line-height: 66rpx; font-size: 22rpx; }
+.date-picker { height: 82rpx; line-height: 82rpx; padding: 0 20rpx; }
 
 .small {
   font-size: 22rpx;

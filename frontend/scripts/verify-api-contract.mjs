@@ -43,12 +43,18 @@ assert.deepEqual(endpoints.auth.phoneLogin("18800001111", "123456"), {
   data: { phone: "18800001111", verifyCode: "123456" },
 });
 assert.deepEqual(endpoints.dashboard.stats, { method: "GET", path: "/dashboard/stats" });
-assert.deepEqual(endpoints.tasks.list, { method: "GET", path: "/tasks" });
+assert.deepEqual(endpoints.tasks.list({ status: "IN_PROGRESS" }), {
+  method: "GET", path: "/tasks", data: { status: "IN_PROGRESS" },
+});
+assert.deepEqual(endpoints.tasks.detail(101), { method: "GET", path: "/tasks/101" });
+assert.deepEqual(endpoints.tasks.update(101, { title: "新标题" }), {
+  method: "PUT", path: "/tasks/101", data: { title: "新标题" },
+});
 assert.deepEqual(endpoints.tasks.subtasks(101), { method: "GET", path: "/tasks/101/subtasks" });
-assert.deepEqual(endpoints.tasks.deconstruct("学习 Spring Boot", "学习"), {
+assert.deepEqual(endpoints.tasks.deconstruct("学习 Spring Boot", "学习", "2026-10-11", "2026-10-31", 15), {
   method: "POST",
   path: "/tasks/deconstruct",
-  data: { title: "学习 Spring Boot", category: "学习" },
+  data: { title: "学习 Spring Boot", category: "学习", startDate: "2026-10-11", endDate: "2026-10-31", targetDays: 15 },
 });
 assert.deepEqual(endpoints.tasks.completeSubtask(7), {
   method: "PUT",

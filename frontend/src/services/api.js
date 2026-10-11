@@ -27,16 +27,24 @@ export function updateMood(anxietyLevel) {
   return request({ ...endpoints.feedback.mood(anxietyLevel) });
 }
 
-export function getTasks() {
-  return request({ ...endpoints.tasks.list });
+export function getTasks(filters = {}) {
+  return request({ ...endpoints.tasks.list(filters) });
+}
+
+export function getTaskDetail(taskId) {
+  return request({ ...endpoints.tasks.detail(taskId) });
+}
+
+export function updateTask(taskId, data) {
+  return request({ ...endpoints.tasks.update(taskId, data) });
 }
 
 export function getSubtasks(taskId) {
   return request({ ...endpoints.tasks.subtasks(taskId) });
 }
 
-export function createTaskByAI(title, category) {
-  return request({ ...endpoints.tasks.deconstruct(title, category) });
+export function createTaskByAI(title, category, startDate, endDate, targetDays) {
+  return request({ ...endpoints.tasks.deconstruct(title, category, startDate, endDate, targetDays) });
 }
 
 export function createTaskManually(data) {

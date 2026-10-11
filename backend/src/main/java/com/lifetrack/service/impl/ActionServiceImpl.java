@@ -5,6 +5,7 @@ import com.lifetrack.dto.*;
 import com.lifetrack.entity.ActionLog;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
+import com.lifetrack.entity.PlanStatus;
 import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
@@ -41,7 +42,7 @@ public class ActionServiceImpl implements ActionService {
         log.info("User {} is syncing action: {}", userId, request.getRawInput());
 
         // 1. 获取用户所有进行中的主任务及其子任务
-        List<Task> activeTasks = taskRepository.findByUserIdAndStatus(userId, 0);
+        List<Task> activeTasks = taskRepository.findByUserIdAndStatus(userId, PlanStatus.IN_PROGRESS);
         if (activeTasks.isEmpty()) {
             throw new BusinessException(400, "请先创建任务再进行同步");
         }

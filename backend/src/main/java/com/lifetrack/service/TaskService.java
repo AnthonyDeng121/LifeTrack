@@ -6,8 +6,11 @@ import com.lifetrack.dto.SubTaskUpdateRequest;
 import com.lifetrack.dto.TaskDeconstructRequest;
 import com.lifetrack.dto.TaskDeconstructResponse;
 import com.lifetrack.dto.TaskListResponse;
+import com.lifetrack.dto.TaskDetailResponse;
+import com.lifetrack.dto.TaskUpdateRequest;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
+import com.lifetrack.entity.PlanStatus;
 import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
@@ -21,10 +24,15 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.time.ZoneId;
 
 @Service
 @RequiredArgsConstructor
 public class TaskService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
@@ -37,13 +45,17 @@ public class TaskService {
     @Transactional
     public TaskDeconstructResponse createManualTask(com.lifetrack.dto.ManualTaskCreateRequest request) {
         Long userId = UserContext.getUserId();
+        validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         
         // 1. 创建主任务
         Task task = Task.builder()
                 .userId(userId)
                 .title(request.getTitle())
                 .category(Task.Category.valueOf(request.getCategory()))
-                .status(0)
+                .status(initialStatus(request.getStartDate()))
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .targetDays(request.getTargetDays())
                 .totalProgress(BigDecimal.ZERO)
                 .aiSuggestion("手动创建的任务，请按计划执行。")
                 .build();
@@ -92,21 +104,85 @@ public class TaskService {
     /**
      * 获取当前用户所有进行中的任务列表
      */
-    public List<TaskListResponse> getTaskList() {
+    @Transactional
+    public List<TaskListResponse> getTaskList(String statusValue, LocalDate startDate, LocalDate endDate) {
         // 1. 从上下文获取当前登录用户 ID
         Long userId = UserContext.getUserId();
 
-        // 2. 查询该用户下所有进行中的任务 (status = 0)
-        List<Task> tasks = taskRepository.findByUserIdAndStatus(userId, 0);
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new BusinessException(400, "筛选开始日期不能晚于结束日期");
+        }
+        PlanStatus requestedStatus = PlanStatus.fromValue(statusValue);
+        List<Task> tasks = taskRepository.findByUserId(userId);
+        tasks.forEach(this::normalizeLegacyPlan);
+        taskRepository.saveAll(tasks);
 
         // 3. 转换为 DTO 并处理进度数值 (乘以 100)
-        return tasks.stream().map(task -> TaskListResponse.builder()
+        return tasks.stream()
+                .filter(task -> requestedStatus == null || task.getStatus() == requestedStatus)
+                .filter(task -> startDate == null || !task.getEndDate().isBefore(startDate))
+                .filter(task -> endDate == null || !task.getStartDate().isAfter(endDate))
+                .map(task -> TaskListResponse.builder()
                         .id(task.getId())
                         .title(task.getTitle())
                         .category(task.getCategory().name())
                         .totalProgress(task.getTotalProgress().multiply(new BigDecimal("100")))
+                        .startDate(task.getStartDate())
+                        .endDate(task.getEndDate())
+                        .targetDays(task.getTargetDays())
+                        .status(task.getStatus().name())
+                        .statusDescription(task.getStatus().getDescription())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public TaskDetailResponse getTaskDetail(Long taskId) {
+        Task task = getOwnedTask(taskId);
+        normalizeLegacyPlan(task);
+        taskRepository.save(task);
+        return toDetailResponse(task);
+    }
+
+    @Transactional
+    public TaskDetailResponse updateTask(Long taskId, TaskUpdateRequest request) {
+        Task task = getOwnedTask(taskId);
+        normalizeLegacyPlan(task);
+
+        if (request.getTitle() != null) {
+            if (request.getTitle().isBlank()) {
+                throw new BusinessException(400, "计划标题不能为空");
+            }
+            task.setTitle(request.getTitle().trim());
+        }
+        if (request.getCategory() != null) {
+            try {
+                task.setCategory(Task.Category.valueOf(request.getCategory()));
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(400, "非法的计划分类: " + request.getCategory());
+            }
+        }
+
+        LocalDate nextStart = request.getStartDate() != null ? request.getStartDate() : task.getStartDate();
+        LocalDate nextEnd = request.getEndDate() != null ? request.getEndDate() : task.getEndDate();
+        Integer nextTargetDays = request.getTargetDays() != null ? request.getTargetDays() : task.getTargetDays();
+        validatePlanPeriod(nextStart, nextEnd, nextTargetDays);
+        task.setStartDate(nextStart);
+        task.setEndDate(nextEnd);
+        task.setTargetDays(nextTargetDays);
+
+        PlanStatus targetStatus = PlanStatus.fromValue(request.getStatus());
+        if (targetStatus != null && !task.getStatus().canTransitionTo(targetStatus)) {
+            throw new BusinessException(400, "计划状态不能从" + task.getStatus().getDescription()
+                    + "变更为" + targetStatus.getDescription());
+        }
+        if (targetStatus != null) {
+            task.setStatus(targetStatus);
+        } else {
+            refreshStatusByDate(task);
+        }
+
+        return toDetailResponse(taskRepository.save(task));
     }
 
     /**
@@ -138,6 +214,7 @@ public class TaskService {
 
     @Transactional
     public TaskDeconstructResponse deconstructTask(TaskDeconstructRequest request) {
+        validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         // 1. 调用 AI 服务获取拆解结果
         TaskDeconstructResponse.SubTaskDTO[] subTaskDTOs = aiService.deconstructTask(request.getTitle());
         
@@ -151,7 +228,10 @@ public class TaskService {
                 .userId(userId)
                 .title(request.getTitle())
                 .category(Task.Category.valueOf(request.getCategory()))
-                .status(0)
+                .status(initialStatus(request.getStartDate()))
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .targetDays(request.getTargetDays())
                 .totalProgress(BigDecimal.ZERO)
                 .aiSuggestion(aiSuggestion)
                 .build();
@@ -360,9 +440,9 @@ public class TaskService {
             task.setTotalProgress(totalProgress);
             // 如果进度达到 1.0，自动标记主任务为已完成 (可选逻辑，按需添加)
             if (totalProgress.compareTo(BigDecimal.ONE) >= 0) {
-                task.setStatus(1);
+                task.setStatus(PlanStatus.COMPLETED);
             } else {
-                task.setStatus(0);
+                refreshStatusByDate(task);
             }
             taskRepository.save(task);
         }
@@ -391,5 +471,76 @@ public class TaskService {
 
         // 4. 删除主任务
         taskRepository.delete(task);
+    }
+
+    private Task getOwnedTask(Long taskId) {
+        Long userId = UserContext.getUserId();
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new BusinessException(404, "学习计划不存在"));
+        if (!task.getUserId().equals(userId)) {
+            throw new BusinessException(403, "无权访问该学习计划");
+        }
+        return task;
+    }
+
+    private void validatePlanPeriod(LocalDate startDate, LocalDate endDate, Integer targetDays) {
+        if (startDate == null || endDate == null) {
+            throw new BusinessException(400, "计划开始日期和结束日期不能为空");
+        }
+        if (startDate.isAfter(endDate)) {
+            throw new BusinessException(400, "计划开始日期不能晚于结束日期");
+        }
+        long periodDays = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        if (targetDays == null || targetDays < 1 || targetDays > periodDays) {
+            throw new BusinessException(400, "目标打卡天数必须在1到计划周期天数之间");
+        }
+    }
+
+    private PlanStatus initialStatus(LocalDate startDate) {
+        return startDate.isAfter(today()) ? PlanStatus.NOT_STARTED : PlanStatus.IN_PROGRESS;
+    }
+
+    private void normalizeLegacyPlan(Task task) {
+        LocalDate fallbackStart = task.getCreatedAt() == null
+                ? today()
+                : task.getCreatedAt().toLocalDate();
+        if (task.getStartDate() == null) task.setStartDate(fallbackStart);
+        if (task.getEndDate() == null) task.setEndDate(task.getStartDate().plusDays(29));
+        if (task.getTargetDays() == null) task.setTargetDays(30);
+        if (task.getStatus() == null) task.setStatus(PlanStatus.IN_PROGRESS);
+        refreshStatusByDate(task);
+    }
+
+    private void refreshStatusByDate(Task task) {
+        if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) return;
+        LocalDate businessToday = today();
+        if (task.getEndDate().isBefore(businessToday)) {
+            task.setStatus(PlanStatus.EXPIRED);
+        } else if (task.getStartDate().isAfter(businessToday)) {
+            task.setStatus(PlanStatus.NOT_STARTED);
+        } else {
+            task.setStatus(PlanStatus.IN_PROGRESS);
+        }
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(BUSINESS_ZONE);
+    }
+
+    private TaskDetailResponse toDetailResponse(Task task) {
+        return TaskDetailResponse.builder()
+                .id(task.getId())
+                .title(task.getTitle())
+                .category(task.getCategory().name())
+                .startDate(task.getStartDate())
+                .endDate(task.getEndDate())
+                .targetDays(task.getTargetDays())
+                .status(task.getStatus().name())
+                .statusDescription(task.getStatus().getDescription())
+                .totalProgress(task.getTotalProgress().multiply(new BigDecimal("100")))
+                .aiSuggestion(task.getAiSuggestion())
+                .createdAt(task.getCreatedAt())
+                .updatedAt(task.getUpdatedAt())
+                .build();
     }
 }

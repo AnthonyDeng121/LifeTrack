@@ -20,6 +20,15 @@
           {{ item }}
         </text>
       </view>
+      <view class="category-row status-row">
+        <text
+          v-for="item in statusOptions"
+          :key="item.value"
+          class="pill category-pill"
+          :class="{ active: activeStatus === item.value }"
+          @tap="selectStatus(item.value)"
+        >{{ item.label }}</text>
+      </view>
 
       <view class="section-head">
         <text class="section-title">我的任务</text>
@@ -46,8 +55,9 @@
             <view>
               <text class="task-title">{{ task.title }}</text>
               <text class="text-muted">{{ task.category }} · {{ task.updatedAt || "刚刚更新" }}</text>
+              <text class="text-muted">{{ task.startDate }} 至 {{ task.endDate }} · 目标 {{ task.targetDays }} 天</text>
             </view>
-            <text class="pill">{{ task.subtaskCount || 0 }} 步</text>
+            <text class="pill">{{ task.statusDescription || "进行中" }}</text>
           </view>
           <view class="task-bottom">
             <view class="progress-track">
@@ -98,6 +108,25 @@
             maxlength="100"
             :placeholder="creatorMode === 'ai' ? '例如：系统学习 Spring Boot' : '例如：完成数据库课设答辩'"
           />
+        </view>
+
+        <view class="period-grid">
+          <view class="form-block">
+            <text class="field-label">开始日期</text>
+            <picker mode="date" :value="newStartDate" @change="newStartDate = $event.detail.value">
+              <view class="glass-input date-picker">{{ newStartDate }}</view>
+            </picker>
+          </view>
+          <view class="form-block">
+            <text class="field-label">结束日期</text>
+            <picker mode="date" :value="newEndDate" @change="newEndDate = $event.detail.value">
+              <view class="glass-input date-picker">{{ newEndDate }}</view>
+            </picker>
+          </view>
+        </view>
+        <view class="form-block">
+          <text class="field-label">目标打卡天数</text>
+          <input v-model="newTargetDays" type="number" class="glass-input creator-input" placeholder="例如：20" />
         </view>
 
         <view class="form-block">
@@ -176,6 +205,15 @@ import { TASK_CATEGORIES } from "../../services/config";
 const categories = ["全部", ...TASK_CATEGORIES];
 const selectableCategories = TASK_CATEGORIES;
 const activeCategory = ref("全部");
+const activeStatus = ref("");
+const statusOptions = [
+  { value: "", label: "全部状态" },
+  { value: "NOT_STARTED", label: "未开始" },
+  { value: "IN_PROGRESS", label: "进行中" },
+  { value: "COMPLETED", label: "已完成" },
+  { value: "CANCELLED", label: "已取消" },
+  { value: "EXPIRED", label: "已过期" },
+];
 const tasks = ref([]);
 const loading = ref(false);
 const showCreator = ref(false);
@@ -183,6 +221,18 @@ const creatorMode = ref("ai");
 const creating = ref(false);
 const newTitle = ref("");
 const newCategory = ref("学习");
+const today = new Date();
+const formatDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const defaultEnd = new Date(today);
+defaultEnd.setDate(defaultEnd.getDate() + 29);
+const newStartDate = ref(formatDate(today));
+const newEndDate = ref(formatDate(defaultEnd));
+const newTargetDays = ref("20");
 const aiResult = ref(null);
 const manualSubtasks = ref([{ content: "", weight: "" }]);
 
@@ -202,13 +252,18 @@ function clampProgress(value) {
 async function loadTasks() {
   loading.value = true;
   try {
-    const data = await getTasks();
+    const data = await getTasks(activeStatus.value ? { status: activeStatus.value } : {});
     tasks.value = Array.isArray(data) ? data : [];
   } catch (error) {
     console.warn("load tasks failed", error);
   } finally {
     loading.value = false;
   }
+}
+
+function selectStatus(status) {
+  activeStatus.value = status;
+  loadTasks();
 }
 
 function openTask(task) {
@@ -265,12 +320,22 @@ async function createTask() {
     uni.showToast({ title: "请选择后端支持的分类", icon: "none" });
     return;
   }
+  const periodDays = Math.floor((new Date(newEndDate.value) - new Date(newStartDate.value)) / 86400000) + 1;
+  const targetDays = Number(newTargetDays.value);
+  if (periodDays < 1) {
+    uni.showToast({ title: "开始日期不能晚于结束日期", icon: "none" });
+    return;
+  }
+  if (!Number.isInteger(targetDays) || targetDays < 1 || targetDays > periodDays) {
+    uni.showToast({ title: `目标天数应为1-${periodDays}天`, icon: "none" });
+    return;
+  }
 
   creating.value = true;
   try {
     let result;
     if (creatorMode.value === "ai") {
-      result = await createTaskByAI(title, newCategory.value);
+      result = await createTaskByAI(title, newCategory.value, newStartDate.value, newEndDate.value, targetDays);
     } else {
       // 校验手动输入的子任务
       const validSubtasks = manualSubtasks.value.filter(st => st.content.trim());
@@ -283,6 +348,9 @@ async function createTask() {
       const data = {
         title,
         category: newCategory.value,
+        startDate: newStartDate.value,
+        endDate: newEndDate.value,
+        targetDays,
         subTasks: validSubtasks.map(st => ({
           content: st.content.trim(),
           weight: st.weight ? Number(st.weight) / 100 : null // 转换为 0-1 的小数
@@ -338,6 +406,21 @@ onMounted(loadTasks);
   display: flex;
   gap: 14rpx;
   flex-wrap: wrap;
+}
+.status-row {
+  margin-top: 16rpx;
+}
+
+.period-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+}
+
+.date-picker {
+  height: 82rpx;
+  line-height: 82rpx;
+  padding: 0 20rpx;
 }
 
 .category-pill.active,

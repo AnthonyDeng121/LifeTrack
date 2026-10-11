@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Data
 @Builder
@@ -24,4 +25,10 @@ public class TaskListResponse {
 
     @Schema(description = "任务分类", example = "学习")
     private String category;
+
+    private LocalDate startDate;
+    private LocalDate endDate;
+    private Integer targetDays;
+    private String status;
+    private String statusDescription;
 }

@@ -6,6 +6,9 @@ import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
+import java.time.LocalDate;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 
 @Data
 @Schema(description = "手动创建任务请求")
@@ -17,6 +20,16 @@ public class ManualTaskCreateRequest {
     @NotBlank(message = "任务分类不能为空")
     @Schema(description = "任务分类", example = "学习")
     private String category;
+
+    @NotNull(message = "计划开始日期不能为空")
+    private LocalDate startDate;
+
+    @NotNull(message = "计划结束日期不能为空")
+    private LocalDate endDate;
+
+    @NotNull(message = "目标打卡天数不能为空")
+    @Min(value = 1, message = "目标打卡天数至少为1天")
+    private Integer targetDays;
 
     @NotEmpty(message = "子任务列表不能为空")
     @Schema(description = "自定义子任务列表")
