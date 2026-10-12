@@ -39,6 +39,11 @@
         <text>正在同步后端任务...</text>
       </view>
 
+      <view v-else-if="loadError" class="glass-card empty-card error-state">
+        <text>{{ loadError }}</text>
+        <button class="glass-button retry-btn" @tap="loadTasks">重新加载</button>
+      </view>
+
       <view v-else-if="filteredTasks.length === 0" class="glass-card empty-card">
         <text>还没有这个分类的任务</text>
         <text class="text-muted">点右上角新建任务，可以 AI 拆解，也可以手动填写。</text>
@@ -217,6 +222,7 @@ const statusOptions = [
 ];
 const tasks = ref([]);
 const loading = ref(false);
+const loadError = ref("");
 const showCreator = ref(false);
 const creatorMode = ref("ai");
 const creating = ref(false);
@@ -252,11 +258,14 @@ function clampProgress(value) {
 
 async function loadTasks() {
   loading.value = true;
+  loadError.value = "";
   try {
     const data = await getTasks(activeStatus.value ? { status: activeStatus.value } : {});
     tasks.value = Array.isArray(data) ? data : [];
   } catch (error) {
     console.warn("load tasks failed", error);
+    tasks.value = [];
+    loadError.value = "计划加载失败，请检查后端服务后重试";
   } finally {
     loading.value = false;
   }
@@ -364,6 +373,11 @@ async function createTask() {
     activeCategory.value = "全部";
   } catch (error) {
     console.warn("create task failed", error);
+    if (creatorMode.value === "ai") {
+      creatorMode.value = "manual";
+      aiResult.value = null;
+      uni.showToast({ title: "AI 暂不可用，已切换为手动创建", icon: "none", duration: 2500 });
+    }
   } finally {
     creating.value = false;
   }
@@ -379,6 +393,8 @@ onMounted(loadTasks);
   justify-content: space-between;
   gap: 24rpx;
 }
+.error-state { flex-direction: column; gap: 18rpx; color: #a33b3b; text-align: center; }
+.retry-btn { width: 200rpx; height: 68rpx; line-height: 68rpx; font-size: 23rpx; }
 
 .top-row view {
   flex: 1;

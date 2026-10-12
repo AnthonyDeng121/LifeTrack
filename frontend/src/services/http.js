@@ -69,7 +69,7 @@ function getRuntimeHost() {
   return "";
 }
 
-export function request({ method = "GET", path, data, mock, showError = true }) {
+export function request({ method = "GET", path, data, showError = true }) {
   const token = getToken();
   return new Promise((resolve, reject) => {
     uni.request({

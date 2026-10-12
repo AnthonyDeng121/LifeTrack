@@ -9,6 +9,13 @@
         <button class="glass-button record-btn" @tap="goRecord">记录</button>
       </view>
 
+      <view v-if="loading" class="glass-card page-state"><text>正在加载真实统计...</text></view>
+      <view v-else-if="pageError" class="glass-card page-state error-state">
+        <text>{{ pageError }}</text>
+        <button class="glass-button retry-btn" @tap="loadPage">重新加载</button>
+      </view>
+      <template v-else>
+
       <view class="hero-card glass-card">
         <view class="hero-copy">
           <text class="pill">学习计划完成率</text>
@@ -40,6 +47,7 @@
         <text class="text-muted small">真实持久化记录</text>
       </view>
       <view class="glass-card trend-card">
+        <view v-if="stats.checkInTrend.length === 0" class="inline-empty">暂无最近七天打卡数据</view>
         <view class="trend-chart">
           <view v-for="item in stats.checkInTrend" :key="item.date" class="trend-column">
             <view class="trend-bar-wrap">
@@ -56,6 +64,7 @@
         <text class="text-muted small">AI 自动归类</text>
       </view>
       <view class="glass-card distribution-card">
+        <view v-if="stats.timeDistribution.length === 0" class="inline-empty">今天还没有可统计的学习时长</view>
         <view
           v-for="item in stats.timeDistribution"
           :key="item.name"
@@ -76,19 +85,24 @@
         <text class="section-title">AI 反馈</text>
         <text class="text-muted small">来自 /feedback/report</text>
       </view>
-      <view class="glass-card feedback-card">
+      <view v-if="report" class="glass-card feedback-card">
         <text class="feedback-title">{{ report.title }}</text>
         <text class="feedback-summary">{{ report.aiSummary }}</text>
         <view class="tag-row">
           <text v-for="tag in report.achievementTags" :key="tag" class="pill">{{ tag }}</text>
         </view>
       </view>
+      <view v-else class="glass-card page-state">
+        <text>{{ reportError || "暂无 AI 反馈" }}</text>
+        <text class="text-muted small">这不会影响学习计划、打卡和真实统计。</text>
+      </view>
 
       <view class="section-head">
         <text class="section-title">重点任务</text>
         <text class="link" @tap="goTasks">全部</text>
       </view>
-      <view class="task-list">
+      <view v-if="featuredTasks.length === 0" class="glass-card page-state"><text>暂无进行中的学习计划</text></view>
+      <view v-else class="task-list">
         <view
           v-for="task in featuredTasks"
           :key="task.id"
@@ -107,6 +121,7 @@
           </view>
         </view>
       </view>
+      </template>
 
       <view class="tabbar-space"></view>
     </view>
@@ -132,13 +147,12 @@ const stats = ref({
   currentCheckInStreak: 0,
   longestCheckInStreak: 0,
 });
-const report = ref({
-  title: "等待你的第一条记录",
-  aiSummary: "完成一次行为记录后，这里会生成更贴近你的成长反馈。",
-  achievementTags: ["准备开始"],
-});
+const report = ref(null);
 const tasks = ref([]);
 const user = ref(getUser());
+const loading = ref(false);
+const pageError = ref("");
+const reportError = ref("");
 
 const username = computed(() => user.value.username || "同学");
 const todayLabel = computed(() => {
@@ -174,18 +188,25 @@ function openTask(task) {
 }
 
 async function loadPage() {
-  try {
-    const [nextStats, nextReport, nextTasks] = await Promise.all([
+  loading.value = true;
+  pageError.value = "";
+  reportError.value = "";
+  const [statsResult, reportResult, tasksResult] = await Promise.allSettled([
       getDashboardStats(),
-      getFeedbackReport(),
+      getFeedbackReport(false),
       getTasks({ status: "IN_PROGRESS" }),
-    ]);
-    stats.value = nextStats || stats.value;
-    report.value = nextReport || report.value;
-    tasks.value = Array.isArray(nextTasks) ? nextTasks : [];
-  } catch (error) {
-    console.warn("load dashboard failed", error);
+  ]);
+  if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
+  if (tasksResult.status === "fulfilled") tasks.value = Array.isArray(tasksResult.value) ? tasksResult.value : [];
+  if (statsResult.status === "rejected" || tasksResult.status === "rejected") {
+    pageError.value = "真实统计加载失败，请检查后端服务后重试";
   }
+  if (reportResult.status === "fulfilled") report.value = reportResult.value;
+  else {
+    report.value = null;
+    reportError.value = "AI 服务暂不可用";
+  }
+  loading.value = false;
 }
 
 onShow(loadPage);
@@ -198,6 +219,10 @@ onShow(loadPage);
   justify-content: space-between;
   gap: 24rpx;
 }
+.page-state { margin-top: 24rpx; min-height: 150rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18rpx; text-align: center; }
+.error-state { color: #a33b3b; }
+.retry-btn { width: 200rpx; height: 68rpx; line-height: 68rpx; font-size: 23rpx; }
+.inline-empty { min-height: 120rpx; display: flex; align-items: center; justify-content: center; color: rgba(45, 62, 80, 0.58); font-size: 24rpx; }
 
 .top-row view {
   display: flex;

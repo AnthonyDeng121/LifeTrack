@@ -9,6 +9,12 @@
         </view>
       </view>
 
+      <view v-if="detailLoading" class="glass-card empty-card state-card"><text>正在加载计划详情...</text></view>
+      <view v-else-if="detailError" class="glass-card empty-card state-card error-state">
+        <text>{{ detailError }}</text><button class="glass-button retry-btn" @tap="loadTask">重新加载</button>
+      </view>
+      <template v-if="!detailLoading && !detailError">
+
       <view class="glass-card progress-card">
         <view class="progress-circle">
           <text>{{ formatProgress(task.totalProgress) }}%</text>
@@ -35,11 +41,15 @@
         <text class="section-title">打卡概览</text>
         <text class="text-muted small">真实打卡记录统计</text>
       </view>
-      <view class="checkin-metrics">
+      <view v-if="!checkInLoading && !checkInError" class="checkin-metrics">
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
         <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>完成率</text></view>
+      </view>
+      <view v-if="checkInLoading" class="glass-card empty-card"><text>正在加载打卡数据...</text></view>
+      <view v-else-if="checkInError" class="glass-card empty-card state-card error-state">
+        <text>{{ checkInError }}</text><button class="glass-button retry-btn" @tap="loadCheckIns">重新加载</button>
       </view>
 
       <view class="glass-card checkin-card">
@@ -61,7 +71,7 @@
         <text class="section-title">最近七天</text>
         <text class="text-muted small">每日打卡与学习时长</text>
       </view>
-      <view class="glass-card seven-day-card">
+      <view v-if="!checkInLoading && !checkInError" class="glass-card seven-day-card">
         <view v-for="day in checkInStats.recentSevenDays" :key="day.date" class="day-item" :class="{ checked: day.checkedIn }">
           <text>{{ shortDate(day.date) }}</text>
           <view class="day-dot">{{ day.checkedIn ? "✓" : "" }}</view>
@@ -73,8 +83,8 @@
         <text class="section-title">打卡历史</text>
         <text class="text-muted small">按日期倒序</text>
       </view>
-      <view v-if="checkInHistory.length === 0" class="glass-card empty-card"><text>还没有正式打卡记录</text></view>
-      <view v-else class="checkin-history">
+      <view v-if="!checkInLoading && !checkInError && checkInHistory.length === 0" class="glass-card empty-card"><text>还没有正式打卡记录</text></view>
+      <view v-else-if="!checkInLoading && !checkInError" class="checkin-history">
         <view v-for="record in checkInHistory" :key="record.id" class="glass-card history-item">
           <view class="history-head"><text>{{ record.checkInDate }}</text><text class="pill">{{ record.durationMinutes }} 分钟</text></view>
           <text class="history-content">{{ record.content }}</text>
@@ -107,6 +117,11 @@
         <text>正在加载子任务...</text>
       </view>
 
+      <view v-else-if="subtaskError" class="glass-card empty-card state-card error-state">
+        <text>{{ subtaskError }}</text><button class="glass-button retry-btn" @tap="loadSubtasks">重新加载</button>
+      </view>
+
+      <view v-else-if="subtasks.length === 0" class="glass-card empty-card"><text>该计划还没有拆解步骤</text></view>
       <view v-else class="subtask-list">
         <view
           v-for="item in subtasks"
@@ -174,6 +189,7 @@
 
       <button class="glass-button record-action" @tap="goRecord">用行为记录推进任务</button>
       <button class="glass-button delete-task-btn" @tap="handleDeleteTask">放弃这个目标</button>
+      </template>
       <view class="tabbar-space"></view>
     </view>
   </view>
@@ -184,7 +200,7 @@ import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, createCheckIn, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
-import { validateCheckInForm } from "../../services/planRules";
+import { validateCheckInForm, validatePlanPeriod } from "../../services/planRules";
 
 const task = ref({
   id: "",
@@ -197,6 +213,8 @@ const task = ref({
   status: "IN_PROGRESS",
   statusDescription: "进行中",
 });
+const detailLoading = ref(false);
+const detailError = ref("");
 const categories = TASK_CATEGORIES;
 const statusOptions = [
   { value: "NOT_STARTED", label: "未开始" }, { value: "IN_PROGRESS", label: "进行中" },
@@ -222,10 +240,13 @@ const checkInDuration = ref("");
 const checkInMood = ref("");
 const checkingIn = ref(false);
 const checkInHistory = ref([]);
+const checkInLoading = ref(false);
+const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
 const canCheckIn = computed(() => task.value.status === "IN_PROGRESS");
 const subtasks = ref([]);
 const loading = ref(false);
+const subtaskError = ref("");
 const showEditDialog = ref(false);
 const saving = ref(false);
 const editingSubtask = ref({
@@ -265,10 +286,15 @@ function goRecord() {
 
 async function loadTask() {
   if (!task.value.id) return;
+  detailLoading.value = true;
+  detailError.value = "";
   try {
     task.value = await getTaskDetail(task.value.id);
   } catch (error) {
     console.warn("load task detail failed", error);
+    detailError.value = "计划详情加载失败";
+  } finally {
+    detailLoading.value = false;
   }
 }
 
@@ -280,6 +306,8 @@ function shortDate(date) {
 
 async function loadCheckIns() {
   if (!task.value.id) return;
+  checkInLoading.value = true;
+  checkInError.value = "";
   try {
     const [history, stats] = await Promise.all([
       getCheckInHistory({ taskId: task.value.id }),
@@ -289,6 +317,10 @@ async function loadCheckIns() {
     checkInStats.value = stats || checkInStats.value;
   } catch (error) {
     console.warn("load check-ins failed", error);
+    checkInHistory.value = [];
+    checkInError.value = "打卡数据加载失败";
+  } finally {
+    checkInLoading.value = false;
   }
 }
 
@@ -334,6 +366,8 @@ function closePlanEdit() { if (!savingPlan.value) showPlanEdit.value = false; }
 
 async function savePlan() {
   if (!planForm.value.title.trim()) return uni.showToast({ title: "计划名称不能为空", icon: "none" });
+  const periodError = validatePlanPeriod(planForm.value.startDate, planForm.value.endDate, Number(planForm.value.targetDays));
+  if (periodError) return uni.showToast({ title: periodError, icon: "none" });
   savingPlan.value = true;
   try {
     task.value = await updateTask(task.value.id, { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) });
@@ -348,11 +382,14 @@ async function savePlan() {
 async function loadSubtasks() {
   if (!task.value.id) return;
   loading.value = true;
+  subtaskError.value = "";
   try {
     const data = await getSubtasks(task.value.id);
     subtasks.value = Array.isArray(data) ? data : [];
   } catch (error) {
     console.warn("load subtasks failed", error);
+    subtasks.value = [];
+    subtaskError.value = "计划步骤加载失败";
   } finally {
     loading.value = false;
   }
@@ -485,6 +522,9 @@ onLoad((options) => {
   align-items: center;
   gap: 22rpx;
 }
+.state-card { margin-top: 20rpx; flex-direction: column; gap: 18rpx; text-align: center; }
+.error-state { color: #a33b3b; }
+.retry-btn { width: 200rpx; height: 68rpx; line-height: 68rpx; font-size: 23rpx; }
 
 .detail-top view {
   flex: 1;

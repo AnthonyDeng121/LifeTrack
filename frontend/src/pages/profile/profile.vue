@@ -12,6 +12,13 @@
         </view>
       </view>
 
+      <view v-if="loading" class="glass-card page-state"><text>正在加载个人数据...</text></view>
+      <view v-else-if="pageError" class="glass-card page-state error-state">
+        <text>{{ pageError }}</text>
+        <button class="glass-button retry-btn" @tap="loadProfile">重新加载</button>
+      </view>
+      <template v-else>
+
       <view class="metric-grid">
         <view class="metric-card glass-card">
           <text>{{ formatProgress(stats.todayTotalProgress) }}%</text>
@@ -22,7 +29,7 @@
           <text>趋势天数</text>
         </view>
         <view class="metric-card glass-card">
-          <text>{{ report.achievementTags.length || 0 }}</text>
+          <text>{{ report && report.achievementTags ? report.achievementTags.length : 0 }}</text>
           <text>成就标签</text>
         </view>
       </view>
@@ -31,7 +38,7 @@
         <text class="section-title">本周画像</text>
         <text class="text-muted small">来自 /feedback/report</text>
       </view>
-      <view class="glass-card report-card">
+      <view v-if="report" class="glass-card report-card">
         <text class="report-title">{{ report.title }}</text>
         <text class="report-copy">{{ report.aiSummary }}</text>
         <view class="tag-row">
@@ -41,6 +48,10 @@
           <text>下步建议</text>
           <text>{{ report.suggestion }}</text>
         </view>
+      </view>
+      <view v-else class="glass-card page-state">
+        <text>{{ reportError || "暂无 AI 周报" }}</text>
+        <text class="text-muted small">基础计划与打卡功能仍可正常使用。</text>
       </view>
 
       <view class="section-head">
@@ -62,6 +73,7 @@
       </view>
 
       <button class="glass-button logout-btn" @tap="handleLogout">退出登录</button>
+      </template>
 
       <view class="tabbar-space"></view>
     </view>
@@ -80,14 +92,12 @@ const stats = ref({
   todayTotalProgress: 0,
   weeklyTrend: [],
 });
-const report = ref({
-  title: "还没有生成画像",
-  aiSummary: "多记录几次行为后，这里会更像你的个人成长报告。",
-  achievementTags: ["成长中"],
-  suggestion: "先从今天的一条记录开始。",
-});
+const report = ref(null);
 const apiBase = ref(getApiBaseUrl());
 const moodLevel = ref(1);
+const loading = ref(false);
+const pageError = ref("");
+const reportError = ref("");
 
 const username = computed(() => user.value.username || "林同学");
 const avatarText = computed(() => username.value.slice(0, 1));
@@ -105,13 +115,18 @@ function formatProgress(value) {
 }
 
 async function loadProfile() {
-  try {
-    const [nextStats, nextReport] = await Promise.all([getDashboardStats(), getFeedbackReport()]);
-    stats.value = nextStats || stats.value;
-    report.value = nextReport || report.value;
-  } catch (error) {
-    console.warn("load profile failed", error);
+  loading.value = true;
+  pageError.value = "";
+  reportError.value = "";
+  const [statsResult, reportResult] = await Promise.allSettled([getDashboardStats(), getFeedbackReport(false)]);
+  if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
+  else pageError.value = "个人统计加载失败，请检查后端服务后重试";
+  if (reportResult.status === "fulfilled") report.value = reportResult.value;
+  else {
+    report.value = null;
+    reportError.value = "AI 服务暂不可用";
   }
+  loading.value = false;
 }
 
 async function handleMoodChange(e) {
@@ -139,6 +154,9 @@ onMounted(loadProfile);
   align-items: center;
   gap: 24rpx;
 }
+.page-state { margin-top: 24rpx; min-height: 150rpx; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18rpx; text-align: center; }
+.error-state { color: #a33b3b; }
+.retry-btn { width: 200rpx; height: 68rpx; line-height: 68rpx; font-size: 23rpx; }
 
 .avatar {
   width: 116rpx;

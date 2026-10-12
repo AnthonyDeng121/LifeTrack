@@ -6,6 +6,7 @@ import com.lifetrack.dto.FeedbackReportResponse;
 import com.lifetrack.dto.TaskDeconstructResponse;
 import com.lifetrack.entity.ActionLog;
 import com.lifetrack.entity.SubTask;
+import com.lifetrack.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -55,12 +56,8 @@ public class AIService {
             return dtos;
 
         } catch (Exception e) {
-            log.error("AI拆解失败，使用兜底逻辑", e);
-            return new TaskDeconstructResponse.SubTaskDTO[]{
-                new TaskDeconstructResponse.SubTaskDTO("基础准备与规划", new BigDecimal("0.2")),
-                new TaskDeconstructResponse.SubTaskDTO("核心环节执行", new BigDecimal("0.5")),
-                new TaskDeconstructResponse.SubTaskDTO("成果验收与复盘", new BigDecimal("0.3"))
-            };
+            log.warn("AI 拆解服务不可用，未生成或保存伪造的拆解结果: {}", e.getMessage());
+            throw new BusinessException(503, "AI 拆解服务暂不可用，请切换手动创建计划");
         }
     }
 

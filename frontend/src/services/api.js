@@ -19,8 +19,8 @@ export function getDashboardStats() {
   return request({ ...endpoints.dashboard.stats });
 }
 
-export function getFeedbackReport() {
-  return request({ ...endpoints.feedback.report });
+export function getFeedbackReport(showError = true) {
+  return request({ ...endpoints.feedback.report, showError });
 }
 
 export function updateMood(anxietyLevel) {

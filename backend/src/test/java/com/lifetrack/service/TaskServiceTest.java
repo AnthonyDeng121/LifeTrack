@@ -2,6 +2,7 @@ package com.lifetrack.service;
 
 import com.lifetrack.common.UserContext;
 import com.lifetrack.dto.TaskUpdateRequest;
+import com.lifetrack.dto.ManualTaskCreateRequest;
 import com.lifetrack.entity.PlanStatus;
 import com.lifetrack.entity.Task;
 import com.lifetrack.exception.BusinessException;
@@ -21,11 +22,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
@@ -116,6 +119,31 @@ class TaskServiceTest {
         request.setStatus("COMPLETED");
 
         assertEquals("COMPLETED", taskService.updateTask(1L, request).getStatus());
+    }
+
+    @Test
+    void shouldCreateManualPlanWithoutCallingAiService() {
+        ManualTaskCreateRequest request = new ManualTaskCreateRequest();
+        request.setTitle("手动学习计划");
+        request.setCategory("学习");
+        request.setStartDate(LocalDate.now());
+        request.setEndDate(LocalDate.now().plusDays(6));
+        request.setTargetDays(5);
+        ManualTaskCreateRequest.SubTaskDTO step = new ManualTaskCreateRequest.SubTaskDTO();
+        step.setContent("完成第一章");
+        request.setSubTasks(List.of(step));
+        when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> {
+            Task saved = invocation.getArgument(0);
+            saved.setId(12L);
+            return saved;
+        });
+
+        var response = taskService.createManualTask(request);
+
+        assertEquals(12L, response.getTaskId());
+        assertEquals(1, response.getSubTasks().size());
+        verify(subTaskRepository).saveAll(any());
+        verifyNoInteractions(aiService);
     }
 
     private Task planOwnedByCurrentUser() {

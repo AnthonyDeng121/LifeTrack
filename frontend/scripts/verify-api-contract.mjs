@@ -10,8 +10,7 @@ assert.match(frontendReadme, /Windows/);
 assert.match(frontendReadme, /npm run dev:h5:lan/);
 assert.match(frontendReadme, /10\.0\.2\.2:5173/);
 
-const [
-  {
+const {
     ANDROID_EMULATOR_API_BASE_URL,
     API_BASE_STORAGE_KEY,
     API_BASE_URL,
@@ -19,12 +18,7 @@ const [
     TASK_CATEGORIES,
     endpoints,
     resolveApiBaseUrl,
-  },
-  { mockTasks, mockDashboardStats },
-] = await Promise.all([
-  import("../src/services/config.js"),
-  import("../src/services/mockData.js"),
-]);
+  } = await import("../src/services/config.js");
 
 assert.equal(API_BASE_URL, "http://localhost:8081/api/v1");
 assert.equal(ANDROID_EMULATOR_API_BASE_URL, "http://10.0.2.2:8081/api/v1");
@@ -84,10 +78,5 @@ assert.deepEqual(endpoints.feedback.mood(6), {
   path: "/feedback/mood",
   data: { anxietyLevel: 6 },
 });
-
-assert.ok(mockTasks.every((task) => "id" in task && "title" in task && "totalProgress" in task && "category" in task));
-assert.ok(mockTasks.every((task) => TASK_CATEGORIES.includes(task.category)));
-assert.ok(Array.isArray(mockDashboardStats.weeklyTrend));
-assert.ok(Array.isArray(mockDashboardStats.timeDistribution));
 
 console.log("API contract checks passed.");

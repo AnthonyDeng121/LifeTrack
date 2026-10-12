@@ -210,4 +210,35 @@ button::after {
   font-size: 34rpx;
   line-height: 1;
 }
+
+@media screen and (min-width: 900px) {
+  .safe-area {
+    width: 100%;
+    max-width: 920px;
+    margin: 0 auto;
+  }
+
+  .custom-tabbar {
+    width: 760px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+}
+
+@media screen and (max-width: 360px) {
+  .page-shell {
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+  }
+
+  .glass-card {
+    padding: 24rpx;
+    border-radius: 32rpx;
+  }
+
+  .title-xl {
+    font-size: 42rpx;
+  }
+}
 </style>

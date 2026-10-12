@@ -83,6 +83,10 @@
       <view v-if="historyLoading" class="glass-card empty-card">
         <text>正在读取历史...</text>
       </view>
+      <view v-else-if="historyError" class="glass-card empty-card state-card error-state">
+        <text>{{ historyError }}</text><button class="glass-button retry-btn" @tap="loadData">重新加载</button>
+      </view>
+      <view v-else-if="history.length === 0" class="glass-card empty-card"><text>暂无行为记录</text></view>
       <view v-else class="history-list">
         <view v-for="item in history" :key="item.id" class="glass-card history-card">
           <view class="history-main">
@@ -116,6 +120,7 @@ const syncing = ref(false);
 const syncResult = ref(null);
 const history = ref([]);
 const historyLoading = ref(false);
+const historyError = ref("");
 const anxietyLevel = ref(1);
 
 const moodText = computed(() => {
@@ -171,6 +176,7 @@ async function saveMood() {
 
 async function loadData() {
   historyLoading.value = true;
+  historyError.value = "";
   try {
     const [stats, historyData] = await Promise.all([
       getDashboardStats(),
@@ -185,6 +191,8 @@ async function loadData() {
     history.value = Array.isArray(historyData) ? historyData : historyData && Array.isArray(historyData.list) ? historyData.list : [];
   } catch (error) {
     console.warn("load record data failed", error);
+    history.value = [];
+    historyError.value = "历史记录加载失败，请检查后端服务后重试";
   } finally {
     historyLoading.value = false;
   }
@@ -433,4 +441,7 @@ onShow(loadData);
   align-items: center;
   justify-content: center;
   }
+.state-card { flex-direction: column; gap: 18rpx; text-align: center; }
+.error-state { color: #a33b3b; }
+.retry-btn { width: 200rpx; height: 68rpx; line-height: 68rpx; font-size: 23rpx; }
 </style>

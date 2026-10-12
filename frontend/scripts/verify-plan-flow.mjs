@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { endpoints } from "../src/services/config.js";
 import { getInclusivePeriodDays, validateCheckInForm, validatePlanPeriod } from "../src/services/planRules.js";
 
@@ -29,5 +30,19 @@ assert.deepEqual(endpoints.checkIns.create({ taskId: 101, checkInDate: "2026-10-
 });
 assert.deepEqual(endpoints.checkIns.history({ taskId: 101 }), { method: "GET", path: "/check-ins", data: { taskId: 101 } });
 assert.deepEqual(endpoints.checkIns.stats(101), { method: "GET", path: "/check-ins/tasks/101/stats" });
+
+const [dashboardPage, tasksPage, detailPage, recordPage, profilePage] = await Promise.all([
+  readFile(new URL("../src/pages/dashboard/dashboard.vue", import.meta.url), "utf8"),
+  readFile(new URL("../src/pages/tasks/tasks.vue", import.meta.url), "utf8"),
+  readFile(new URL("../src/pages/task-detail/task-detail.vue", import.meta.url), "utf8"),
+  readFile(new URL("../src/pages/record/record.vue", import.meta.url), "utf8"),
+  readFile(new URL("../src/pages/profile/profile.vue", import.meta.url), "utf8"),
+]);
+assert.match(dashboardPage, /Promise\.allSettled/);
+assert.match(dashboardPage, /AI 服务暂不可用/);
+assert.match(tasksPage, /已切换为手动创建/);
+assert.match(detailPage, /打卡数据加载失败/);
+assert.match(recordPage, /暂无行为记录/);
+assert.match(profilePage, /基础计划与打卡功能仍可正常使用/);
 
 console.log("Plan and check-in flow checks passed.");
