@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: dev
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: LifeTrack
 
@@ -20,11 +20,11 @@ jackson:
 
 # JWT 配置
 jwt:
-  secret: life-track-ai-secret-key-2024-05-23-very-long-key
-  expiration: 86400000 # 24小时
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION:86400000} # 24小时
 
 # AI 配置 (由李想/魏欣岳填充)
 openai:
-  api-key: ${OPENAI_API_KEY:sk-xxx} # 建议通过环境变量注入
-  api-url: https://api.openai.com/v1/chat/completions
-  model: gpt-4o-mini
+  api-key: ${OPENAI_API_KEY:}
+  api-url: ${OPENAI_API_URL:https://api.openai.com/v1/chat/completions}
+  model: ${OPENAI_MODEL:gpt-4o-mini}

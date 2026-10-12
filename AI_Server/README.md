@@ -1,35 +1,32 @@
 # LifeTrack AI Server
 
-这是 LifeTrack 项目的 AI 中转服务，基于 Python Flask 构建。它负责对接大语言模型（GLM-4），处理语义解析、任务拆解、行为匹配等核心 AI 逻辑。
+可选的 Flask AI 中转服务，用于计划拆解、自然语言进度识别、反馈报告和激励文案。基础计划与打卡功能不依赖本服务。
 
-## 🛠 功能
-- **任务拆解**: 将用户目标转化为带权重的子任务。
-- **意图识别**: 判断用户输入是创建目标、记录进度还是日常闲聊。
-- **进度判定**: 分析用户行为描述，自动计算任务贡献度。
-- **情绪反馈**: 根据用户状态生成个性化的激励语和成长报告。
+## 安装与配置
 
-## 🚀 启动指南
-
-### 1. 安装依赖
-确保已安装 Python 3.8+。
-```bash
-# 安装 Flask 和 requests 库
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 pip install flask requests
-```
-
-### 2. 配置文件
-AI 密钥已硬编码在 `ai_server.py` 中（智谱 AI）。如需更换模型或密钥，请修改 `ai_server.py` 开头的配置项。
-
-### 3. 运行服务
-```bash
+$env:ZHIPU_API_KEY = "your_zhipu_api_key"
 python ai_server.py
 ```
-默认运行在 `http://127.0.0.1:5000`。
 
-## 接口说明
-- `POST /ai/deconstruct`: 任务拆解
-- `POST /ai/intent`: 意图识别
-- `POST /ai/progress-judge`: 进度判定
-- `POST /ai/motivation`: 激励文案生成
-- `POST /ai/report`: 周报生成
-- `POST /ai/mood-quote`: 情绪寄语获取
+可选变量：
+
+- `ZHIPU_API_URL`：默认智谱 Chat Completions 地址。
+- `ZHIPU_MODEL`：默认 `glm-4-flash`。
+- `AI_TEMPERATURE`：默认 `0.3`。
+
+真实 API Key 只能通过环境变量提供，不要写入源码、README 或 Git 历史。完整变量示例见根目录 `.env.example`。
+
+服务默认运行在 `http://127.0.0.1:5000`。未设置 `ZHIPU_API_KEY` 时服务可以启动，但模型调用会返回失败，Java 后端会将 AI 功能降级并保持核心业务可用。
+
+## 接口
+
+- `POST /ai/deconstruct`
+- `POST /ai/intent`
+- `POST /ai/progress-judge`
+- `POST /ai/motivation`
+- `POST /ai/report`
+- `POST /ai/mood-quote`

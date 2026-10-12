@@ -1,12 +1,13 @@
 from flask import Flask, request, jsonify
 import requests
 import json
+import os
 
 # 智谱大模型基础配置
-API_KEY = "bbd7cf8142db49f89faa156bc4f79bb3.r1f6yVwIycot7rIM"
-URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-MODEL = "glm-4-flash"
-TEMPERATURE = 0.3
+API_KEY = os.getenv("ZHIPU_API_KEY", "")
+URL = os.getenv("ZHIPU_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
+TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.3"))
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -259,6 +260,8 @@ def clean_output(text):
 
 def call_llm(prompt):
     """统一调用智谱大模型"""
+    if not API_KEY:
+        raise RuntimeError("ZHIPU_API_KEY 未配置，AI 服务无法调用模型")
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
