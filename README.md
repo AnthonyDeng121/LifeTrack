@@ -44,7 +44,7 @@ LifeTrack/
 
 ## 配置环境变量
 
-仓库不保存真实数据库密码、JWT secret 或模型 API Key。请参考 [.env.example](.env.example)，在启动终端中设置环境变量；`.env.example` 本身不会被程序自动加载。
+仓库不保存真实数据库密码、JWT secret 或模型 API Key。请参考 [.env.example](.env.example)：根目录一键启动脚本会自动加载本地 `.env`；手动分模块启动时，也可以在启动终端中设置相同的环境变量。
 
 PowerShell 示例：
 
@@ -91,6 +91,37 @@ CREATE DATABASE lifetrack CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 3. 设置 `DB_USERNAME`、`DB_PASSWORD`；数据库不在本机时同时设置 `DB_URL`。
 
 ## 启动顺序
+
+### 推荐：Windows 本地一键启动
+
+首次使用时，复制 `.env.example` 为 `.env`，并至少填写 MySQL 密码。`.env` 已被 Git 忽略，不会随代码提交：
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+确认 MySQL 已启动且 `lifetrack` 数据库存在后，在项目根目录运行：
+
+```powershell
+.\start-local.ps1
+```
+
+基础计划和打卡无需 AI。需要同时启动可选 AI 服务时使用：
+
+```powershell
+.\start-local.ps1 -WithAI
+```
+
+停止全部服务：
+
+```powershell
+.\stop-local.ps1
+```
+
+脚本会自动加载 `.env`、启动后端和前端，并在首次启动前端时安装依赖。运行日志保存在本地 `.lifetrack-run` 目录，该目录不会提交到 Git。
+
+以下为分模块手动启动方式。
 
 ### 1. 启动 MySQL
 
