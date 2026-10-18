@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { endpoints } from "../src/services/config.js";
 import { getInclusivePeriodDays, validateCheckInForm, validatePlanPeriod } from "../src/services/planRules.js";
+import { getTimeGreeting, getBusinessDateLabel } from "../src/services/businessTime.js";
+
+for (const [hour, expected] of [[0, "夜深了"], [4, "夜深了"], [5, "早上好"], [10, "早上好"], [11, "中午好"], [13, "中午好"], [14, "下午好"], [17, "下午好"], [18, "晚上好"], [23, "晚上好"]]) {
+  assert.equal(getTimeGreeting(new Date(`2026-10-18T${String(hour).padStart(2, "0")}:00:00+08:00`)), expected);
+}
+assert.equal(getBusinessDateLabel(new Date("2026-10-17T16:00:00Z")), "10月18日", "业务日期按上海跨日计算");
 
 assert.equal(getInclusivePeriodDays("2026-10-01", "2026-10-10"), 10);
 assert.equal(validatePlanPeriod("2026-10-11", "2026-10-10", 1), "开始日期不能晚于结束日期");
@@ -153,7 +159,7 @@ let addedStep;
 let editedStep;
 const detailScript = detailPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
 const detail = new Function("computed", "ref", "onLoad", "uni", "TASK_CATEGORIES", "getSubtasks", "getTaskDetail", "addSubtask", "updateSubtask", `${detailScript}
-  return { task, subtasks, editingSubtask, showEditDialog, openAddDialog, openEditDialog, closeEditDialog, saveSubtask };
+  return { task, subtasks, checkInStats, targetFeedback, editingSubtask, showEditDialog, openAddDialog, openEditDialog, closeEditDialog, saveSubtask };
 `)(computed, ref, () => {}, { showToast() {} }, ["学习"], async () => [], async () => ({ id: 101 }),
 async (id, data) => { addedStep = { id, data }; }, async (id, data) => { editedStep = { id, data }; });
 detail.task.value.id = 101;
@@ -168,4 +174,10 @@ await detail.saveSubtask();
 assert.deepEqual(editedStep, { id: 9, data: { content: "已有步骤", weight: 0.3 } });
 detail.openEditDialog({ id: 9, content: "低权重步骤", weight: 1 });
 assert.equal(detail.editingSubtask.value.weight, 1, "接口返回的1%不能被误显示为100%");
+detail.checkInStats.value = { targetDays: 20, checkedInDays: 5 };
+assert.match(detail.targetFeedback.value, /15 个打卡日/);
+detail.task.value.status = "EXPIRED";
+assert.match(detail.targetFeedback.value, /本期已结束/);
+detail.checkInStats.value.checkedInDays = 20;
+assert.match(detail.targetFeedback.value, /已达成打卡目标/);
 console.log("Plan and check-in flow checks passed.");

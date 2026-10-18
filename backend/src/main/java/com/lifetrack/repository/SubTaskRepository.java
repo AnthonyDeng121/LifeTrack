@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 
 @Repository
 public interface SubTaskRepository extends JpaRepository<SubTask, Long> {
+    long countByTaskId(Long taskId);
     List<SubTask> findByTaskIdOrderByOrderNumAsc(Long taskId);
 
     @Modifying

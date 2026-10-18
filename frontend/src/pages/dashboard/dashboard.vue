@@ -4,7 +4,7 @@
       <view class="top-row">
         <view>
           <text class="text-muted date">{{ todayLabel }}</text>
-          <text class="title-xl">早安，{{ username }}</text>
+          <text class="title-xl">{{ greeting }}，{{ username }}</text>
         </view>
       </view>
 
@@ -17,9 +17,9 @@
 
       <view class="hero-card glass-card">
         <view class="hero-copy">
-          <text class="pill">学习计划完成率</text>
+          <text class="pill">打卡目标完成率</text>
           <text class="hero-number">{{ formatProgress(stats.checkInCompletionRate) }}%</text>
-          <text class="hero-desc">根据目标天数和真实打卡记录计算</text>
+          <text class="hero-desc">按真实打卡天数与目标天数计算，和学习进度分别统计</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -43,7 +43,7 @@
 
       <view class="section-head">
         <text class="section-title">最近七天打卡</text>
-        <text class="text-muted small">每日打卡次数</text>
+
       </view>
       <view class="glass-card trend-card">
         <view v-if="stats.checkInTrend.length === 0" class="inline-empty">暂无最近七天打卡数据</view>
@@ -60,7 +60,7 @@
 
       <view class="section-head">
         <text class="section-title">时间分布</text>
-        <text class="text-muted small">AI 自动归类</text>
+
       </view>
       <view class="glass-card distribution-card">
         <view v-if="stats.timeDistribution.length === 0" class="inline-empty">今天还没有可统计的学习时长</view>
@@ -97,7 +97,7 @@
 
       <view class="section-head">
         <text class="section-title">重点任务</text>
-        <text class="link" @tap="goTasks">全部</text>
+
       </view>
       <view v-if="featuredTasks.length === 0" class="glass-card page-state"><text>暂无进行中的学习计划</text></view>
       <view v-else class="task-list">
@@ -129,10 +129,11 @@
 
 <script setup>
 import { computed, ref } from "vue";
-import { onShow } from "@dcloudio/uni-app";
+import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
 import { getDashboardStats, getFeedbackReport, getTasks } from "../../services/api";
 import { getUser } from "../../services/http";
+import { getTimeGreeting, getBusinessDateLabel } from "../../services/businessTime";
 
 const stats = ref({
   todayTotalProgress: 0,
@@ -153,10 +154,18 @@ const pageError = ref("");
 const reportError = ref("");
 
 const username = computed(() => user.value.username || "同学");
-const todayLabel = computed(() => {
-  const now = new Date();
-  return `${now.getMonth() + 1}月${now.getDate()}日`;
-});
+const now = ref(new Date());
+const greeting = computed(() => getTimeGreeting(now.value));
+const todayLabel = computed(() => getBusinessDateLabel(now.value));
+let clockTimer;
+function stopClock() { clearInterval(clockTimer); clockTimer = undefined; }
+function startClock() {
+  stopClock();
+  now.value = new Date();
+  clockTimer = setInterval(() => { now.value = new Date(); }, 60000);
+}
+onHide(stopClock);
+onUnload(stopClock);
 const featuredTasks = computed(() => tasks.value.slice(0, 3));
 
 function formatProgress(value) {
@@ -170,10 +179,6 @@ function clampProgress(value) {
 function checkInTrendHeight(value) {
   const max = Math.max(1, ...stats.value.checkInTrend.map(item => Number(item.checkInCount || 0)));
   return `${Number(value || 0) === 0 ? 0 : Math.max(18, Number(value) / max * 100)}%`;
-}
-
-function goTasks() {
-  uni.redirectTo({ url: "/pages/tasks/tasks" });
 }
 
 function openTask(task) {
@@ -203,7 +208,7 @@ async function loadPage() {
   loading.value = false;
 }
 
-onShow(loadPage);
+onShow(() => { startClock(); loadPage(); });
 </script>
 
 <style scoped>

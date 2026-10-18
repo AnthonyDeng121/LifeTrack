@@ -174,6 +174,14 @@ class TaskServiceTest {
         verifyNoInteractions(aiService);
     }
 
+    @Test
+    void taskListReturnsRealSubtaskCountForDashboard() {
+        when(taskRepository.findByUserId(7L)).thenReturn(List.of(planOwnedByCurrentUser()));
+        when(subTaskRepository.countByTaskId(1L)).thenReturn(8L);
+        var result = taskService.getTaskList(null, null, null);
+        assertEquals(8, result.get(0).getSubtaskCount());
+    }
+
     private Task planOwnedByCurrentUser() {
         return Task.builder()
                 .id(1L)

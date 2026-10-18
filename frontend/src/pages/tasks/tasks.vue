@@ -9,25 +9,21 @@
         <button class="glass-button add-btn" @tap="openCreator">新建任务</button>
       </view>
 
-      <view class="category-row">
-        <text
-          v-for="item in categories"
-          :key="item"
-          class="pill category-pill"
-          :class="{ active: activeCategory === item }"
-          @tap="activeCategory = item"
-        >
-          {{ item }}
-        </text>
+      <view class="filter-group">
+        <text class="filter-label">任务类型</text>
+        <view class="category-row">
+          <text v-for="item in categories" :key="item" class="pill category-pill"
+            :class="{ active: activeCategory === item }" @tap="activeCategory = item">
+            {{ item === "全部" ? "全部类型" : item }}
+          </text>
+        </view>
       </view>
-      <view class="category-row status-row">
-        <text
-          v-for="item in statusOptions"
-          :key="item.value"
-          class="pill category-pill"
-          :class="{ active: activeStatus === item.value }"
-          @tap="selectStatus(item.value)"
-        >{{ item.label }}</text>
+      <view class="filter-group">
+        <text class="filter-label">任务状态</text>
+        <view class="category-row status-row">
+          <text v-for="item in statusOptions" :key="item.value" class="pill category-pill"
+            :class="{ active: activeStatus === item.value }" @tap="selectStatus(item.value)">{{ item.label }}</text>
+        </view>
       </view>
 
       <view class="section-head">
@@ -140,6 +136,7 @@
         <view class="form-block">
           <text class="field-label">目标打卡天数</text>
           <input v-model="newTargetDays" type="number" class="glass-input creator-input" placeholder="例如：20" />
+          <text class="field-help">计划周期内希望坚持学习的天数；每天最多计1天，与子计划数量无关。</text>
         </view>
 
         <view class="form-block">
@@ -176,18 +173,15 @@
             :key="index"
             class="manual-subtask-row"
           >
-            <input
-              v-model="st.content"
-              class="glass-input st-content-input"
-              placeholder="步骤描述"
-            />
-            <input
-              v-model="st.weight"
-              type="number"
-              class="glass-input st-weight-input"
-              placeholder="权重(%)"
-            />
-            <text class="remove-st-icon" @tap="removeManualSubtask(index)">×</text>
+            <view class="st-description-field">
+              <text class="step-field-label">步骤 {{ index + 1 }}</text>
+              <input v-model="st.content" class="glass-input st-content-input" placeholder="步骤描述" />
+            </view>
+            <view class="st-weight-field">
+              <text class="step-field-label">权重（%）</text>
+              <input v-model="st.weight" type="number" class="glass-input st-weight-input" placeholder="自动" />
+            </view>
+            <button class="remove-st-icon" :disabled="manualSubtasks.length <= 1" :aria-label="`删除步骤${index + 1}`" @tap="removeManualSubtask(index)">×</button>
           </view>
         </view>
 
@@ -442,6 +436,9 @@ onShow(loadTasks);
 .task-card.selected { outline: 2px solid #2378ad; }
 .selection-mark { color: #176895; font-size: 36rpx; }
 .creator-dialog { max-width: 960px; box-sizing: border-box; }
+.creator-dialog > * { flex-shrink: 0; }
+/* H5 日期选择器切换视口时，关闭态的选项不应进入表单文档流。 */
+.creator-dialog :deep(.uni-picker-custom:not(.uni-picker-toggle)) { display: none; }
 .st-content-input { min-width: 0; }
 .st-weight-input { flex-shrink: 0; }
 
@@ -669,12 +666,14 @@ onShow(loadTasks);
 }
 
 .backend-note {
-  padding: 18rpx 22rpx;
-  border-radius: 24rpx;
-  color: rgba(45, 62, 80, 0.56);
-  font-size: 21rpx;
-  line-height: 1.45;
-  background: rgba(255, 255, 255, 0.34);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(45, 62, 80, 0.62);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .create-btn {
@@ -729,25 +728,25 @@ onShow(loadTasks);
 }
 
 .manual-subtask-row {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px 36px;
+  align-items: end;
+  gap: 10px;
 }
-
-.st-content-input {
-  flex: 1;
-  height: 80rpx;
-}
-
-.st-weight-input {
-  width: 140rpx;
-  height: 80rpx;
-  text-align: center;
-}
-
-.remove-st-icon {
-  font-size: 40rpx;
-  color: #ff5a5f;
-  padding: 10rpx;
+.st-description-field, .st-weight-field { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.step-field-label { font-size: 13px; color: #236894; line-height: 1.4; }
+.manual-subtask-row .glass-input { width: 100%; height: 46px; box-sizing: border-box; padding: 10px 12px; font-size: 14px; }
+.st-weight-input { text-align: center; }
+.remove-st-icon { margin: 0; padding: 0; width: 36px; height: 46px; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #d33; }
+.remove-st-icon[disabled] { opacity: 0.35; }
+.filter-group { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: start; gap: 12px; margin-top: 24px; }
+.filter-group + .filter-group { margin-top: 12px; }
+.filter-group .category-row { margin: 0; }
+.filter-label { padding-top: 6px; font-size: 14px; font-weight: 700; color: #236894; }
+.field-help { font-size: 12px; color: rgba(45, 62, 80, 0.68); line-height: 1.5; }
+.form-block .select-row { margin-top: 0; }
+@media screen and (max-width: 500px) {
+  .manual-subtask-row { grid-template-columns: minmax(0, 1fr) 84px 30px; gap: 8px; }
+  .remove-st-icon { width: 30px; }
 }
 </style>

@@ -39,13 +39,16 @@
 
       <view class="section-head">
         <text class="section-title">打卡概览</text>
-        <text class="text-muted small">真实打卡记录统计</text>
       </view>
       <view v-if="!checkInLoading && !checkInError" class="checkin-metrics">
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
         <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡完成率</text></view>
+      </view>
+      <view v-if="!checkInLoading && !checkInError" class="target-feedback">
+        <text>坚持目标：已打卡 {{ checkInStats.checkedInDays }} / {{ checkInStats.targetDays || task.targetDays }} 天</text>
+        <text>{{ targetFeedback }}</text>
       </view>
       <view v-if="checkInLoading" class="glass-card empty-card"><text>正在加载打卡数据...</text></view>
       <view v-else-if="checkInError" class="glass-card empty-card state-card error-state">
@@ -54,7 +57,6 @@
 
       <view class="section-head">
         <text class="section-title">最近七天</text>
-        <text class="text-muted small">每日打卡与学习时长</text>
       </view>
       <view v-if="!checkInLoading && !checkInError" class="glass-card seven-day-card">
         <view v-for="day in checkInStats.recentSevenDays" :key="day.date" class="day-item" :class="{ checked: day.checkedIn }">
@@ -66,7 +68,6 @@
 
       <view class="section-head">
         <text class="section-title">打卡历史</text>
-        <text class="text-muted small">按日期倒序</text>
       </view>
       <view v-if="!checkInLoading && !checkInError && checkInHistory.length === 0" class="glass-card empty-card"><text>还没有正式打卡记录</text></view>
       <view v-else-if="!checkInLoading && !checkInError" class="checkin-history">
@@ -98,7 +99,6 @@
         <button class="glass-button add-step-btn" :disabled="loading || saving" @tap="openAddDialog">新增子计划</button>
       </view>
 
-      <text class="text-muted small">可以自行增减子计划，至少保留1个；权重会自动调整。</text>
       <view v-if="loading" class="glass-card empty-card">
         <text>正在加载子任务...</text>
       </view>
@@ -218,6 +218,14 @@ const checkInHistory = ref([]);
 const checkInLoading = ref(false);
 const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
+const targetFeedback = computed(() => {
+  const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
+  if (remaining === 0) return "已达成打卡目标，可以继续推进学习进度";
+  if (task.value.status === "EXPIRED") return `本期已结束，距打卡目标还差 ${remaining} 天`;
+  if (task.value.status === "CANCELLED") return "计划已取消，已保留本期打卡记录";
+  if (task.value.status === "COMPLETED") return `学习计划已完成，本期距打卡目标还差 ${remaining} 天`;
+  return `还差 ${remaining} 个打卡日达成目标`;
+});
 const subtasks = ref([]);
 const loading = ref(false);
 const subtaskError = ref("");
@@ -463,6 +471,7 @@ onLoad((options) => {
 </script>
 
 <style scoped>
+.target-feedback { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 14px; color: #236894; font-size: 14px; }
 .detail-top {
   display: flex;
   align-items: center;

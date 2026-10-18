@@ -164,6 +164,7 @@ public class TaskService {
                 .filter(task -> endDate == null || !task.getStartDate().isAfter(endDate))
                 .map(task -> TaskListResponse.builder()
                         .id(task.getId())
+                        .subtaskCount(Math.toIntExact(subTaskRepository.countByTaskId(task.getId())))
                         .title(task.getTitle())
                         .category(task.getCategory().name())
                         .totalProgress(task.getTotalProgress().multiply(new BigDecimal("100")))
