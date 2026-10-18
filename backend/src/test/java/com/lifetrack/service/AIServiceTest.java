@@ -9,6 +9,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,6 +23,35 @@ class AIServiceTest {
     @Mock private RestTemplate restTemplate;
     @Mock private ObjectMapper objectMapper;
     @InjectMocks private AIService aiService;
+
+    @Test
+    void shouldSignalUnavailableWithoutInventingProgress() throws Exception {
+        when(restTemplate.postForObject(anyString(), any(), any(Class.class)))
+                .thenThrow(new ResourceAccessException("connection refused"));
+        var result = aiService.analyzeAction("学习编曲", "30分钟", List.of());
+        assertEquals(true, result.isUnavailable());
+        assertEquals(0, result.getMatches().size());
+    }
+
+    @Test
+    void shouldReadValidGlmDeconstruction() {
+        when(restTemplate.postForObject(anyString(), any(), any(Class.class)))
+                .thenReturn(Map.of("code", 200, "data", Map.of("goals", List.of(
+                        Map.of("sub_tasks", List.of(Map.of("step", "Practice", "weight", 1)))))));
+        var steps = aiService.deconstructTask("Learn Java");
+        assertEquals(1, steps.length);
+        assertEquals("Practice", steps[0].getContent());
+    }
+
+    @Test
+    void shouldRejectUpstreamFailureAndEmptySteps() {
+        when(restTemplate.postForObject(anyString(), any(), any(Class.class)))
+                .thenReturn(Map.of("code", 500, "msg", "provider failed"))
+                .thenReturn(Map.of("code", 200, "data", Map.of("goals", List.of(
+                        Map.of("sub_tasks", List.of())))));
+        assertThrows(BusinessException.class, () -> aiService.deconstructTask("Learn Java"));
+        assertThrows(BusinessException.class, () -> aiService.deconstructTask("Learn Java"));
+    }
 
     @Test
     void shouldReturnExplicitServiceUnavailableInsteadOfFakeDeconstruction() {

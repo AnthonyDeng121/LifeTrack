@@ -29,6 +29,13 @@ public class TaskController {
 
     private final TaskService taskService;
 
+    @Operation(summary = "批量删除学习计划")
+    @PostMapping("/batch-delete")
+    public Result<Void> batchDelete(@RequestBody @Validated com.lifetrack.dto.TaskBatchDeleteRequest request) {
+        taskService.deleteTasks(request.getTaskIds());
+        return Result.success();
+    }
+
     @Operation(summary = "手动创建任务", description = "用户自行定义主任务、子任务及其权重")
     @PostMapping("/manual")
     public Result<com.lifetrack.dto.TaskDeconstructResponse> createManualTask(

@@ -44,7 +44,7 @@ export function getSubtasks(taskId) {
 }
 
 export function createTaskByAI(title, category, startDate, endDate, targetDays) {
-  return request({ ...endpoints.tasks.deconstruct(title, category, startDate, endDate, targetDays) });
+  return request({ ...endpoints.tasks.deconstruct(title, category, startDate, endDate, targetDays), timeout: 50000, showError: false });
 }
 
 export function createTaskManually(data) {
@@ -79,8 +79,8 @@ export function getCheckInStats(taskId) {
   return request({ ...endpoints.checkIns.stats(taskId) });
 }
 
-export function syncAction(rawInput, durationMinutes) {
-  return request({ ...endpoints.actions.sync(rawInput, durationMinutes) });
+export function syncAction(rawInput, durationInput, taskId) {
+  return request({ ...endpoints.actions.sync(rawInput, durationInput, taskId) });
 }
 
 export function getActionHistory(page = 0, size = 10) {
@@ -89,4 +89,8 @@ export function getActionHistory(page = 0, size = 10) {
 
 export function deleteAction(actionId) {
   return request({ ...endpoints.actions.delete(actionId) });
+}
+
+export function deleteTasks(taskIds) {
+  return request({ ...endpoints.tasks.batchDelete(taskIds) });
 }

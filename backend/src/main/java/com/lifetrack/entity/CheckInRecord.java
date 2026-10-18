@@ -41,6 +41,9 @@ public class CheckInRecord {
     @Column(length = 20)
     private String mood;
 
+    // 旧版手动打卡为 null，仅自动打卡随最后一条有效学习记录撤销。
+    private Boolean automatic;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

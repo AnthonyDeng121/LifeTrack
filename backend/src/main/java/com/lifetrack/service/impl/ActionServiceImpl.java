@@ -3,6 +3,10 @@ package com.lifetrack.service.impl;
 import com.lifetrack.common.UserContext;
 import com.lifetrack.dto.*;
 import com.lifetrack.entity.ActionLog;
+import com.lifetrack.entity.CheckInRecord;
+import com.lifetrack.repository.CheckInRecordRepository;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import com.lifetrack.entity.SubTask;
 import com.lifetrack.entity.Task;
 import com.lifetrack.entity.PlanStatus;
@@ -34,91 +38,91 @@ public class ActionServiceImpl implements ActionService {
     private final SubTaskRepository subTaskRepository;
     private final TaskService taskService;
     private final AIService aiService;
+    private final CheckInRecordRepository checkInRecordRepository;
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     @Override
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ActionSyncResponse syncAction(ActionSyncRequest request) {
         Long userId = UserContext.getUserId();
         log.info("User {} is syncing action: {}", userId, request.getRawInput());
 
-        // 1. 获取用户所有进行中的主任务及其子任务
-        List<Task> activeTasks = taskRepository.findByUserIdAndStatus(userId, PlanStatus.IN_PROGRESS);
-        if (activeTasks.isEmpty()) {
-            throw new BusinessException(400, "请先创建任务再进行同步");
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        // 按固定顺序锁定计划，避免并发覆盖进度和重复生成打卡。
+        List<Task> activeTasks = new ArrayList<>();
+        List<Long> candidates = taskRepository.findIdsByUserIdAndStatus(userId, PlanStatus.IN_PROGRESS);
+        if (request.getTaskId() != null && !candidates.contains(request.getTaskId())) {
+            throw new BusinessException(400, "所选计划不存在、无权访问或当前不可记录");
         }
-
-        List<SubTask> allCandidateSubTasks = activeTasks.stream()
-                .flatMap(task -> subTaskRepository.findByTaskIdOrderByOrderNumAsc(task.getId()).stream())
-                .collect(Collectors.toList());
-
-        if (allCandidateSubTasks.isEmpty()) {
-            throw new BusinessException(400, "没有任何已拆解的任务，请先进行任务拆解");
-        }
-
-        // 2. 调用 AI 进行 1 对 N 匹配分析
-        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationInput(), allCandidateSubTasks);
-        
-        if (aiResult.getMatches() == null || aiResult.getMatches().isEmpty()) {
-            return ActionSyncResponse.builder()
-                    .updates(Collections.emptyList())
-                    .aiAnalysis(aiResult.getAiAnalysis() != null ? aiResult.getAiAnalysis() : "AI 未能匹配到任何相关任务")
-                    .build();
-        }
-
-        // 3. 处理所有匹配到的子任务更新
-        List<ActionSyncResponse.TaskUpdateDetail> updateDetails = new ArrayList<>();
+        candidates.stream().filter(id -> request.getTaskId() == null || id.equals(request.getTaskId()))
+                .sorted().forEach(candidate -> {
+                    Task task = taskRepository.findLockedById(candidate).orElse(null);
+                    if (task != null && task.getUserId().equals(userId) && task.getStatus() == PlanStatus.IN_PROGRESS
+                            && task.getStartDate() != null && task.getEndDate() != null
+                            && !today.isBefore(task.getStartDate()) && !today.isAfter(task.getEndDate())) {
+                        activeTasks.add(task);
+                    }
+                });
+        if (activeTasks.isEmpty()) throw new BusinessException(400, "没有处于有效周期内的进行中计划，请先创建或调整计划");
         Map<Long, Task> taskMap = activeTasks.stream().collect(Collectors.toMap(Task::getId, t -> t));
-
-        // 对 AI 返回的匹配项进行去重，防止同一子任务被多次更新
-        Map<Long, AIMatchResult.MatchDetail> uniqueMatches = new LinkedHashMap<>();
-        for (AIMatchResult.MatchDetail match : aiResult.getMatches()) {
-            uniqueMatches.putIfAbsent(match.getSubTaskId(), match);
-        }
-
-        for (AIMatchResult.MatchDetail match : uniqueMatches.values()) {
-            SubTask subTask = subTaskRepository.findById(match.getSubTaskId()).orElse(null);
-            if (subTask == null) continue;
-
-            Task task = taskMap.get(subTask.getTaskId());
-            if (task == null) continue;
-
-            // 持久化行为日志
-            ActionLog actionLog = ActionLog.builder()
-                    .userId(userId)
-                    .taskId(task.getId())
-                    .subTaskId(subTask.getId())
-                    .rawInput(request.getRawInput())
-                    .contribution(match.getIncrement())
-                    .category(task.getCategory())
-                    .durationMinutes(aiResult.getDurationMinutes() != null ? aiResult.getDurationMinutes() : 0) // 由 AI 解析模糊时长输入
-                    .aiAnalysis(aiResult.getAiAnalysis())
-                    .build();
-            actionLogRepository.save(actionLog);
-
-            // 更新子任务进度
-            subTask.setCurrentProgress(subTask.getCurrentProgress().add(match.getIncrement()));
-            if (subTask.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) {
-                subTask.setCurrentProgress(BigDecimal.ONE);
-                subTask.setIsCompleted(1);
+        Map<Long, SubTask> eligible = new LinkedHashMap<>();
+        List<SubTask> aiCandidates = new ArrayList<>();
+        for (Task task : activeTasks) {
+            for (SubTask step : subTaskRepository.findByTaskIdOrderByOrderNumAsc(task.getId())) {
+                if (step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) continue;
+                eligible.put(step.getId(), step);
+                aiCandidates.add(SubTask.builder().id(step.getId()).taskId(task.getId())
+                        .content("计划：" + task.getTitle() + "；步骤：" + step.getContent()).build());
             }
-            subTaskRepository.save(subTask);
-
-            // 更新主任务总进度
-            taskService.updateTaskProgress(task.getId());
-            
-            // 重新获取更新后的进度
-            Task updatedTask = taskRepository.findById(task.getId()).orElse(task);
-            updateDetails.add(ActionSyncResponse.TaskUpdateDetail.builder()
-                    .taskTitle(updatedTask.getTitle())
-                    .increment(match.getIncrement().multiply(new BigDecimal("100")))
-                    .newTotalProgress(updatedTask.getTotalProgress().multiply(new BigDecimal("100")))
-                    .build());
         }
-
-        return ActionSyncResponse.builder()
-                .updates(updateDetails)
-                .aiAnalysis(aiResult.getAiAnalysis())
-                .build();
+        if (eligible.isEmpty()) throw new BusinessException(400, "没有未完成的学习步骤，请先添加或拆解步骤");
+        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationInput(), aiCandidates);
+        if (!today.equals(LocalDate.now(BUSINESS_ZONE))) {
+            throw new BusinessException(409, "日期已变化，请重新提交今日记录");
+        }
+        List<ActionSyncResponse.TaskUpdateDetail> updates = new ArrayList<>();
+        Set<Long> matchedSteps = new HashSet<>();
+        Set<Long> processedPlans = new HashSet<>();
+        int duration = Math.max(0, aiResult.getDurationMinutes() == null ? 0 : aiResult.getDurationMinutes());
+        List<AIMatchResult.MatchDetail> rawMatches = aiResult.getMatches() == null ? Collections.emptyList() : aiResult.getMatches();
+        long matchCount = rawMatches.stream().filter(Objects::nonNull)
+                .filter(m -> m.getIncrement() != null && m.getIncrement().signum() > 0 && eligible.containsKey(m.getSubTaskId()))
+                .map(AIMatchResult.MatchDetail::getSubTaskId).distinct().count();
+        for (AIMatchResult.MatchDetail match : rawMatches) {
+            if (match == null || match.getIncrement() == null || match.getIncrement().signum() <= 0) continue;
+            SubTask step = eligible.get(match.getSubTaskId());
+            if (step == null || !matchedSteps.add(step.getId())) continue;
+            Task task = taskMap.get(step.getTaskId());
+            // AI 只提供建议；后端限制贡献并保存实际增量，保证封顶与撤销准确。
+            BigDecimal increment = match.getIncrement().min(new BigDecimal("0.30"))
+                    .min(BigDecimal.ONE.subtract(step.getCurrentProgress())).setScale(2, java.math.RoundingMode.DOWN);
+            if (increment.signum() <= 0) continue;
+            boolean firstPlanMatch = processedPlans.add(task.getId());
+            boolean checkedInNow = false;
+            if (firstPlanMatch && !checkInRecordRepository.existsByUserIdAndTaskIdAndCheckInDate(userId, task.getId(), today)) {
+                checkInRecordRepository.saveAndFlush(CheckInRecord.builder().userId(userId).taskId(task.getId())
+                        .checkInDate(today).content(request.getRawInput().trim()).durationMinutes(duration)
+                        .automatic(true).build());
+                checkedInNow = true;
+            }
+            // 按匹配步骤分摊时长，总和等于本次输入时长，避免多计划重复统计。
+            int allocatedDuration = (int) (duration / matchCount + (updates.size() < duration % matchCount ? 1 : 0));
+            actionLogRepository.save(ActionLog.builder().userId(userId).taskId(task.getId()).subTaskId(step.getId())
+                    .rawInput(request.getRawInput().trim()).contribution(increment).category(task.getCategory())
+                    .durationMinutes(allocatedDuration).aiAnalysis(aiResult.getAiAnalysis())
+                    .createdAt(java.time.LocalDateTime.now(BUSINESS_ZONE)).build());
+            step.setCurrentProgress(step.getCurrentProgress().add(increment));
+            step.setIsCompleted(step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0 ? 1 : 0);
+            subTaskRepository.save(step);
+            taskService.updateTaskProgress(task.getId());
+            updates.add(ActionSyncResponse.TaskUpdateDetail.builder().taskId(task.getId()).subTaskId(step.getId())
+                    .taskTitle(task.getTitle()).subTaskTitle(step.getContent()).checkedInNow(checkedInNow)
+                    .increment(increment.multiply(new BigDecimal("100")))
+                    .newTotalProgress(task.getTotalProgress().multiply(new BigDecimal("100"))).build());
+        }
+        for (Long taskId : processedPlans) refreshAutomaticAttendance(userId, taskId, today);
+        return ActionSyncResponse.builder().updates(updates).analysisUnavailable(aiResult.isUnavailable())
+                .aiAnalysis(aiResult.getAiAnalysis() == null ? "未匹配到有效学习步骤，未保存记录或打卡" : aiResult.getAiAnalysis()).build();
     }
 
     @Override
@@ -151,7 +155,7 @@ public class ActionServiceImpl implements ActionService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void deleteAction(Long actionId) {
         Long userId = UserContext.getUserId();
         ActionLog actionLog = actionLogRepository.findById(actionId)
@@ -161,6 +165,10 @@ public class ActionServiceImpl implements ActionService {
             throw new BusinessException(403, "无权删除该记录");
         }
 
+        if (actionLog.getTaskId() != null) taskRepository.findLockedById(actionLog.getTaskId());
+        if (!actionLogRepository.existsById(actionId)) {
+            throw new BusinessException(404, "记录已撤销，请勿重复操作");
+        }
         // 如果该记录关联了任务和子任务，需要回退进度
         if (actionLog.getSubTaskId() != null) {
             SubTask subTask = subTaskRepository.findById(actionLog.getSubTaskId()).orElse(null);
@@ -179,10 +187,33 @@ public class ActionServiceImpl implements ActionService {
                 subTaskRepository.save(subTask);
 
                 // 更新主任务总进度
+                taskRepository.findById(subTask.getTaskId()).ifPresent(parent -> {
+                    if (parent.getStatus() == PlanStatus.COMPLETED) parent.setStatus(PlanStatus.IN_PROGRESS);
+                });
                 taskService.updateTaskProgress(subTask.getTaskId());
             }
         }
 
         actionLogRepository.delete(actionLog);
+        actionLogRepository.flush();
+        if (actionLog.getTaskId() != null && actionLog.getCreatedAt() != null) {
+            refreshAutomaticAttendance(userId, actionLog.getTaskId(), actionLog.getCreatedAt().toLocalDate());
+        }
+    }
+
+    private void refreshAutomaticAttendance(Long userId, Long taskId, LocalDate date) {
+        checkInRecordRepository.findByUserIdAndTaskIdAndCheckInDate(userId, taskId, date)
+                .filter(r -> Boolean.TRUE.equals(r.getAutomatic())).ifPresent(record -> {
+                    List<ActionLog> remaining = actionLogRepository.findByTaskId(taskId).stream()
+                            .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)
+                                    && a.getContribution().signum() > 0).toList();
+                    if (remaining.isEmpty()) {
+                        checkInRecordRepository.delete(record);
+                    } else {
+                        record.setDurationMinutes(remaining.stream().mapToInt(a -> a.getDurationMinutes() == null ? 0 : a.getDurationMinutes()).sum());
+                        record.setContent(remaining.get(0).getRawInput());
+                        checkInRecordRepository.save(record);
+                    }
+                });
     }
 }

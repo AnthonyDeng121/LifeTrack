@@ -478,6 +478,18 @@ public class TaskService {
         taskRepository.delete(task);
     }
 
+    @Transactional
+    public void deleteTasks(List<Long> taskIds) {
+        if (taskIds == null || taskIds.isEmpty() || taskIds.size() > 100
+                || taskIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new BusinessException(400, "请选择1到100个有效任务");
+        }
+        List<Long> ids = taskIds.stream().distinct().toList();
+        // 全部校验通过后才删除，任一越权或不存在均不删除任何任务。
+        ids.forEach(this::getOwnedTask);
+        ids.forEach(this::deleteTask);
+    }
+
     private Task getOwnedTask(Long taskId) {
         Long userId = UserContext.getUserId();
         Task task = taskRepository.findById(taskId)

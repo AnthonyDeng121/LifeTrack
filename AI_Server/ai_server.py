@@ -8,6 +8,7 @@ API_KEY = os.getenv("ZHIPU_API_KEY", "")
 URL = os.getenv("ZHIPU_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
 MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
 TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.3"))
+MODEL_READ_TIMEOUT = float(os.getenv("AI_MODEL_READ_TIMEOUT_SECONDS", "30"))
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -268,7 +269,7 @@ def call_llm(prompt):
         "temperature": TEMPERATURE
     }
     try:
-        resp = requests.post(URL, json=payload, headers=HEADERS, timeout=20)
+        resp = requests.post(URL, json=payload, headers=HEADERS, timeout=(3, MODEL_READ_TIMEOUT))
         if resp.status_code != 200:
             print(f"LLM API Error: {resp.status_code} - {resp.text}")
             resp.raise_for_status()
@@ -284,6 +285,11 @@ def call_llm(prompt):
 
 # 初始化Flask服务
 app = Flask(__name__)
+
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok", "provider": "zhipu", "model": MODEL,
+                    "configured": bool(API_KEY)})
 
 # 接口1：任务拆解
 @app.route("/ai/deconstruct", methods=["POST"])
@@ -415,4 +421,4 @@ def ai_mood_quote():
 
 if __name__ == "__main__":
     # 本地运行，端口5000
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)

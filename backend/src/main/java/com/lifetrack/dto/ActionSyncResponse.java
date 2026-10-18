@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 @Schema(description = "行为同步响应")
 public class ActionSyncResponse {
+    private boolean analysisUnavailable;
     @Schema(description = "本次影响的任务更新明细")
     private List<TaskUpdateDetail> updates;
     
@@ -25,6 +26,10 @@ public class ActionSyncResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TaskUpdateDetail {
+        private Long taskId;
+        private Long subTaskId;
+        private String subTaskTitle;
+        private boolean checkedInNow;
         private String taskTitle;
         private BigDecimal increment;
         private BigDecimal newTotalProgress;

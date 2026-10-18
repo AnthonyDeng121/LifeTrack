@@ -43,31 +43,29 @@ function Assert-PortAvailable {
     }
 }
 
-function Wait-LocalPort {
-    param([int]$Port, [int]$TimeoutSeconds, [string]$ServiceName, [string]$ErrorLog)
+function Wait-LocalReady {
+    param([string]$Uri, [int]$TimeoutSeconds, $Service)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        $client = [Net.Sockets.TcpClient]::new()
-        try {
-            $result = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
-            if ($result.AsyncWaitHandle.WaitOne(300) -and $client.Connected) { return }
-        } finally {
-            $client.Dispose()
+        if (-not (Get-Process -Id $Service.pid -ErrorAction SilentlyContinue)) {
+            throw "$($Service.name) exited before becoming ready. See $($Service.stdout) and $($Service.stderr)."
         }
+        try {
+            $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3
+            if ($response.StatusCode -eq 200) { return }
+        } catch { }
         Start-Sleep -Milliseconds 700
     }
-    $tail = if (Test-Path -LiteralPath $ErrorLog) {
-        (Get-Content -LiteralPath $ErrorLog -Tail 20 -ErrorAction SilentlyContinue) -join [Environment]::NewLine
-    } else { 'No error log was generated.' }
-    throw "$ServiceName did not start in time. Error log tail:`n$tail"
+    throw "$($Service.name) readiness timed out at $Uri. See $($Service.stdout) and $($Service.stderr)."
 }
 
 function Start-LocalProcess {
     param([string]$Name, [string]$WorkingDirectory, [string]$Command)
     $stdout = Join-Path $runtimeDir "$Name.out.log"
     $stderr = Join-Path $runtimeDir "$Name.err.log"
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference = 'Stop'; $Command"))
     $process = Start-Process -FilePath 'powershell.exe' `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $Command) `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand) `
         -WorkingDirectory $WorkingDirectory `
         -WindowStyle Hidden `
         -RedirectStandardOutput $stdout `
@@ -100,22 +98,25 @@ New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 $started = @()
 try {
     Write-Host 'Starting backend...'
-    $backend = Start-LocalProcess 'backend' (Join-Path $projectRoot 'backend') "& '.\mvnw.cmd' spring-boot:run"
+    $backend = Start-LocalProcess 'backend' (Join-Path $projectRoot 'backend') "& '.\mvnw.cmd' clean spring-boot:run; exit `$LASTEXITCODE"
     $started += $backend
-    Wait-LocalPort 8081 120 'Backend' $backend.stderr
+    $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
+    Wait-LocalReady 'http://localhost:8081/v3/api-docs' 180 $backend
 
     Write-Host 'Starting frontend...'
-    $frontendCommand = "if (-not (Test-Path -LiteralPath '.\node_modules')) { & npm.cmd install }; & npm.cmd run dev:h5"
+    $frontendCommand = "if (-not (Test-Path -LiteralPath '.\node_modules')) { & npm.cmd install; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & npm.cmd run dev:h5; exit `$LASTEXITCODE"
     $frontend = Start-LocalProcess 'frontend' (Join-Path $projectRoot 'frontend') $frontendCommand
     $started += $frontend
-    Wait-LocalPort 5173 120 'Frontend' $frontend.stderr
+    $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
+    Wait-LocalReady 'http://localhost:5173/' 240 $frontend
 
     if ($WithAI) {
         Write-Host 'Starting optional AI service...'
-        $aiCommand = "if (-not (Test-Path -LiteralPath '.\venv\Scripts\python.exe')) { & python -m venv venv }; & '.\venv\Scripts\python.exe' -m pip install -q flask requests; & '.\venv\Scripts\python.exe' ai_server.py"
+        $aiCommand = "if (-not (Test-Path -LiteralPath '.\venv\Scripts\python.exe')) { & python -m venv venv; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & '.\venv\Scripts\python.exe' -c 'import flask, requests'; if (`$LASTEXITCODE -ne 0) { & '.\venv\Scripts\python.exe' -m pip install flask requests; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & '.\venv\Scripts\python.exe' ai_server.py; exit `$LASTEXITCODE"
         $ai = Start-LocalProcess 'ai' (Join-Path $projectRoot 'AI_Server') $aiCommand
         $started += $ai
-        Wait-LocalPort 5000 120 'AI service' $ai.stderr
+        $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
+        Wait-LocalReady 'http://127.0.0.1:5000/health' 120 $ai
     }
 
     $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
@@ -128,6 +129,11 @@ try {
     Write-Host 'Stop all services with: .\stop-local.ps1'
     Write-Host "Logs: $runtimeDir"
 } catch {
-    foreach ($item in $started) { Stop-Process -Id $item.pid -Force -ErrorAction SilentlyContinue }
+    foreach ($item in $started) {
+        if (Get-Process -Id $item.pid -ErrorAction SilentlyContinue) {
+            & taskkill.exe /PID $item.pid /T /F 2>$null | Out-Null
+        }
+    }
+    Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
     throw
 }

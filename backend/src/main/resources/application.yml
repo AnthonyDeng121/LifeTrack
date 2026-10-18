@@ -23,8 +23,7 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000} # 24小时
 
-# AI 配置 (由李想/魏欣岳填充)
-openai:
-  api-key: ${OPENAI_API_KEY:}
-  api-url: ${OPENAI_API_URL:https://api.openai.com/v1/chat/completions}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
+# Python AI 服务使用智谱 GLM，模型与密钥由 AI_Server 环境变量配置。
+ai:
+  base-url: ${AI_BASE_URL:http://127.0.0.1:5000/ai}
+  read-timeout-seconds: ${AI_READ_TIMEOUT_SECONDS:40}

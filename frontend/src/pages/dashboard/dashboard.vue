@@ -6,7 +6,6 @@
           <text class="text-muted date">{{ todayLabel }}</text>
           <text class="title-xl">早安，{{ username }}</text>
         </view>
-        <button class="glass-button record-btn" @tap="goRecord">记录</button>
       </view>
 
       <view v-if="loading" class="glass-card page-state"><text>正在加载真实统计...</text></view>
@@ -44,7 +43,7 @@
 
       <view class="section-head">
         <text class="section-title">最近七天打卡</text>
-        <text class="text-muted small">真实持久化记录</text>
+        <text class="text-muted small">每日打卡次数</text>
       </view>
       <view class="glass-card trend-card">
         <view v-if="stats.checkInTrend.length === 0" class="inline-empty">暂无最近七天打卡数据</view>
@@ -83,7 +82,6 @@
 
       <view class="section-head">
         <text class="section-title">AI 反馈</text>
-        <text class="text-muted small">来自 /feedback/report</text>
       </view>
       <view v-if="report" class="glass-card feedback-card">
         <text class="feedback-title">{{ report.title }}</text>
@@ -174,10 +172,6 @@ function checkInTrendHeight(value) {
   return `${Number(value || 0) === 0 ? 0 : Math.max(18, Number(value) / max * 100)}%`;
 }
 
-function goRecord() {
-  uni.redirectTo({ url: "/pages/record/record" });
-}
-
 function goTasks() {
   uni.redirectTo({ url: "/pages/tasks/tasks" });
 }
@@ -199,7 +193,7 @@ async function loadPage() {
   if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
   if (tasksResult.status === "fulfilled") tasks.value = Array.isArray(tasksResult.value) ? tasksResult.value : [];
   if (statsResult.status === "rejected" || tasksResult.status === "rejected") {
-    pageError.value = "真实统计加载失败，请检查后端服务后重试";
+    pageError.value = "真实统计加载失败，请稍后重试";
   }
   if (reportResult.status === "fulfilled") report.value = reportResult.value;
   else {
@@ -232,13 +226,6 @@ onShow(loadPage);
 
 .date {
   font-size: 24rpx;
-}
-
-.record-btn {
-  width: 146rpx;
-  height: 72rpx;
-  line-height: 72rpx;
-  font-size: 26rpx;
 }
 
 .hero-card {

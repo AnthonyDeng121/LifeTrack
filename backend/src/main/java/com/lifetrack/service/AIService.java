@@ -9,6 +9,7 @@ import com.lifetrack.entity.SubTask;
 import com.lifetrack.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -25,7 +26,8 @@ public class AIService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private final String PYTHON_HOST = "http://127.0.0.1:5000/ai";
+    @Value("${ai.base-url:http://127.0.0.1:5000/ai}")
+    private String PYTHON_HOST = "http://127.0.0.1:5000/ai";
 
     // ==========================
     // 1. 任务拆解（goal_breaker）
@@ -36,21 +38,25 @@ public class AIService {
             Map<String, Object> req = Map.of("title", title);
             Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
 
-            int code = (Integer) resp.get("code");
-            if (code == 400) {
-                throw new RuntimeException(resp.get("msg").toString());
+            if (resp == null || !(resp.get("code") instanceof Number)
+                    || ((Number) resp.get("code")).intValue() != 200) {
+                throw new IllegalStateException("AI 服务返回失败响应");
             }
 
             Map<String, Object> data = (Map<String, Object>) resp.get("data");
             List<Map<String, Object>> goals = (List<Map<String, Object>>) data.get("goals");
             Map<String, Object> goal = goals.get(0);
             List<Map<String, Object>> subTasks = (List<Map<String, Object>>) goal.get("sub_tasks");
+            if (subTasks == null || subTasks.isEmpty()) throw new IllegalStateException("AI 未返回学习步骤");
 
             TaskDeconstructResponse.SubTaskDTO[] dtos = new TaskDeconstructResponse.SubTaskDTO[subTasks.size()];
             for (int i = 0; i < subTasks.size(); i++) {
                 Map<String, Object> st = subTasks.get(i);
                 String content = (String) st.get("step");
                 double weight = ((Number) st.get("weight")).doubleValue();
+                if (content == null || content.isBlank() || !Double.isFinite(weight) || weight <= 0) {
+                    throw new IllegalStateException("AI 返回的学习步骤或权重无效");
+                }
                 dtos[i] = new TaskDeconstructResponse.SubTaskDTO(content, BigDecimal.valueOf(weight));
             }
             return dtos;
@@ -164,6 +170,7 @@ public class AIService {
         } catch (Exception e) {
             log.error("进度判断AI失败", e);
             return AIMatchResult.builder()
+                .unavailable(true)
                 .matches(Collections.emptyList())
                 .aiAnalysis("AI 分析记录失败，请稍后重试")
                 .build();

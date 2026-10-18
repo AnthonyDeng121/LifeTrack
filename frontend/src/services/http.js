@@ -69,14 +69,14 @@ function getRuntimeHost() {
   return "";
 }
 
-export function request({ method = "GET", path, data, showError = true }) {
+export function request({ method = "GET", path, data, showError = true, timeout = 30000 }) {
   const token = getToken();
   return new Promise((resolve, reject) => {
     uni.request({
       url: buildUrl(path),
       method,
       data,
-      timeout: 30000,
+      timeout,
       header: {
         "content-type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -89,11 +89,12 @@ export function request({ method = "GET", path, data, showError = true }) {
         }
         if (res.statusCode === 401 || body.code === 401) {
           logout();
+          reject(Object.assign(new Error("登录已过期，请重新登录"), { code: 401 }));
           return;
         }
         const message = body.message || `请求失败：${res.statusCode}`;
         if (showError) uni.showToast({ title: message, icon: "none" });
-        reject(new Error(message));
+        reject(Object.assign(new Error(message), { code: body.code || res.statusCode }));
       },
       fail: (error) => {
         if (showError) uni.showToast({ title: "后端服务暂不可用", icon: "none" });

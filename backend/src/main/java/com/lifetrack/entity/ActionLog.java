@@ -48,7 +48,7 @@ public class ActionLog {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
         if (contribution == null) {
             contribution = BigDecimal.ZERO;
         }

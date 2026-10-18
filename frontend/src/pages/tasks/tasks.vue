@@ -32,11 +32,17 @@
 
       <view class="section-head">
         <text class="section-title">我的任务</text>
-        <text class="text-muted small">来自 /tasks</text>
+        <button class="glass-button batch-toggle" :disabled="deleting" @tap="toggleBatchMode">{{ batchMode ? "完成" : "批量管理" }}</button>
+      </view>
+
+      <view v-if="batchMode" class="batch-toolbar glass-card">
+        <button class="glass-button select-all-btn" :disabled="deleting || loading || !filteredTasks.length" @tap="toggleSelectAll">{{ allVisibleSelected ? "取消全选" : "全选当前列表" }}</button>
+        <text>已选 {{ selectedIds.length }} 项</text>
+        <button class="glass-button delete-selected" :disabled="!selectedIds.length || deleting" :loading="deleting" @tap="confirmBatchDelete">删除所选</button>
       </view>
 
       <view v-if="loading" class="glass-card empty-card">
-        <text>正在同步后端任务...</text>
+        <text>正在加载任务...</text>
       </view>
 
       <view v-else-if="loadError" class="glass-card empty-card error-state">
@@ -54,15 +60,17 @@
           v-for="task in filteredTasks"
           :key="task.id"
           class="glass-card task-card"
+          :class="{ selected: selectedIds.includes(task.id) }"
           @tap="openTask(task)"
         >
           <view class="task-head">
+            <text v-if="batchMode" class="selection-mark" :aria-label="selectedIds.includes(task.id) ? '已选择' : '未选择'">{{ selectedIds.includes(task.id) ? "☑" : "☐" }}</text>
             <view>
               <text class="task-title">{{ task.title }}</text>
               <text class="text-muted">{{ task.category }} · {{ task.updatedAt || "刚刚更新" }}</text>
               <text class="text-muted">{{ task.startDate }} 至 {{ task.endDate }} · 目标 {{ task.targetDays }} 天</text>
             </view>
-            <text class="pill">{{ task.statusDescription || "进行中" }}</text>
+            <text class="pill status-badge" :class="'status-' + task.status">{{ task.statusDescription || "未知状态" }}</text>
           </view>
           <view class="task-bottom">
             <view class="progress-track">
@@ -90,7 +98,7 @@
           <view
             class="mode-item"
             :class="{ active: creatorMode === 'ai' }"
-            @tap="creatorMode = 'ai'"
+            @tap="!creating && (creatorMode = 'ai')"
           >
             <text>AI 拆解</text>
             <text>自动生成子任务</text>
@@ -98,7 +106,7 @@
           <view
             class="mode-item"
             :class="{ active: creatorMode === 'manual' }"
-            @tap="creatorMode = 'manual'"
+            @tap="!creating && (creatorMode = 'manual')"
           >
             <text>手动添加</text>
             <text>自己填写任务</text>
@@ -151,7 +159,7 @@
 
         <view class="backend-note">
           <text v-if="creatorMode === 'ai'">
-            将调用后端 /tasks/deconstruct，保存主任务并生成 AI 子任务。
+            AI 将根据你的目标生成学习步骤，并保存为任务。
           </text>
           <text v-else>
             手动模式下，你可以自定义主任务和每一个具体的执行步骤。
@@ -191,8 +199,8 @@
           </view>
         </view>
 
-        <button class="glass-button create-btn" :loading="creating" @tap="createTask">
-          {{ creatorMode === "ai" ? "生成并保存" : "保存任务" }}
+        <button class="glass-button create-btn" :disabled="creating" :loading="creating" @tap="createTask">
+          {{ creating ? "正在保存，请稍候" : creatorMode === "ai" ? "生成并保存" : "保存任务" }}
         </button>
       </view>
     </view>
@@ -202,9 +210,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { createTaskByAI, createTaskManually, getTasks } from "../../services/api";
+import { createTaskByAI, createTaskManually, getTasks, deleteTasks } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 import { validatePlanPeriod } from "../../services/planRules";
 
@@ -243,10 +252,53 @@ const newTargetDays = ref("20");
 const aiResult = ref(null);
 const manualSubtasks = ref([{ content: "", weight: "" }]);
 
-const filteredTasks = computed(() => {
-  if (activeCategory.value === "全部") return tasks.value;
-  return tasks.value.filter((task) => task.category === activeCategory.value);
-});
+const statusOrder = { IN_PROGRESS: 0, NOT_STARTED: 1, COMPLETED: 2, CANCELLED: 3, EXPIRED: 4 };
+const batchMode = ref(false);
+const selectedIds = ref([]);
+const deleting = ref(false);
+watch(activeCategory, () => { selectedIds.value = []; });
+const filteredTasks = computed(() => tasks.value
+  .filter(task => activeCategory.value === "全部" || task.category === activeCategory.value)
+  .sort((a, b) => (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5)));
+const allVisibleSelected = computed(() => filteredTasks.value.length > 0 && filteredTasks.value.every(task => selectedIds.value.includes(task.id)));
+
+function toggleBatchMode() {
+  if (deleting.value) return;
+  batchMode.value = !batchMode.value;
+  selectedIds.value = [];
+}
+function toggleSelectAll() {
+  if (deleting.value) return;
+  selectedIds.value = allVisibleSelected.value ? [] : filteredTasks.value.map(task => task.id);
+}
+function confirmBatchDelete() {
+  if (deleting.value || !selectedIds.value.length) return;
+  if (selectedIds.value.length > 100) {
+    uni.showToast({ title: "每次最多删除100个任务，请减少选择", icon: "none" });
+    return;
+  }
+  const ids = [...selectedIds.value];
+  uni.showModal({
+    title: "删除任务",
+    content: `确定删除选中的 ${ids.length} 个任务及其打卡、学习记录？此操作无法撤销。`,
+    confirmText: "删除",
+    confirmColor: "#b42318",
+    success: async ({ confirm }) => {
+      if (!confirm || deleting.value) return;
+      deleting.value = true;
+      try {
+        await deleteTasks(ids);
+        selectedIds.value = [];
+        await loadTasks();
+        uni.showToast({ title: `已删除 ${ids.length} 个任务`, icon: "none" });
+      } catch (error) {
+        console.warn("batch delete failed", error);
+      } finally {
+        deleting.value = false;
+      }
+    },
+  });
+}
 
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
@@ -262,21 +314,30 @@ async function loadTasks() {
   try {
     const data = await getTasks(activeStatus.value ? { status: activeStatus.value } : {});
     tasks.value = Array.isArray(data) ? data : [];
+    selectedIds.value = selectedIds.value.filter(id => tasks.value.some(task => task.id === id));
   } catch (error) {
     console.warn("load tasks failed", error);
     tasks.value = [];
-    loadError.value = "计划加载失败，请检查后端服务后重试";
+    loadError.value = "计划加载失败，请稍后重试";
   } finally {
     loading.value = false;
   }
 }
 
 function selectStatus(status) {
+  if (deleting.value) return;
+  selectedIds.value = [];
   activeStatus.value = status;
   loadTasks();
 }
 
 function openTask(task) {
+  if (batchMode.value) {
+    if (deleting.value) return;
+    selectedIds.value = selectedIds.value.includes(task.id)
+      ? selectedIds.value.filter(id => id !== task.id) : [...selectedIds.value, task.id];
+    return;
+  }
   const query = `id=${task.id}&title=${encodeURIComponent(task.title)}&category=${encodeURIComponent(task.category)}&progress=${task.totalProgress || 0}`;
   uni.navigateTo({ url: `/pages/task-detail/task-detail?${query}` });
 }
@@ -304,30 +365,15 @@ function removeManualSubtask(index) {
   manualSubtasks.value.splice(index, 1);
 }
 
-function appendCreatedTask(result, title, category) {
-  const createdId = result && result.taskId;
-  if (!createdId || tasks.value.some((task) => String(task.id) === String(createdId))) return;
-  tasks.value = [
-    {
-      id: createdId,
-      title,
-      category,
-      totalProgress: 0,
-      subtaskCount: result.subTasks ? result.subTasks.length : 0,
-      updatedAt: "刚刚",
-    },
-    ...tasks.value,
-  ];
-}
-
 async function createTask() {
+  if (creating.value) return;
   const title = newTitle.value.trim();
   if (!title) {
     uni.showToast({ title: "先写一个任务名称", icon: "none" });
     return;
   }
   if (!TASK_CATEGORIES.includes(newCategory.value)) {
-    uni.showToast({ title: "请选择后端支持的分类", icon: "none" });
+    uni.showToast({ title: "请选择有效分类", icon: "none" });
     return;
   }
   const targetDays = Number(newTargetDays.value);
@@ -363,8 +409,8 @@ async function createTask() {
     }
     
     aiResult.value = result;
+    activeStatus.value = "";
     await loadTasks();
-    appendCreatedTask(result, title, newCategory.value);
     uni.showToast({
       title: creatorMode.value === "ai" ? "AI 已生成任务" : "任务已保存",
       icon: "none",
@@ -373,20 +419,32 @@ async function createTask() {
     activeCategory.value = "全部";
   } catch (error) {
     console.warn("create task failed", error);
-    if (creatorMode.value === "ai") {
+    if (creatorMode.value === "ai" && error.code === 503) {
       creatorMode.value = "manual";
       aiResult.value = null;
       uni.showToast({ title: "AI 暂不可用，已切换为手动创建", icon: "none", duration: 2500 });
+    } else if (creatorMode.value === "ai") {
+      uni.showToast({ title: error.message || "AI 请求未完成，请重试", icon: "none" });
     }
   } finally {
     creating.value = false;
   }
 }
 
-onMounted(loadTasks);
+onShow(loadTasks);
 </script>
 
 <style scoped>
+.batch-toggle { width: 170rpx; font-size: 24rpx; margin: 0; }
+.batch-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20rpx; flex-wrap: wrap; font-size: 14px; }
+.select-all-btn, .delete-selected { padding: 10px 16px; min-height: 42px; line-height: 1.4; flex-shrink: 0; font-size: 14px; }
+.delete-selected { margin: 0 0 0 auto; color: #b42318; font-size: 24rpx; }
+.task-card.selected { outline: 2px solid #2378ad; }
+.selection-mark { color: #176895; font-size: 36rpx; }
+.creator-dialog { max-width: 960px; box-sizing: border-box; }
+.st-content-input { min-width: 0; }
+.st-weight-input { flex-shrink: 0; }
+
 .top-row {
   display: flex;
   align-items: flex-start;

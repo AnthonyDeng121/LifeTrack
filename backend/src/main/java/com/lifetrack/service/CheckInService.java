@@ -33,6 +33,8 @@ public class CheckInService {
     @Transactional
     public CheckInResponse create(CheckInCreateRequest request) {
         Long userId = UserContext.getUserId();
+        // 与自然语言记录共用计划行锁，避免手动接口和自动打卡竞争。
+        taskRepository.findLockedById(request.getTaskId());
         Task task = getOwnedTask(request.getTaskId(), userId);
         LocalDate checkInDate = request.getCheckInDate() == null ? today() : request.getCheckInDate();
         validateCheckIn(task, checkInDate);

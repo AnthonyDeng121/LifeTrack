@@ -18,12 +18,12 @@
       <view class="glass-card progress-card">
         <view class="progress-circle">
           <text>{{ formatProgress(task.totalProgress) }}%</text>
-          <text>总进度</text>
+          <text>学习进度</text>
         </view>
         <view class="progress-copy">
           <text class="section-title">子任务会驱动总进度</text>
           <text class="text-muted">
-            点击“完成”会调用后端 /tasks/subtasks/{id}/complete，由后端更新子任务和主任务进度。
+            完成一个学习步骤，计划进度就会随之更新。
           </text>
         </view>
       </view>
@@ -32,7 +32,7 @@
         <view class="plan-info">
           <text>周期：{{ task.startDate }} 至 {{ task.endDate }}</text>
           <text>目标打卡：{{ task.targetDays }} 天</text>
-          <text>状态：{{ task.statusDescription }}</text>
+          <text class="pill status-badge" :class="'status-' + task.status">{{ task.statusDescription }}</text>
         </view>
         <button class="glass-button plan-edit-btn" @tap="openPlanEdit">编辑计划</button>
       </view>
@@ -45,26 +45,11 @@
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
-        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>完成率</text></view>
+        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡完成率</text></view>
       </view>
       <view v-if="checkInLoading" class="glass-card empty-card"><text>正在加载打卡数据...</text></view>
       <view v-else-if="checkInError" class="glass-card empty-card state-card error-state">
         <text>{{ checkInError }}</text><button class="glass-button retry-btn" @tap="loadCheckIns">重新加载</button>
-      </view>
-
-      <view class="glass-card checkin-card">
-        <view class="checkin-title-row">
-          <text class="section-title">每日打卡</text>
-          <text class="pill">{{ checkInDate }}</text>
-        </view>
-        <textarea v-model="checkInContent" class="glass-input checkin-content" maxlength="500" placeholder="记录今天学习了什么" />
-        <view class="checkin-fields">
-          <input v-model="checkInDuration" type="number" class="glass-input" placeholder="学习分钟数" />
-          <input v-model="checkInMood" class="glass-input" maxlength="20" placeholder="心情（可选）" />
-        </view>
-        <button class="glass-button checkin-btn" :disabled="!canCheckIn" :loading="checkingIn" @tap="submitCheckIn">
-          {{ canCheckIn ? "完成今日打卡" : `当前状态不可打卡（${task.statusDescription}）` }}
-        </button>
       </view>
 
       <view class="section-head">
@@ -110,7 +95,6 @@
 
       <view class="section-head">
         <text class="section-title">拆解步骤</text>
-        <text class="text-muted small">来自 /tasks/{id}/subtasks</text>
       </view>
 
       <view v-if="loading" class="glass-card empty-card">
@@ -150,8 +134,8 @@
             >
               {{ isDone(item) ? "已完成" : "完成" }}
             </button>
-            <text class="edit-icon" @tap.stop="openEditDialog(item)">✎</text>
-            <text class="delete-icon" @tap.stop="handleDeleteSubtask(item)">×</text>
+            <button class="glass-button step-edit-btn" @tap.stop="openEditDialog(item)">编辑</button>
+            <button class="glass-button step-delete-btn" @tap.stop="handleDeleteSubtask(item)">删除</button>
           </view>
         </view>
       </view>
@@ -187,7 +171,7 @@
         </view>
       </view>
 
-      <button class="glass-button record-action" @tap="goRecord">用行为记录推进任务</button>
+      <button class="glass-button record-action" @tap="goRecord">前往学习记录</button>
       <button class="glass-button delete-task-btn" @tap="handleDeleteTask">放弃这个目标</button>
       </template>
       <view class="tabbar-space"></view>
@@ -198,9 +182,9 @@
 <script setup>
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, createCheckIn, getCheckInHistory, getCheckInStats } from "../../services/api";
+import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
-import { validateCheckInForm, validatePlanPeriod } from "../../services/planRules";
+import { validatePlanPeriod } from "../../services/planRules";
 
 const task = ref({
   id: "",
@@ -228,22 +212,10 @@ const planForm = ref({ title: "", category: "学习", startDate: "", endDate: ""
 const categoryIndex = computed(() => Math.max(0, categories.indexOf(planForm.value.category)));
 const statusIndex = computed(() => Math.max(0, statusOptions.findIndex(item => item.value === planForm.value.status)));
 const currentStatusLabel = computed(() => statusOptions[statusIndex.value].label);
-const formatLocalDate = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-const checkInDate = formatLocalDate(new Date());
-const checkInContent = ref("");
-const checkInDuration = ref("");
-const checkInMood = ref("");
-const checkingIn = ref(false);
 const checkInHistory = ref([]);
 const checkInLoading = ref(false);
 const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
-const canCheckIn = computed(() => task.value.status === "IN_PROGRESS");
 const subtasks = ref([]);
 const loading = ref(false);
 const subtaskError = ref("");
@@ -324,32 +296,6 @@ async function loadCheckIns() {
   }
 }
 
-async function submitCheckIn() {
-  const content = checkInContent.value.trim();
-  const duration = Number(checkInDuration.value || 0);
-  const formError = validateCheckInForm({ content, durationMinutes: duration, status: task.value.status });
-  if (formError) return uni.showToast({ title: formError, icon: "none" });
-  checkingIn.value = true;
-  try {
-    await createCheckIn({
-      taskId: Number(task.value.id),
-      checkInDate,
-      content,
-      durationMinutes: duration,
-      mood: checkInMood.value.trim() || null,
-    });
-    checkInContent.value = "";
-    checkInDuration.value = "";
-    checkInMood.value = "";
-    await loadCheckIns();
-    uni.showToast({ title: "打卡成功", icon: "success" });
-  } catch (error) {
-    console.warn("check-in failed", error);
-  } finally {
-    checkingIn.value = false;
-  }
-}
-
 function openPlanEdit() {
   planForm.value = {
     title: task.value.title,
@@ -401,7 +347,8 @@ async function finishSubtask(item) {
     await completeSubtask(item.id);
     item.isCompleted = 1;
     item.currentProgress = 100;
-    uni.showToast({ title: "后端已同步完成状态", icon: "none" });
+    await loadTask();
+    uni.showToast({ title: "步骤已完成", icon: "none" });
   } catch (error) {
     console.warn("complete subtask failed", error);
   }
@@ -462,13 +409,14 @@ function closeEditDialog() {
 }
 
 async function saveSubtask() {
+  if (saving.value) return;
   const { id, content, weight } = editingSubtask.value;
   if (!content.trim()) {
     uni.showToast({ title: "内容不能为空", icon: "none" });
     return;
   }
-  if (!weight || isNaN(Number(weight)) || Number(weight) <= 0 || Number(weight) >= 100) {
-    uni.showToast({ title: "请输入有效的权重 (1-99)", icon: "none" });
+  if (!weight || !Number.isFinite(Number(weight)) || Number(weight) < 1 || Number(weight) > 100) {
+    uni.showToast({ title: "请输入有效的权重 (1-100)", icon: "none" });
     return;
   }
 
@@ -490,17 +438,7 @@ async function saveSubtask() {
 }
 
 async function refreshTaskProgress() {
-  try {
-    const data = await getSubtasks(task.value.id);
-    // 实际上 getSubtasks 只返回子任务，不返回主任务总进度
-    // 这里需要一个获取单个任务详情的接口，或者通过子任务手动计算
-    if (Array.isArray(data)) {
-      const total = data.reduce((sum, st) => {
-        return sum + (Number(st.weight) * Number(st.currentProgress));
-      }, 0);
-      task.value.totalProgress = total;
-    }
-  } catch (e) {}
+  await loadTask();
 }
 
 onLoad((options) => {
@@ -625,7 +563,7 @@ onLoad((options) => {
 
 .subtask-card {
   display: grid;
-  grid-template-columns: 52rpx 1fr 118rpx;
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
   gap: 18rpx;
 }
@@ -649,12 +587,14 @@ onLoad((options) => {
 }
 
 .subtask-main {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12rpx;
 }
 
 .subtask-title {
+  overflow-wrap: anywhere;
   color: #2d3e50;
   font-size: 27rpx;
   font-weight: 800;
@@ -679,9 +619,42 @@ onLoad((options) => {
 }
 
 .subtask-ops {
+  grid-column: 2;
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.subtask-ops .glass-button {
+  min-width: 68px;
+  min-height: 38px;
+  height: auto;
+  padding: 8px 14px;
+  line-height: 1.4;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.step-delete-btn { color: #b42318; }
+.plan-info, .progress-copy, .detail-top > view { min-width: 0; overflow-wrap: anywhere; }
+.plan-edit-btn { flex-shrink: 0; min-width: 90px; }
+.plan-info .status-badge { align-self: flex-start; }
+.edit-dialog { max-width: 560px; max-height: calc(100dvh - 48px); overflow-y: auto; padding: 24px; }
+.modal-mask { position: fixed; inset: 0; z-index: 50; padding: 24px 16px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: rgba(25, 63, 88, .35); backdrop-filter: blur(8px); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.modal-title { font-size: 20px; font-weight: 800; }
+.close-btn { width: 36px; height: 36px; line-height: 34px; font-size: 28px; flex-shrink: 0; }
+.form-block { display: flex; flex-direction: column; gap: 8px; }
+.field-label { font-size: 14px; font-weight: 700; color: #236894; }
+@media screen and (min-width: 700px) {
+  .subtask-card { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .subtask-ops { grid-column: 3; }
+  .checkin-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media screen and (max-width: 420px) {
+  .plan-card { align-items: flex-start; flex-wrap: wrap; }
+  .checkin-fields { grid-template-columns: minmax(0, 1fr); }
+  .progress-card { gap: 16px; }
 }
 
 .delete-icon,

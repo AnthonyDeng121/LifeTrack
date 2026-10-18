@@ -65,6 +65,10 @@ button::after {
 .safe-area {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  min-width: 0;
 }
 
 .glass-card {
@@ -82,6 +86,9 @@ button::after {
 }
 
 .glass-button {
+  margin: 0;
+  box-sizing: border-box;
+  white-space: nowrap;
   border-radius: 999rpx;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.28)),
@@ -128,6 +135,8 @@ button::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin: 42rpx 0 20rpx;
 }
 
@@ -241,4 +250,11 @@ button::after {
     font-size: 42rpx;
   }
 }
+.status-badge { flex-shrink: 0; font-weight: 700; }
+.status-IN_PROGRESS { color: #146c43; background: #dcf5e7; }
+.status-NOT_STARTED { color: #1d4ed8; background: #e1edff; }
+.status-COMPLETED { color: #6d28d9; background: #ede4ff; }
+.status-CANCELLED { color: #526174; background: #e8edf2; }
+.status-EXPIRED { color: #b54708; background: #fff0d5; }
+
 </style>

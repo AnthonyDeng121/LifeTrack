@@ -6,11 +6,18 @@
         <view class="hero-text">
           <view class="record-eyebrow">行为记录</view>
           <view class="record-title">记录今天</view>
-          <view class="record-subtitle">写一句自然语言，AI 会同步行为日志和任务进度。</view>
+          <view class="record-subtitle">自然语言自动匹配计划和步骤；每天首次有效记录自动打卡，后续记录继续累计进度。</view>
         </view>
       </view>
 
       <view class="glass-card input-card">
+        <view class="input-group">
+          <text class="input-label">匹配范围</text>
+          <picker :range="planLabels" :value="selectedPlanIndex" @change="selectPlan">
+            <view class="glass-input">{{ planLabels[selectedPlanIndex] }}</view>
+          </picker>
+          <text v-if="plansError" class="hint">{{ plansError }}</text>
+        </view>
         <view class="input-group">
           <text class="input-label">行为描述</text>
           <textarea
@@ -32,30 +39,34 @@
         </view>
 
         <button class="glass-button sync-btn" :loading="syncing" @tap="submitRecord">
-          交给 AI 分析并写入数据库
+          分析并保存记录
         </button>
         <text class="hint">
-          这里会调用 /actions/sync，后端会保存行为记录，并自动更新相关任务进度。
+          仅实际增加步骤进度的记录会保存并触发打卡；无关内容不会打卡。
         </text>
       </view>
 
       <view v-if="syncResult" class="glass-card result-card">
         <text class="result-title">AI 同步结果</text>
         <text class="result-copy">{{ syncResult.aiAnalysis }}</text>
+        <template v-if="syncResult.analysisUnavailable">
+          <text class="hint">AI 暂不可用，可在上方选择计划后手动打卡。本次不自动增加学习进度，步骤可在计划详情手动管理。</text>
+          <button class="glass-button" :disabled="!selectedTaskId || syncing" :loading="syncing" @tap="submitManualCheckIn">为所选计划手动打卡</button>
+        </template>
+        <text v-if="!syncResult.updates?.length" class="hint">未产生有效进度，未保存学习记录，也未新增打卡。请补充具体学习内容，或选择计划后重试。</text>
         <view class="update-list">
-          <view v-for="item in syncResult.updates" :key="item.taskTitle" class="update-row">
+          <view v-for="item in syncResult.updates" :key="item.subTaskId" class="update-row">
             <view>
-              <text>{{ item.taskTitle }}</text>
-              <text class="text-muted">新增 {{ formatProgress(item.increment) }}%</text>
+              <text>{{ item.taskTitle }} · {{ item.subTaskTitle }}</text>
+              <text class="text-muted">步骤增加 {{ formatProgress(item.increment) }} 个百分点</text>
             </view>
-            <text class="pill">{{ formatProgress(item.newTotalProgress) }}%</text>
+            <view><text class="pill">计划进度 {{ formatProgress(item.newTotalProgress) }}%</text><text class="text-muted">{{ item.checkedInNow ? "首次有效记录，今日打卡成功" : "今日已打卡，本次只更新进度" }}</text></view>
           </view>
         </view>
       </view>
 
       <view class="section-head">
         <text class="section-title">情绪打卡</text>
-        <text class="text-muted small">来自 /feedback/mood</text>
       </view>
       <view class="glass-card mood-card">
         <view class="mood-top">
@@ -78,7 +89,6 @@
 
       <view class="section-head">
         <text class="section-title">历史记录</text>
-        <text class="text-muted small">来自 /actions/history</text>
       </view>
       <view v-if="historyLoading" class="glass-card empty-card">
         <text>正在读取历史...</text>
@@ -112,8 +122,26 @@
 import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats, getTasks, createCheckIn } from "../../services/api";
 
+const plans = ref([]);
+const selectedTaskId = ref(null);
+const plansError = ref("");
+const planLabels = computed(() => ["自动匹配全部进行中的计划", ...plans.value.map(p => p.title)]);
+const selectedPlanIndex = computed(() => Math.max(0, plans.value.findIndex(p => p.id === selectedTaskId.value) + 1));
+function selectPlan(event) {
+  selectedTaskId.value = plans.value[Number(event.detail.value) - 1]?.id ?? null;
+}
+async function loadPlans() {
+  try {
+    plans.value = await getTasks({ status: "IN_PROGRESS" });
+    if (!plans.value.some(p => p.id === selectedTaskId.value)) selectedTaskId.value = null;
+    plansError.value = "";
+  } catch {
+    plansError.value = "计划列表加载失败，仍可尝试自动匹配";
+  }
+}
+onShow(loadPlans);
 const rawInput = ref("");
 const duration = ref("");
 const syncing = ref(false);
@@ -135,6 +163,7 @@ function formatProgress(value) {
 }
 
 async function submitRecord() {
+  if (syncing.value) return;
   const value = rawInput.value.trim();
   const mins = duration.value.trim();
 
@@ -149,11 +178,15 @@ async function submitRecord() {
 
   syncing.value = true;
   try {
-    syncResult.value = await syncAction(value, mins);
+    syncResult.value = await syncAction(value, mins, selectedTaskId.value);
+    if (!syncResult.value?.updates?.length) {
+      uni.showToast({ title: "未更新进度，请查看分析结果", icon: "none" });
+      return;
+    }
     rawInput.value = "";
     duration.value = "";
-    await loadData();
-    uni.showToast({ title: "已同步行为记录", icon: "none" });
+    await Promise.all([loadData(), loadPlans()]);
+    uni.showToast({ title: "学习记录已保存", icon: "none" });
   } catch (error) {
     console.warn("sync action failed", error);
   } finally {
@@ -163,6 +196,34 @@ async function submitRecord() {
 
 function changeMood(event) {
   anxietyLevel.value = Number(event.detail.value);
+}
+
+async function submitManualCheckIn() {
+  if (syncing.value || !selectedTaskId.value) return;
+  const content = rawInput.value.trim();
+  const match = duration.value.trim().match(/^(\d+(?:\.\d+)?)\s*(分钟|小时)?$/);
+  if (!content || !match) {
+    uni.showToast({ title: "请填写学习内容和明确时长，如30分钟", icon: "none" });
+    return;
+  }
+  const minutes = Number(match[1]) * (match[2] === "小时" ? 60 : 1);
+  if (!Number.isSafeInteger(minutes) || minutes < 0) {
+    uni.showToast({ title: "学习时长应为非负整数分钟", icon: "none" });
+    return;
+  }
+  syncing.value = true;
+  try {
+    await createCheckIn({ taskId: selectedTaskId.value, content, durationMinutes: minutes });
+    rawInput.value = "";
+    duration.value = "";
+    syncResult.value = null;
+    await Promise.all([loadData(), loadPlans()]);
+    uni.showToast({ title: "手动打卡成功，未自动增加进度", icon: "none" });
+  } catch (error) {
+    console.warn("manual check-in failed", error);
+  } finally {
+    syncing.value = false;
+  }
 }
 
 async function saveMood() {
@@ -192,7 +253,7 @@ async function loadData() {
   } catch (error) {
     console.warn("load record data failed", error);
     history.value = [];
-    historyError.value = "历史记录加载失败，请检查后端服务后重试";
+    historyError.value = "历史记录加载失败，请稍后重试";
   } finally {
     historyLoading.value = false;
   }
@@ -202,7 +263,9 @@ async function removeHistory(id) {
   try {
     await deleteAction(id);
     history.value = history.value.filter((item) => item.id !== id);
-    uni.showToast({ title: "已请求后端撤销记录", icon: "none" });
+    syncResult.value = null;
+    await loadPlans();
+    uni.showToast({ title: "记录已撤销", icon: "none" });
   } catch (error) {
     console.warn("delete action failed", error);
   }

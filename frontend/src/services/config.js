@@ -52,6 +52,7 @@ export const endpoints = {
       data,
     }),
     delete: (taskId) => ({ method: "DELETE", path: `/tasks/${taskId}` }),
+    batchDelete: (taskIds) => ({ method: "POST", path: "/tasks/batch-delete", data: { taskIds } }),
     deleteSubtask: (subTaskId) => ({
       method: "DELETE",
       path: `/tasks/subtasks/${subTaskId}`,
@@ -72,10 +73,10 @@ export const endpoints = {
     stats: (taskId) => ({ method: "GET", path: `/check-ins/tasks/${taskId}/stats` }),
   },
   actions: {
-    sync: (rawInput) => ({
+    sync: (rawInput, durationInput, taskId) => ({
       method: "POST",
       path: "/actions/sync",
-      data: { rawInput },
+      data: { rawInput, ...(durationInput !== undefined ? { durationInput } : {}), ...(taskId != null ? { taskId } : {}) },
     }),
     history: (page = 0, size = 10) => ({
       method: "GET",

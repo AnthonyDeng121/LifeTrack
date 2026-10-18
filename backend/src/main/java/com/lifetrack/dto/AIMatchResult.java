@@ -12,6 +12,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AIMatchResult {
+    private boolean unavailable;
     private List<MatchDetail> matches;
     private String aiAnalysis;
     private Integer durationMinutes;

@@ -10,14 +10,15 @@ import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 public class RestConfig {
     @Bean
-    public RestTemplate restTemplate() {
+    public RestTemplate restTemplate(@Value("${ai.read-timeout-seconds:40}") int readTimeoutSeconds) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(2));
-        requestFactory.setReadTimeout(Duration.ofSeconds(5));
+        requestFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
         RestTemplate restTemplate = new RestTemplate(requestFactory);
         // 确保 JSON 使用 UTF-8
         restTemplate.getMessageConverters().forEach(converter -> {

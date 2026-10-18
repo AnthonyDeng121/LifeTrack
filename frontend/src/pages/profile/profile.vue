@@ -36,7 +36,6 @@
 
       <view class="section-head">
         <text class="section-title">本周画像</text>
-        <text class="text-muted small">来自 /feedback/report</text>
       </view>
       <view v-if="report" class="glass-card report-card">
         <text class="report-title">{{ report.title }}</text>
@@ -54,24 +53,6 @@
         <text class="text-muted small">基础计划与打卡功能仍可正常使用。</text>
       </view>
 
-      <view class="section-head">
-        <text class="section-title">后端联调</text>
-      </view>
-      <view class="glass-card backend-card">
-        <view class="backend-row">
-          <text>用户 ID</text>
-          <text>{{ user.userId || "开发用户" }}</text>
-        </view>
-        <view class="backend-row">
-          <text>登录状态</text>
-          <text>{{ hasToken ? "已保存 token" : "未登录" }}</text>
-        </view>
-        <view class="backend-row">
-          <text>接口前缀</text>
-          <text>{{ apiBase }}</text>
-        </view>
-      </view>
-
       <button class="glass-button logout-btn" @tap="handleLogout">退出登录</button>
       </template>
 
@@ -84,8 +65,8 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { getDashboardStats, getFeedbackReport, updateMood } from "../../services/api";
-import { getApiBaseUrl, getToken, getUser, logout } from "../../services/http";
+import { getDashboardStats, getFeedbackReport } from "../../services/api";
+import { getUser, logout } from "../../services/http";
 
 const user = ref(getUser());
 const stats = ref({
@@ -93,22 +74,14 @@ const stats = ref({
   weeklyTrend: [],
 });
 const report = ref(null);
-const apiBase = ref(getApiBaseUrl());
-const moodLevel = ref(1);
 const loading = ref(false);
 const pageError = ref("");
 const reportError = ref("");
 
 const username = computed(() => user.value.username || "林同学");
 const avatarText = computed(() => username.value.slice(0, 1));
-const hasToken = computed(() => Boolean(getToken()));
 
-const moodText = computed(() => {
-  if (moodLevel.value <= 3) return "非常放松，动力十足";
-  if (moodLevel.value <= 6) return "有点压力，正常节奏";
-  if (moodLevel.value <= 8) return "比较焦虑，需要调整";
-  return "极度焦虑，建议休息";
-});
+
 
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
@@ -120,24 +93,13 @@ async function loadProfile() {
   reportError.value = "";
   const [statsResult, reportResult] = await Promise.allSettled([getDashboardStats(), getFeedbackReport(false)]);
   if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
-  else pageError.value = "个人统计加载失败，请检查后端服务后重试";
+  else pageError.value = "个人统计加载失败，请稍后重试";
   if (reportResult.status === "fulfilled") report.value = reportResult.value;
   else {
     report.value = null;
     reportError.value = "AI 服务暂不可用";
   }
   loading.value = false;
-}
-
-async function handleMoodChange(e) {
-  const next = e.detail.value;
-  moodLevel.value = next;
-  try {
-    await updateMood(next);
-    uni.showToast({ title: "焦虑值已同步", icon: "none" });
-  } catch (error) {
-    console.warn("update mood failed", error);
-  }
 }
 
 function handleLogout() {

@@ -50,6 +50,33 @@ class TaskServiceTest {
     }
 
     @Test
+    void batchDeleteMustCheckAllOwnersBeforeDeleting() {
+        Task owned = planOwnedByCurrentUser();
+        Task foreign = planOwnedByCurrentUser();
+        foreign.setId(2L);
+        foreign.setUserId(99L);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(owned));
+        when(taskRepository.findById(2L)).thenReturn(Optional.of(foreign));
+        assertThrows(BusinessException.class, () -> taskService.deleteTasks(List.of(1L, 2L)));
+        verifyNoInteractions(checkInRecordRepository, subTaskRepository, actionLogRepository);
+        verify(taskRepository, org.mockito.Mockito.never()).delete(any(Task.class));
+    }
+
+    @Test
+    void batchDeleteMustRejectMissingTaskBeforeDeleting() {
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(planOwnedByCurrentUser()));
+        when(taskRepository.findById(2L)).thenReturn(Optional.empty());
+        assertThrows(BusinessException.class, () -> taskService.deleteTasks(List.of(1L, 2L)));
+        verifyNoInteractions(checkInRecordRepository, subTaskRepository, actionLogRepository);
+    }
+
+    @Test
+    void batchDeleteRejectsEmptySelection() {
+        assertThrows(BusinessException.class, () -> taskService.deleteTasks(List.of()));
+        verifyNoInteractions(taskRepository);
+    }
+
+    @Test
     void shouldRejectTargetDaysBeyondPlanPeriod() {
         Task task = planOwnedByCurrentUser();
         when(taskRepository.findById(1L)).thenReturn(Optional.of(task));

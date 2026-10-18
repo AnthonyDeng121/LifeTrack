@@ -22,6 +22,9 @@ const planPayload = {
   subTasks: [{ content: "完成接口练习", weight: 1 }],
 };
 assert.deepEqual(endpoints.tasks.createManual(planPayload), { method: "POST", path: "/tasks/manual", data: planPayload });
+assert.deepEqual(endpoints.tasks.batchDelete([101, 102]), {
+  method: "POST", path: "/tasks/batch-delete", data: { taskIds: [101, 102] },
+});
 assert.deepEqual(endpoints.tasks.update(101, { status: "COMPLETED" }), {
   method: "PUT", path: "/tasks/101", data: { status: "COMPLETED" },
 });
@@ -43,6 +46,88 @@ assert.match(dashboardPage, /AI 服务暂不可用/);
 assert.match(tasksPage, /已切换为手动创建/);
 assert.match(detailPage, /打卡数据加载失败/);
 assert.match(recordPage, /暂无行为记录/);
+assert.doesNotMatch(detailPage, /submitCheckIn|createCheckIn|v-model="checkInContent"/);
+assert.doesNotMatch(dashboardPage, /goRecord|record-btn/);
+assert.deepEqual(endpoints.actions.sync("学习编曲", "30分钟", 101), {
+  method: "POST", path: "/actions/sync", data: { rawInput: "学习编曲", durationInput: "30分钟", taskId: 101 },
+});
 assert.match(profilePage, /基础计划与打卡功能仍可正常使用/);
+for (const source of [dashboardPage, tasksPage, detailPage, recordPage, profilePage]) {
+  const template = source.slice(0, source.indexOf('<script'));
+  assert.doesNotMatch(template, /来自\s*\/|调用后端|后端联调|写入数据库|接口前缀/);
+}
 
+// 执行任务页实际逻辑，验证筛选后的批量选择、取消确认、删除与排序。
+const { computed, ref, watch, nextTick } = await import("vue");
+let storedTasks = ["EXPIRED", "COMPLETED", "IN_PROGRESS", "CANCELLED", "NOT_STARTED"]
+  .map((status, index) => ({ id: index + 1, status, category: "学习" }));
+let confirmDeletion = false;
+let deletedIds = [];
+const pageScript = tasksPage.match(/<script setup>([\s\S]*?)<\/script>/)[1]
+  .replace(/^import .*;$/gm, "");
+const page = new Function("computed", "ref", "watch", "onShow", "uni", "getTasks", "deleteTasks", "TASK_CATEGORIES", `${pageScript}
+  return { tasks, filteredTasks, batchMode, selectedIds, activeCategory, loadTasks, toggleBatchMode, toggleSelectAll, confirmBatchDelete, openTask };
+`)(computed, ref, watch, () => {}, {
+  showToast() {},
+  showModal: async ({ success }) => success({ confirm: confirmDeletion }),
+}, async () => storedTasks, async ids => {
+  deletedIds = ids;
+  storedTasks = storedTasks.filter(task => !ids.includes(task.id));
+}, ["学习", "运动"]);
+await page.loadTasks();
+assert.deepEqual(page.filteredTasks.value.map(task => task.status), ["IN_PROGRESS", "NOT_STARTED", "COMPLETED", "CANCELLED", "EXPIRED"]);
+page.toggleBatchMode();
+page.openTask(page.filteredTasks.value[0]);
+assert.deepEqual(page.selectedIds.value, [3]);
+page.confirmBatchDelete();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.deepEqual(deletedIds, [], "取消确认不能删除任务");
+page.toggleSelectAll();
+assert.equal(page.selectedIds.value.length, 5);
+page.activeCategory.value = "运动";
+await nextTick();
+assert.deepEqual(page.selectedIds.value, [], "切换筛选必须清除选择");
+page.activeCategory.value = "学习";
+await nextTick();
+page.openTask(page.filteredTasks.value[0]);
+confirmDeletion = true;
+page.confirmBatchDelete();
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.deepEqual(deletedIds, [3]);
+assert.equal(page.tasks.value.length, 4);
+assert.deepEqual(page.selectedIds.value, []);
+
+// 执行记录页提交逻辑：无匹配保留输入，成功才清空，时长和可选计划必须传到 API。
+let syncResponse = { updates: [], aiAnalysis: "没有匹配" };
+let syncArguments;
+let manualPayload;
+const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
+const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "createCheckIn", `${recordScript}
+  return { rawInput, duration, syncing, selectedTaskId, syncResult, submitRecord, submitManualCheckIn };
+`)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
+  syncArguments = args;
+  return syncResponse;
+}, async () => ({}), async () => ({ list: [] }), async () => [], async payload => { manualPayload = payload; });
+recording.rawInput.value = "学习编曲";
+recording.duration.value = "30分钟";
+recording.selectedTaskId.value = 101;
+await recording.submitRecord();
+assert.deepEqual(syncArguments, ["学习编曲", "30分钟", 101]);
+assert.equal(recording.rawInput.value, "学习编曲", "无匹配保留输入，方便修改或选择计划后重试");
+assert.equal(recording.syncing.value, false);
+syncResponse = { updates: [{ taskId: 101, subTaskId: 1, checkedInNow: true }] };
+await recording.submitRecord();
+assert.equal(recording.rawInput.value, "");
+assert.equal(recording.duration.value, "");
+syncResponse = { updates: [], analysisUnavailable: true, aiAnalysis: "AI 分析记录失败，请稍后重试" };
+recording.rawInput.value = "学习编曲软件";
+recording.duration.value = "1.5小时";
+recording.selectedTaskId.value = 101;
+await recording.submitRecord();
+assert.equal(recording.syncResult.value.analysisUnavailable, true);
+assert.equal(recording.rawInput.value, "学习编曲软件");
+await recording.submitManualCheckIn();
+assert.deepEqual(manualPayload, { taskId: 101, content: "学习编曲软件", durationMinutes: 90 });
+assert.equal(recording.rawInput.value, "");
+assert.equal(recording.syncing.value, false);
 console.log("Plan and check-in flow checks passed.");
