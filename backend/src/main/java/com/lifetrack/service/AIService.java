@@ -33,9 +33,19 @@ public class AIService {
     // 1. 任务拆解（goal_breaker）
     // ==========================
     public TaskDeconstructResponse.SubTaskDTO[] deconstructTask(String title) {
+        var request = new com.lifetrack.dto.TaskPreviewRequest();
+        request.setTitle(title);
+        return previewTask(request);
+    }
+
+    public TaskDeconstructResponse.SubTaskDTO[] previewTask(com.lifetrack.dto.TaskPreviewRequest request) {
         try {
             String url = PYTHON_HOST + "/deconstruct";
-            Map<String, Object> req = Map.of("title", title);
+            Map<String, Object> req = new HashMap<>();
+            req.put("title", request.getTitle());
+            req.put("guidance", request.getGuidance());
+            req.put("step_count", request.getStepCount());
+            req.put("previous_steps", request.getPreviousSteps());
             Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
 
             if (resp == null || !(resp.get("code") instanceof Number)
@@ -79,6 +89,7 @@ public class AIService {
                 Map<String, Object> item = new HashMap<>();
                 item.put("task_id", st.getId());
                 item.put("step", st.getContent());
+                item.put("current_progress", st.getCurrentProgress());
                 subTaskList.add(item);
             }
 
@@ -155,6 +166,8 @@ public class AIService {
                             matches.add(AIMatchResult.MatchDetail.builder()
                                     .subTaskId(subTaskId)
                                     .increment(increment)
+                                    .completed(Boolean.TRUE.equals(m.get("completed")))
+                                    .completionEvidence(m.get("completion_evidence") instanceof String ? (String) m.get("completion_evidence") : null)
                                     .build());
                         }
                     }

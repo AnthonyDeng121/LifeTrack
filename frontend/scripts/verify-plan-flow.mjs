@@ -69,17 +69,25 @@ let storedTasks = ["EXPIRED", "COMPLETED", "IN_PROGRESS", "CANCELLED", "NOT_STAR
   .map((status, index) => ({ id: index + 1, status, category: "学习" }));
 let confirmDeletion = false;
 let deletedIds = [];
+let previewCalls = [];
+let savedPayload;
+let previewWait;
 const pageScript = tasksPage.match(/<script setup>([\s\S]*?)<\/script>/)[1]
   .replace(/^import .*;$/gm, "");
-const page = new Function("computed", "ref", "watch", "onShow", "uni", "getTasks", "deleteTasks", "TASK_CATEGORIES", `${pageScript}
-  return { tasks, filteredTasks, batchMode, selectedIds, activeCategory, loadTasks, toggleBatchMode, toggleSelectAll, confirmBatchDelete, openTask };
+const page = new Function("computed", "ref", "watch", "onShow", "uni", "getTasks", "deleteTasks", "TASK_CATEGORIES", "previewTaskByAI", "createTaskManually", "validatePlanPeriod", `${pageScript}
+  return { tasks, filteredTasks, batchMode, selectedIds, activeCategory, loadTasks, toggleBatchMode, toggleSelectAll, confirmBatchDelete, openTask,
+    newTitle, newTargetDays, showCreator, aiResult, decompositionGuidance, stepCountIndex, generatePreview, createTask, openCreator, formatUpdatedAt, formatProgress };
 `)(computed, ref, watch, () => {}, {
   showToast() {},
   showModal: async ({ success }) => success({ confirm: confirmDeletion }),
 }, async () => storedTasks, async ids => {
   deletedIds = ids;
   storedTasks = storedTasks.filter(task => !ids.includes(task.id));
-}, ["学习", "运动"]);
+}, ["学习", "运动"], async payload => {
+  previewCalls.push(payload);
+  if (previewWait) await previewWait;
+  return { subTasks: [{ content: "运行完整网络抓包实验并通过验收", weight: 1 }] };
+}, async payload => { savedPayload = payload; return { taskId: 123 }; }, validatePlanPeriod);
 await page.loadTasks();
 assert.deepEqual(page.filteredTasks.value.map(task => task.status), ["IN_PROGRESS", "NOT_STARTED", "COMPLETED", "CANCELLED", "EXPIRED"]);
 page.toggleBatchMode();
@@ -102,6 +110,46 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.deepEqual(deletedIds, [3]);
 assert.equal(page.tasks.value.length, 4);
 assert.deepEqual(page.selectedIds.value, []);
+
+page.openCreator();
+page.newTitle.value = "学习计算机网络";
+await nextTick();
+await page.createTask();
+assert.equal(page.showCreator.value, true, "预览不能关闭或保存任务");
+assert.equal(savedPayload, undefined);
+page.decompositionGuidance.value = "重点抓包，最后完成整体验收";
+page.stepCountIndex.value = 2;
+await page.createTask();
+assert.equal(previewCalls.length, 2, "更改建议后必须先重新生成");
+assert.equal(previewCalls[1].stepCount, 3);
+assert.equal(previewCalls[1].previousSteps.length, 1);
+assert.equal(savedPayload, undefined, "重新生成不能保存任务");
+await page.createTask();
+assert.equal(page.showCreator.value, false, "保存成功立即关闭新建框");
+assert.equal(savedPayload.title, "学习计算机网络");
+assert.equal(savedPayload.subTasks.length, 1);
+assert.equal(page.formatUpdatedAt("2026-10-16T09:30:00"), "2026-10-16 09:30 更新");
+assert.equal(page.formatUpdatedAt(null), "更新时间未知");
+assert.equal(page.formatProgress(99.99), "99.9", "未实际完成不能因四舍五入显示100%");
+assert.equal(page.formatProgress(100), "100");
+page.openCreator();
+page.newTitle.value = "学习HTTP";
+page.decompositionGuidance.value = "先理解请求响应";
+await nextTick();
+let releasePreview;
+previewWait = new Promise(resolve => { releasePreview = resolve; });
+const pendingPreview = page.generatePreview();
+page.decompositionGuidance.value = "增加curl验收";
+releasePreview();
+await pendingPreview;
+previewWait = null;
+const previousCallCount = previewCalls.length;
+await page.createTask();
+assert.equal(previewCalls.length, previousCallCount + 1, "请求期间改变建议也必须重新生成，不能保存旧要求的方案");
+assert.equal(page.showCreator.value, true);
+assert.deepEqual(endpoints.tasks.preview({ title: "网络", guidance: "重点抓包" }), {
+  method: "POST", path: "/tasks/deconstruct/preview", data: { title: "网络", guidance: "重点抓包" },
+});
 
 // 执行记录页提交逻辑：无匹配保留输入，成功才清空，时长和可选计划必须传到 API。
 let syncResponse = { updates: [], aiAnalysis: "没有匹配" };

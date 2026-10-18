@@ -41,10 +41,13 @@ class ActionServiceTest {
     }
     @AfterEach void cleanup() { UserContext.clear(); }
     void eligible() {
+        eligible(true);
+    }
+    void eligible(boolean updates) {
         when(tasks.findIdsByUserIdAndStatus(7L, PlanStatus.IN_PROGRESS)).thenReturn(List.of(1L));
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step));
-        doAnswer(i -> { plan.setTotalProgress(step.getCurrentProgress()); return null; })
+        if (updates) doAnswer(i -> { plan.setTotalProgress(step.getCurrentProgress()); return null; })
                 .when(taskService).updateTaskProgress(1L);
     }
     ActionSyncRequest request() {
@@ -80,12 +83,34 @@ class ActionServiceTest {
         eligible(); step.setCurrentProgress(new BigDecimal("0.95"));
         analysis(match(11, "0.30"), match(11, "0.20"), match(999, "0.30"));
         var result = service.syncAction(request());
-        assertEquals(1, result.getUpdates().size());
+        assertEquals(1, result.getUpdates().size(), "达到上限仍保留有效学习记录");
+        assertEquals(0, result.getUpdates().get(0).getIncrement().signum());
+        verify(logs).save(any());
+        verify(checkIns).saveAndFlush(any());
+        assertEquals(0, step.getCurrentProgress().compareTo(new BigDecimal("0.95")));
+    }
+    @Test void explicitCompletionUsesRemainingProgressAndStoresActualIncrement() {
+        eligible(); step.setCurrentProgress(new BigDecimal("0.95"));
+        var completed = match(11, "0.01");
+        completed.setCompleted(true);
+        completed.setCompletionEvidence("完成编曲软件全部操作练习并通过验收");
+        analysis(completed);
+        var request = request();
+        request.setRawInput("今天完成编曲软件全部操作练习并通过验收");
+        var result = service.syncAction(request);
         assertEquals(0, result.getUpdates().get(0).getIncrement().compareTo(new BigDecimal("5")));
         ArgumentCaptor<ActionLog> saved = ArgumentCaptor.forClass(ActionLog.class);
         verify(logs).save(saved.capture());
         assertEquals(new BigDecimal("0.05"), saved.getValue().getContribution());
         assertEquals(0, step.getCurrentProgress().compareTo(BigDecimal.ONE));
+    }
+    @Test void inventedCompletionEvidenceCannotPromoteToOneHundred() {
+        eligible(); step.setCurrentProgress(new BigDecimal("0.95"));
+        var completed = match(11, "0.01"); completed.setCompleted(true);
+        completed.setCompletionEvidence("模型杜撰的完成证明不在用户输入中");
+        analysis(completed);
+        assertEquals(0, service.syncAction(request()).getUpdates().get(0).getIncrement().signum());
+        assertEquals(0, step.getCurrentProgress().compareTo(new BigDecimal("0.95")));
     }
     @Test void rejectsOutsidePeriodBeforeCallingAI() {
         plan.setEndDate(today.minusDays(1));
@@ -126,6 +151,19 @@ class ActionServiceTest {
         service.deleteAction(100L);
         assertEquals(0, step.getCurrentProgress().signum());
         verify(checkIns).delete(record);
+    }
+
+    @Test void zeroIncrementLearningAtEstimateLimitStillKeepsAttendanceAndDuration() {
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
+        var record = CheckInRecord.builder().automatic(true).build();
+        when(checkIns.findByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(Optional.of(record));
+        when(logs.findByTaskId(1L)).thenReturn(List.of(ActionLog.builder().userId(7L).taskId(1L)
+                .contribution(BigDecimal.ZERO).durationMinutes(30).rawInput("继续练习编曲软件")
+                .createdAt(today.atTime(10, 0)).build()));
+        service.refreshAttendance(1L, today);
+        assertEquals(30, record.getDurationMinutes());
+        verify(checkIns).save(record);
+        verify(checkIns, never()).delete(any());
     }
 
     @Test void rejectsNegativeAndZeroContributions() {

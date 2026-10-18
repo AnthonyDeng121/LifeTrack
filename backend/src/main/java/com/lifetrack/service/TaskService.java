@@ -165,6 +165,7 @@ public class TaskService {
                 .map(task -> TaskListResponse.builder()
                         .id(task.getId())
                         .subtaskCount(Math.toIntExact(subTaskRepository.countByTaskId(task.getId())))
+                        .updatedAt(task.getUpdatedAt())
                         .title(task.getTitle())
                         .category(task.getCategory().name())
                         .totalProgress(task.getTotalProgress().multiply(new BigDecimal("100")))
@@ -251,6 +252,13 @@ public class TaskService {
                         .isCompleted(st.getIsCompleted())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    public TaskDeconstructResponse previewTask(com.lifetrack.dto.TaskPreviewRequest request) {
+        return TaskDeconstructResponse.builder()
+                .subTasks(java.util.Arrays.asList(aiService.previewTask(request)))
+                .aiSuggestion("最后一步为目标验收；确认步骤符合预期后再保存。")
+                .build();
     }
 
     @Transactional

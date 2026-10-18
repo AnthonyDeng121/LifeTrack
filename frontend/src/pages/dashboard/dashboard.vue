@@ -169,7 +169,9 @@ onUnload(stopClock);
 const featuredTasks = computed(() => tasks.value.slice(0, 3));
 
 function formatProgress(value) {
-  return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
+  const actual = Math.max(0, Math.min(100, Number(value) || 0));
+  const display = actual < 100 ? Math.min(actual, 99.9) : 100;
+  return display.toFixed(display % 1 === 0 ? 0 : 1);
 }
 
 function clampProgress(value) {

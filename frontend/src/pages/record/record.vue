@@ -7,6 +7,7 @@
           <view class="record-eyebrow">行为记录</view>
           <view class="record-title">记录今天</view>
           <view class="record-subtitle">自然语言自动匹配计划和步骤；每天首次有效记录自动打卡，后续记录继续累计进度。</view>
+          <view class="record-subtitle">普通投入最多估算至95%，仍可继续记录和打卡；达到100%需描述完成产出与验收结果，也可在任务详情手动确认。</view>
         </view>
       </view>
 
@@ -58,7 +59,7 @@
           <view v-for="item in syncResult.updates" :key="item.subTaskId" class="update-row">
             <view>
               <text>{{ item.taskTitle }} · {{ item.subTaskTitle }}</text>
-              <text class="text-muted">步骤增加 {{ formatProgress(item.increment) }} 个百分点</text>
+              <text class="text-muted">{{ Number(item.increment) === 0 ? "学习记录已保存；已达估算上限，进度保持不变" : `步骤增加 ${formatProgress(item.increment)} 个百分点` }}</text>
             </view>
             <view><text class="pill">计划进度 {{ formatProgress(item.newTotalProgress) }}%</text><text class="text-muted">{{ item.checkedInNow ? "首次有效记录，今日打卡成功" : (resultIsRetry ? "保留原日期打卡，本次仅补进度" : "今日已打卡，本次只更新进度") }}</text></view>
           </view>
@@ -211,7 +212,9 @@ const moodText = computed(() => {
 });
 
 function formatProgress(value) {
-  return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
+  const actual = Math.max(0, Math.min(100, Number(value) || 0));
+  const display = actual < 100 ? Math.min(actual, 99.9) : 100;
+  return display.toFixed(display % 1 === 0 ? 0 : 1);
 }
 
 async function submitRecord() {

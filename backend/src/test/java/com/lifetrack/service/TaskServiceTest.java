@@ -51,6 +51,21 @@ class TaskServiceTest {
     }
 
     @Test
+    void previewPassesRefinementWithoutCreatingAnyTask() {
+        var request = new com.lifetrack.dto.TaskPreviewRequest();
+        request.setTitle("学习计算机网络");
+        request.setGuidance("重点抓包，最后验证一次网页访问");
+        request.setStepCount(3);
+        when(aiService.previewTask(request)).thenReturn(new com.lifetrack.dto.TaskDeconstructResponse.SubTaskDTO[] {
+            new com.lifetrack.dto.TaskDeconstructResponse.SubTaskDTO("完成网络综合实验并通过验收", BigDecimal.ONE)
+        });
+        var response = taskService.previewTask(request);
+        assertNull(response.getTaskId());
+        assertEquals(1, response.getSubTasks().size());
+        verifyNoInteractions(taskRepository, subTaskRepository, actionLogRepository, checkInRecordRepository);
+    }
+
+    @Test
     void batchDeleteMustCheckAllOwnersBeforeDeleting() {
         Task owned = planOwnedByCurrentUser();
         Task foreign = planOwnedByCurrentUser();

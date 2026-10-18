@@ -85,7 +85,8 @@ public class ActionServiceImpl implements ActionService {
                 if (step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) continue;
                 eligible.put(step.getId(), step);
                 aiCandidates.add(SubTask.builder().id(step.getId()).taskId(task.getId())
-                        .content("计划：" + task.getTitle() + "；步骤：" + step.getContent()).build());
+                        .content("计划：" + task.getTitle() + "；步骤：" + step.getContent())
+                        .currentProgress(step.getCurrentProgress()).build());
             }
         }
         if (eligible.isEmpty()) throw new BusinessException(400, "没有未完成的学习步骤，请先添加或拆解步骤");
@@ -107,9 +108,17 @@ public class ActionServiceImpl implements ActionService {
             if (step == null || !matchedSteps.add(step.getId())) continue;
             Task task = taskMap.get(step.getTaskId());
             // AI 只提供建议；后端限制贡献并保存实际增量，保证封顶与撤销准确。
-            BigDecimal increment = match.getIncrement().min(new BigDecimal("0.30"))
-                    .min(BigDecimal.ONE.subtract(step.getCurrentProgress())).setScale(2, java.math.RoundingMode.DOWN);
-            if (increment.signum() <= 0) continue;
+            String evidence = match.getCompletionEvidence();
+            boolean completed = match.isCompleted() && evidence != null && evidence.trim().length() >= 8
+                    && request.getRawInput().contains(evidence.trim());
+            // 普通投入估算最多95%；达到100%需要用户原话中的具体完成证据，或详情页手动确认。
+            BigDecimal remaining = (completed ? BigDecimal.ONE : new BigDecimal("0.95"))
+                    .subtract(step.getCurrentProgress()).max(BigDecimal.ZERO);
+            BigDecimal increment = (completed ? remaining : match.getIncrement().min(new BigDecimal("0.30")).min(remaining))
+                    .setScale(2, java.math.RoundingMode.DOWN);
+            // 达到估算上限后仍可记录有效学习和当天打卡，仅保持进度不再增长。
+            boolean atEstimateLimit = step.getCurrentProgress().compareTo(new BigDecimal("0.95")) >= 0;
+            if (increment.signum() <= 0 && !atEstimateLimit) continue;
             boolean firstPlanMatch = processedPlans.add(task.getId());
             boolean checkedInNow = false;
             if (firstPlanMatch && !checkInRecordRepository.existsByUserIdAndTaskIdAndCheckInDate(userId, task.getId(), today)) {
@@ -229,8 +238,7 @@ public class ActionServiceImpl implements ActionService {
         checkInRecordRepository.findByUserIdAndTaskIdAndCheckInDate(userId, taskId, date)
                 .filter(r -> Boolean.TRUE.equals(r.getAutomatic()) || !deferred.isEmpty()).ifPresent(record -> {
                     List<ActionLog> remaining = actionLogRepository.findByTaskId(taskId).stream()
-                            .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)
-                                    && a.getContribution().signum() > 0).toList();
+                            .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)).toList();
                     List<com.lifetrack.entity.DeferredLearningRecord> awaiting = deferred.stream()
                             .filter(r -> r.getStatus() != com.lifetrack.entity.DeferredLearningRecord.Status.APPLIED).toList();
                     if (remaining.isEmpty() && deferred.isEmpty() && Boolean.TRUE.equals(record.getAutomatic())) {

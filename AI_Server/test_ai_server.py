@@ -13,7 +13,23 @@ def example(steps):
 class DecompositionTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
-        self.valid = example(["绘制TCP/IP分层图并说明各层协议职责", "练习IPv4子网划分并计算网络地址"])
+        self.valid = example(["绘制TCP/IP分层图并说明各层协议职责", "综合分析网页访问抓包并通过分层协议与子网计算测验"])
+
+    @patch("ai_server.call_llm")
+    def test_refinement_context_and_requested_count_are_forwarded(self, llm):
+        llm.return_value = json.dumps(self.valid)
+        response = self.client.post("/ai/deconstruct", json={"title": "计算机网络", "guidance": "重点抓包",
+            "previous_steps": ["学习IP寻址"], "step_count": 2}).get_json()
+        self.assertEqual(200, response["code"])
+        self.assertIn("重点抓包", llm.call_args.args[0])
+        self.assertIn("学习IP寻址", llm.call_args.args[0])
+
+    @patch("ai_server.call_llm")
+    def test_missing_final_acceptance_and_wrong_count_are_rejected(self, llm):
+        llm.return_value = json.dumps(example(["练习IP寻址和子网计算", "学习TCP可靠传输机制"]))
+        self.assertEqual(502, self.client.post("/ai/deconstruct", json={"title": "计算机网络"}).get_json()["code"])
+        llm.return_value = json.dumps(self.valid)
+        self.assertEqual(502, self.client.post("/ai/deconstruct", json={"title": "计算机网络", "step_count": 3}).get_json()["code"])
 
     @patch("ai_server.call_llm")
     def test_specific_result_is_returned_without_replacement(self, llm):

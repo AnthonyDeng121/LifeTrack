@@ -29,6 +29,12 @@ public class TaskController {
 
     private final TaskService taskService;
 
+    @Operation(summary = "预览或调整AI拆解，不保存任务")
+    @PostMapping("/deconstruct/preview")
+    public Result<TaskDeconstructResponse> preview(@RequestBody @Validated com.lifetrack.dto.TaskPreviewRequest request) {
+        return Result.success(taskService.previewTask(request));
+    }
+
     @Operation(summary = "新增学习子计划")
     @PostMapping("/{taskId}/subtasks")
     public Result<Void> addSubTask(@PathVariable Long taskId,

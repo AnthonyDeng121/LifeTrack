@@ -51,6 +51,10 @@ export function createTaskManually(data) {
   return request({ ...endpoints.tasks.createManual(data) });
 }
 
+export function previewTaskByAI(data) {
+  return request({ ...endpoints.tasks.preview(data), timeout: 75000, showError: false });
+}
+
 export function completeSubtask(subTaskId) {
   return request({ ...endpoints.tasks.completeSubtask(subTaskId) });
 }

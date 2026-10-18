@@ -26,6 +26,7 @@ public class TaskListResponse {
     @Schema(description = "任务分类", example = "学习")
     private String category;
     private Integer subtaskCount;
+    private java.time.LocalDateTime updatedAt;
 
     private LocalDate startDate;
     private LocalDate endDate;

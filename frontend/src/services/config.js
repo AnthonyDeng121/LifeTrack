@@ -37,6 +37,7 @@ export const endpoints = {
     }),
   },
   tasks: {
+    preview: (data) => ({ method: "POST", path: "/tasks/deconstruct/preview", data }),
     list: (filters = {}) => ({ method: "GET", path: "/tasks", data: filters }),
     detail: (taskId) => ({ method: "GET", path: `/tasks/${taskId}` }),
     update: (taskId, data) => ({ method: "PUT", path: `/tasks/${taskId}`, data }),

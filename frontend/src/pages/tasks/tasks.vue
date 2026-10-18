@@ -63,7 +63,7 @@
             <text v-if="batchMode" class="selection-mark" :aria-label="selectedIds.includes(task.id) ? '已选择' : '未选择'">{{ selectedIds.includes(task.id) ? "☑" : "☐" }}</text>
             <view>
               <text class="task-title">{{ task.title }}</text>
-              <text class="text-muted">{{ task.category }} · {{ task.updatedAt || "刚刚更新" }}</text>
+              <text class="text-muted">{{ task.category }} · {{ formatUpdatedAt(task.updatedAt) }}</text>
               <text class="text-muted">{{ task.startDate }} 至 {{ task.endDate }} · 目标 {{ task.targetDays }} 天</text>
             </view>
             <text class="pill status-badge" :class="'status-' + task.status">{{ task.statusDescription || "未知状态" }}</text>
@@ -156,7 +156,7 @@
 
         <view class="backend-note">
           <text v-if="creatorMode === 'ai'">
-            AI 将根据你的目标生成学习步骤，并保存为任务。
+            先预览拆解，可填写调整建议重新生成，确认后保存。
           </text>
           <text v-else>
             手动模式下，你可以自定义主任务和每一个具体的执行步骤。
@@ -185,16 +185,25 @@
           </view>
         </view>
 
-        <view v-if="aiResult" class="ai-result">
-          <text class="ai-title">{{ creatorMode === "ai" ? "AI 建议" : "已保存任务" }}</text>
-          <text class="text-muted ai-copy">{{ aiResult.aiSuggestion }}</text>
+        <view v-if="creatorMode === 'ai'" class="form-block">
+          <text class="field-label">拆解要求与调整建议（可选）</text>
+          <textarea v-model="decompositionGuidance" class="glass-input guidance-input" maxlength="1000" placeholder="例如：已有Java基础，重点练习接口和数据库，最后完成可运行的应用并通过测试" />
+          <text class="field-label">步骤数量</text>
+          <picker :range="stepCountOptions" :value="stepCountIndex" @change="stepCountIndex = Number($event.detail.value)">
+            <view class="glass-input date-picker">{{ stepCountOptions[stepCountIndex] }}</view>
+          </picker>
+        </view>
+
+        <view v-if="aiResult && creatorMode === 'ai'" class="ai-result">
+          <text class="ai-title">拆解预览（尚未保存）</text>
           <view class="mini-subtasks">
-            <text v-for="item in aiResult.subTasks" :key="item.content">· {{ item.content }}</text>
+            <text v-for="(item, index) in aiResult.subTasks" :key="item.content">{{ index + 1 }}. {{ item.content }}（{{ formatProgress(item.weight * 100) }}%）</text>
           </view>
+          <button class="glass-button" :disabled="creating" @tap="generatePreview">按当前建议重新生成</button>
         </view>
 
         <button class="glass-button create-btn" :disabled="creating" :loading="creating" @tap="createTask">
-          {{ creating ? "正在保存，请稍候" : creatorMode === "ai" ? "生成并保存" : "保存任务" }}
+          {{ creating ? "正在处理，请稍候" : creatorMode === "ai" ? (aiResult ? "确认方案并保存" : "生成拆解预览") : "保存任务" }}
         </button>
       </view>
     </view>
@@ -207,7 +216,7 @@
 import { computed, ref, watch } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { createTaskByAI, createTaskManually, getTasks, deleteTasks } from "../../services/api";
+import { previewTaskByAI, createTaskManually, getTasks, deleteTasks } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 import { validatePlanPeriod } from "../../services/planRules";
 
@@ -244,6 +253,38 @@ const newStartDate = ref(formatDate(today));
 const newEndDate = ref(formatDate(defaultEnd));
 const newTargetDays = ref("20");
 const aiResult = ref(null);
+const decompositionGuidance = ref("");
+const stepCountOptions = ["自动决定", "2步", "3步", "4步", "5步", "6步", "7步", "8步"];
+const stepCountIndex = ref(0);
+let previewTitle = "";
+let previewGuidance = "";
+let previewStepCount = 0;
+watch(newTitle, () => { aiResult.value = null; });
+
+function formatUpdatedAt(value) {
+  if (!value) return "更新时间未知";
+  return `${String(value).replace("T", " ").slice(0, 16)} 更新`;
+}
+
+async function generatePreview() {
+  if (creating.value) return;
+  const title = newTitle.value.trim();
+  if (!title) return uni.showToast({ title: "先写一个任务名称", icon: "none" });
+  const guidance = decompositionGuidance.value.trim();
+  const countIndex = stepCountIndex.value;
+  creating.value = true;
+  try {
+    const result = await previewTaskByAI({ title, guidance,
+      stepCount: countIndex ? countIndex + 1 : null,
+      previousSteps: aiResult.value?.subTasks.map(step => step.content) || [] });
+    aiResult.value = result;
+    previewTitle = title;
+    previewGuidance = guidance;
+    previewStepCount = countIndex;
+  } catch (error) {
+    uni.showToast({ title: error.message || "拆解失败，请重试或手动创建", icon: "none" });
+  } finally { creating.value = false; }
+}
 const manualSubtasks = ref([{ content: "", weight: "" }]);
 
 const statusOrder = { IN_PROGRESS: 0, NOT_STARTED: 1, COMPLETED: 2, CANCELLED: 3, EXPIRED: 4 };
@@ -295,7 +336,9 @@ function confirmBatchDelete() {
 }
 
 function formatProgress(value) {
-  return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
+  const actual = Math.max(0, Math.min(100, Number(value) || 0));
+  const display = actual < 100 ? Math.min(actual, 99.9) : 100;
+  return display.toFixed(display % 1 === 0 ? 0 : 1);
 }
 
 function clampProgress(value) {
@@ -338,6 +381,7 @@ function openTask(task) {
 
 function openCreator() {
   aiResult.value = null;
+  decompositionGuidance.value = "";
   showCreator.value = true;
 }
 
@@ -361,6 +405,10 @@ function removeManualSubtask(index) {
 
 async function createTask() {
   if (creating.value) return;
+  if (creatorMode.value === "ai" && (!aiResult.value || previewTitle !== newTitle.value.trim()
+      || previewGuidance !== decompositionGuidance.value.trim() || previewStepCount !== stepCountIndex.value)) {
+    return generatePreview();
+  }
   const title = newTitle.value.trim();
   if (!title) {
     uni.showToast({ title: "先写一个任务名称", icon: "none" });
@@ -378,7 +426,8 @@ async function createTask() {
   try {
     let result;
     if (creatorMode.value === "ai") {
-      result = await createTaskByAI(title, newCategory.value, newStartDate.value, newEndDate.value, targetDays);
+      result = await createTaskManually({ title, category: newCategory.value, startDate: newStartDate.value,
+        endDate: newEndDate.value, targetDays, subTasks: aiResult.value.subTasks });
     } else {
       // 校验手动输入的子任务
       const validSubtasks = manualSubtasks.value.filter(st => st.content.trim());
@@ -402,11 +451,13 @@ async function createTask() {
       result = await createTaskManually(data);
     }
     
-    aiResult.value = result;
+    showCreator.value = false;
+    aiResult.value = null;
+    manualSubtasks.value = [{ content: "", weight: "" }];
     activeStatus.value = "";
     await loadTasks();
     uni.showToast({
-      title: creatorMode.value === "ai" ? "AI 已生成任务" : "任务已保存",
+      title: "任务已保存",
       icon: "none",
     });
     newTitle.value = "";
@@ -437,6 +488,7 @@ onShow(loadTasks);
 .selection-mark { color: #176895; font-size: 36rpx; }
 .creator-dialog { max-width: 960px; box-sizing: border-box; }
 .creator-dialog > * { flex-shrink: 0; }
+.guidance-input { width: 100%; min-height: 100px; box-sizing: border-box; padding: 16px; margin-bottom: 16px; }
 /* H5 日期选择器切换视口时，关闭态的选项不应进入表单文档流。 */
 .creator-dialog :deep(.uni-picker-custom:not(.uni-picker-toggle)) { display: none; }
 .st-content-input { min-width: 0; }

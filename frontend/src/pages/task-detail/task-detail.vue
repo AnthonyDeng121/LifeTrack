@@ -44,7 +44,7 @@
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
-        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡完成率</text></view>
+        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡目标达成率</text></view>
       </view>
       <view v-if="!checkInLoading && !checkInError" class="target-feedback">
         <text>坚持目标：已打卡 {{ checkInStats.checkedInDays }} / {{ checkInStats.targetDays || task.targetDays }} 天</text>
@@ -220,10 +220,12 @@ const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
 const targetFeedback = computed(() => {
   const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
-  if (remaining === 0) return "已达成打卡目标，可以继续推进学习进度";
+  if (task.value.status === "COMPLETED") return remaining === 0
+    ? "学习计划和打卡目标均已完成，已保留真实记录"
+    : `学习计划已提前完成；打卡目标尚差 ${remaining} 天，保留实际达成率，不影响学习完成状态`;
+  if (remaining === 0) return "已达成打卡目标；学习进度单独计算，请继续完成剩余子计划";
   if (task.value.status === "EXPIRED") return `本期已结束，距打卡目标还差 ${remaining} 天`;
   if (task.value.status === "CANCELLED") return "计划已取消，已保留本期打卡记录";
-  if (task.value.status === "COMPLETED") return `学习计划已完成，本期距打卡目标还差 ${remaining} 天`;
   return `还差 ${remaining} 个打卡日达成目标`;
 });
 const subtasks = ref([]);
@@ -238,7 +240,9 @@ const editingSubtask = ref({
 });
 
 function formatProgress(value) {
-  return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
+  const actual = Math.max(0, Math.min(100, Number(value) || 0));
+  const display = actual < 100 ? Math.min(actual, 99.9) : 100;
+  return display.toFixed(display % 1 === 0 ? 0 : 1);
 }
 
 function clampProgress(value) {
