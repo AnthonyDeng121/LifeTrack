@@ -52,6 +52,7 @@ export const endpoints = {
       data,
     }),
     delete: (taskId) => ({ method: "DELETE", path: `/tasks/${taskId}` }),
+    addSubtask: (taskId, data) => ({ method: "POST", path: `/tasks/${taskId}/subtasks`, data }),
     batchDelete: (taskIds) => ({ method: "POST", path: "/tasks/batch-delete", data: { taskIds } }),
     deleteSubtask: (subTaskId) => ({
       method: "DELETE",
@@ -73,6 +74,10 @@ export const endpoints = {
     stats: (taskId) => ({ method: "GET", path: `/check-ins/tasks/${taskId}/stats` }),
   },
   actions: {
+    saveDeferred: (data) => ({ method: "POST", path: "/actions/deferred", data }),
+    deferred: { method: "GET", path: "/actions/deferred" },
+    retryDeferred: (id) => ({ method: "POST", path: `/actions/deferred/${id}/retry` }),
+    importDeferred: { method: "POST", path: "/actions/deferred/import-legacy" },
     sync: (rawInput, durationInput, taskId) => ({
       method: "POST",
       path: "/actions/sync",

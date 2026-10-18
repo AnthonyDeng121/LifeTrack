@@ -13,6 +13,10 @@ public interface ActionService {
      */
     ActionSyncResponse syncAction(ActionSyncRequest request);
 
+    // 仅供已持久化的故障记录补分析调用，日期不能由外部请求自行指定。
+    ActionSyncResponse syncHistoricalAction(ActionSyncRequest request, java.time.LocalDateTime recordedAt, int durationMinutes);
+    void refreshAttendance(Long taskId, java.time.LocalDate date);
+
     /**
      * 获取行为日志列表
      */

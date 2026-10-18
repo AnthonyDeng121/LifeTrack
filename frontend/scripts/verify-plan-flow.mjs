@@ -101,13 +101,16 @@ assert.deepEqual(page.selectedIds.value, []);
 let syncResponse = { updates: [], aiAnalysis: "没有匹配" };
 let syncArguments;
 let manualPayload;
+let deferredData = [];
+let retriedId;
 const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "createCheckIn", `${recordScript}
-  return { rawInput, duration, syncing, selectedTaskId, syncResult, submitRecord, submitManualCheckIn };
+const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", `${recordScript}
+  return { rawInput, duration, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, submitManualCheckIn, retryRecord, loadDeferredRecords };
 `)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
   syncArguments = args;
   return syncResponse;
-}, async () => ({}), async () => ({ list: [] }), async () => [], async payload => { manualPayload = payload; });
+}, async () => ({}), async () => ({ list: [] }), async () => [], async payload => { manualPayload = payload; }, async () => deferredData,
+async id => { retriedId = id; deferredData = [{ id, status: "APPLIED" }]; return { updates: [{ taskId: 101, subTaskId: 1 }] }; });
 recording.rawInput.value = "学习编曲";
 recording.duration.value = "30分钟";
 recording.selectedTaskId.value = 101;
@@ -130,4 +133,39 @@ await recording.submitManualCheckIn();
 assert.deepEqual(manualPayload, { taskId: 101, content: "学习编曲软件", durationMinutes: 90 });
 assert.equal(recording.rawInput.value, "");
 assert.equal(recording.syncing.value, false);
+deferredData = [{ id: 33, status: "PENDING" }];
+await recording.loadDeferredRecords();
+assert.equal(recording.pendingRecords.value.length, 1);
+recording.rawInput.value = "还未提交的新草稿";
+await recording.retryRecord(deferredData[0]);
+assert.equal(retriedId, 33);
+assert.equal(recording.pendingRecords.value.length, 0);
+assert.equal(recording.resultIsRetry.value, true);
+assert.equal(recording.rawInput.value, "还未提交的新草稿", "补分析不得清除当前输入的草稿");
+assert.deepEqual(endpoints.tasks.addSubtask(101, { content: "练习", weight: 0.3 }), {
+  method: "POST", path: "/tasks/101/subtasks", data: { content: "练习", weight: 0.3 },
+});
+assert.deepEqual(endpoints.actions.retryDeferred(33), { method: "POST", path: "/actions/deferred/33/retry" });
+assert.deepEqual(endpoints.actions.saveDeferred(manualPayload), { method: "POST", path: "/actions/deferred", data: manualPayload });
+
+// 实际执行详情页的新增与编辑分支，确认共用弹窗不会把新增误发为更新。
+let addedStep;
+let editedStep;
+const detailScript = detailPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
+const detail = new Function("computed", "ref", "onLoad", "uni", "TASK_CATEGORIES", "getSubtasks", "getTaskDetail", "addSubtask", "updateSubtask", `${detailScript}
+  return { task, subtasks, editingSubtask, showEditDialog, openAddDialog, openEditDialog, closeEditDialog, saveSubtask };
+`)(computed, ref, () => {}, { showToast() {} }, ["学习"], async () => [], async () => ({ id: 101 }),
+async (id, data) => { addedStep = { id, data }; }, async (id, data) => { editedStep = { id, data }; });
+detail.task.value.id = 101;
+detail.openAddDialog();
+detail.editingSubtask.value.content = "新增学习步骤";
+detail.editingSubtask.value.weight = 25;
+await detail.saveSubtask();
+assert.deepEqual(addedStep, { id: 101, data: { content: "新增学习步骤", weight: 0.25 } });
+assert.equal(detail.showEditDialog.value, false);
+detail.openEditDialog({ id: 9, content: "已有步骤", weight: 30 });
+await detail.saveSubtask();
+assert.deepEqual(editedStep, { id: 9, data: { content: "已有步骤", weight: 0.3 } });
+detail.openEditDialog({ id: 9, content: "低权重步骤", weight: 1 });
+assert.equal(detail.editingSubtask.value.weight, 1, "接口返回的1%不能被误显示为100%");
 console.log("Plan and check-in flow checks passed.");

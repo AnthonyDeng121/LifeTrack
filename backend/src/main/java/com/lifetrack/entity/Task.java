@@ -56,7 +56,7 @@ public class Task {
     @Schema(description = "目标打卡天数", example = "20")
     private Integer targetDays;
 
-    @Column(name = "total_progress")
+    @Column(name = "total_progress", precision = 7, scale = 4)
     @Schema(description = "总进度 (0.00-1.00)", example = "0.50")
     private BigDecimal totalProgress;
 

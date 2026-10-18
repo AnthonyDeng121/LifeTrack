@@ -45,7 +45,7 @@ CREATE TABLE `tasks` (
   `end_date` date NOT NULL COMMENT '计划结束日期',
   `target_days` int NOT NULL COMMENT '目标打卡天数',
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态: 0-进行中, 1-已完成, 2-未开始, 3-已取消, 4-已过期',
-  `total_progress` decimal(5,2) DEFAULT '0.00' COMMENT '当前总进度百分比 (0-100.00)',
+  `total_progress` decimal(7,4) DEFAULT '0.0000' COMMENT '当前总进度比例 (0-1)',
   `ai_suggestion` text COMMENT 'AI 对该目标的初步分析或建议',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -67,6 +67,7 @@ CREATE TABLE `check_in_records` (
   `content` varchar(500) NOT NULL COMMENT '打卡内容',
   `duration_minutes` int NOT NULL DEFAULT '0' COMMENT '学习时长（分钟）',
   `mood` varchar(20) DEFAULT NULL COMMENT '打卡心情',
+  `automatic` bit DEFAULT NULL COMMENT '是否由有效学习记录自动打卡，旧版手动记录为NULL',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_task_check_date` (`user_id`, `task_id`, `check_in_date`),
@@ -85,7 +86,7 @@ CREATE TABLE `sub_tasks` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `task_id` bigint NOT NULL COMMENT '所属主任务ID',
   `content` varchar(255) NOT NULL COMMENT '子任务内容',
-  `weight` decimal(3,2) NOT NULL DEFAULT '0.00' COMMENT '权重 (0-1.00，AI生成)',
+  `weight` decimal(10,4) NOT NULL DEFAULT '0.0000' COMMENT '权重比例 (0-1，支持动态增减步骤)',
   `current_progress` decimal(5,2) DEFAULT '0.00' COMMENT '该子任务已完成进度 (0-100.00)',
   `is_completed` tinyint DEFAULT '0' COMMENT '是否已彻底完成: 0-否, 1-是',
   `order_num` int DEFAULT '0' COMMENT '排序展示顺序',
@@ -128,5 +129,20 @@ CREATE TABLE `user_profiles` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户画像与实时状态表';
+
+-- 7. AI故障期间持久化的待分析学习记录
+DROP TABLE IF EXISTS `deferred_learning_records`;
+CREATE TABLE `deferred_learning_records` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `task_id` bigint NOT NULL,
+  `content` varchar(500) NOT NULL,
+  `duration_minutes` int NOT NULL,
+  `recorded_at` datetime NOT NULL COMMENT '原始学习时间（Asia/Shanghai），不是补分析时间',
+  `status` varchar(20) NOT NULL COMMENT 'PENDING/APPLIED/UNMATCHED',
+  `last_analysis` text,
+  PRIMARY KEY (`id`),
+  KEY `idx_deferred_user_task_time` (`user_id`, `task_id`, `recorded_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='待补分析学习记录';
 
 SET FOREIGN_KEY_CHECKS = 1;

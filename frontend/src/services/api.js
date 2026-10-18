@@ -83,6 +83,12 @@ export function syncAction(rawInput, durationInput, taskId) {
   return request({ ...endpoints.actions.sync(rawInput, durationInput, taskId) });
 }
 
+export function addSubtask(taskId, data) { return request(endpoints.tasks.addSubtask(taskId, data)); }
+export function saveDeferredLearningRecord(data) { return request(endpoints.actions.saveDeferred(data)); }
+export function getDeferredLearningRecords() { return request(endpoints.actions.deferred); }
+export function retryDeferredLearningRecord(id) { return request(endpoints.actions.retryDeferred(id)); }
+export function importDeferredLearningRecords() { return request(endpoints.actions.importDeferred); }
+
 export function getActionHistory(page = 0, size = 10) {
   return request({ ...endpoints.actions.history(page, size) });
 }

@@ -25,6 +25,7 @@ class ActionServiceTest {
     @Mock TaskService taskService;
     @Mock AIService ai;
     @Mock CheckInRecordRepository checkIns;
+    @Mock DeferredLearningRecordRepository deferredRecords;
     @InjectMocks ActionServiceImpl service;
     Task plan;
     SubTask step;
@@ -173,5 +174,22 @@ class ActionServiceTest {
         assertThrows(BusinessException.class, () -> service.deleteAction(100L));
         verify(logs, never()).delete(any());
         verifyNoInteractions(steps, taskService, checkIns);
+    }
+
+    @Test void historicalAnalysisUsesOriginalDateEvenAfterPlanExpired() {
+        LocalDateTime original = today.minusDays(1).atTime(15, 0);
+        plan.setStatus(PlanStatus.EXPIRED);
+        plan.setEndDate(today.minusDays(1));
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step));
+        analysis(match(11, "0.20"));
+        var request = request(); request.setTaskId(1L);
+        service.syncHistoricalAction(request, original, 30);
+        ArgumentCaptor<ActionLog> saved = ArgumentCaptor.forClass(ActionLog.class);
+        verify(logs).save(saved.capture());
+        assertEquals(original, saved.getValue().getCreatedAt());
+        assertEquals(30, saved.getValue().getDurationMinutes());
+        verify(checkIns).existsByUserIdAndTaskIdAndCheckInDate(7L, 1L, original.toLocalDate());
+        verify(tasks, never()).findIdsByUserIdAndStatus(any(), any());
     }
 }

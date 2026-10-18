@@ -37,6 +37,7 @@ class TaskServiceTest {
     @Mock private ActionLogRepository actionLogRepository;
     @Mock private AIService aiService;
     @Mock private CheckInRecordRepository checkInRecordRepository;
+    @Mock private com.lifetrack.repository.DeferredLearningRecordRepository deferredRecords;
     @InjectMocks private TaskService taskService;
 
     @BeforeEach

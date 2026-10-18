@@ -604,6 +604,11 @@ onShow(loadTasks);
 }
 
 .close-btn {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 62rpx;
   height: 62rpx;
   border-radius: 50%;

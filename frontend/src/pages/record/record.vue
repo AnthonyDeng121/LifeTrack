@@ -49,18 +49,18 @@
       <view v-if="syncResult" class="glass-card result-card">
         <text class="result-title">AI 同步结果</text>
         <text class="result-copy">{{ syncResult.aiAnalysis }}</text>
-        <template v-if="syncResult.analysisUnavailable">
-          <text class="hint">AI 暂不可用，可在上方选择计划后手动打卡。本次不自动增加学习进度，步骤可在计划详情手动管理。</text>
-          <button class="glass-button" :disabled="!selectedTaskId || syncing" :loading="syncing" @tap="submitManualCheckIn">为所选计划手动打卡</button>
+        <template v-if="syncResult.analysisUnavailable && !resultIsRetry">
+          <text class="hint">AI 暂不可用，选择计划后可先保存记录并打卡。原始内容和日期会保留，恢复后点击“补分析”恢复对应进度。</text>
+          <button class="glass-button" :disabled="!selectedTaskId || syncing" :loading="syncing" @tap="submitManualCheckIn">保存记录并打卡（待补分析）</button>
         </template>
-        <text v-if="!syncResult.updates?.length" class="hint">未产生有效进度，未保存学习记录，也未新增打卡。请补充具体学习内容，或选择计划后重试。</text>
+        <text v-if="!syncResult.updates?.length" class="hint">{{ resultIsRetry ? "原始记录仍保留，本次未增加进度，也未重复打卡。" : "未产生有效进度，未保存学习记录，也未新增打卡。请补充学习内容，或选择计划后重试。" }}</text>
         <view class="update-list">
           <view v-for="item in syncResult.updates" :key="item.subTaskId" class="update-row">
             <view>
               <text>{{ item.taskTitle }} · {{ item.subTaskTitle }}</text>
               <text class="text-muted">步骤增加 {{ formatProgress(item.increment) }} 个百分点</text>
             </view>
-            <view><text class="pill">计划进度 {{ formatProgress(item.newTotalProgress) }}%</text><text class="text-muted">{{ item.checkedInNow ? "首次有效记录，今日打卡成功" : "今日已打卡，本次只更新进度" }}</text></view>
+            <view><text class="pill">计划进度 {{ formatProgress(item.newTotalProgress) }}%</text><text class="text-muted">{{ item.checkedInNow ? "首次有效记录，今日打卡成功" : (resultIsRetry ? "保留原日期打卡，本次仅补进度" : "今日已打卡，本次只更新进度") }}</text></view>
           </view>
         </view>
       </view>
@@ -85,6 +85,23 @@
           @change="changeMood"
         />
         <button class="glass-button mood-btn" @tap="saveMood">保存情绪记录</button>
+      </view>
+
+      <view class="section-head">
+        <text class="section-title">待补分析</text>
+        <button class="glass-button import-deferred-btn" :disabled="syncing || retryingId || importing" @tap="importLegacyRecords">导入旧版手动打卡</button>
+      </view>
+      <view v-if="deferredLoading" class="glass-card empty-card"><text>正在加载待分析记录...</text></view>
+      <view v-else-if="deferredError" class="glass-card empty-card state-card"><text>{{ deferredError }}</text><button class="glass-button" @tap="loadDeferredRecords">重新加载</button></view>
+      <view v-else-if="pendingRecords.length === 0" class="glass-card empty-card"><text>没有待补分析的记录</text></view>
+      <view v-else class="history-list">
+        <view v-for="item in pendingRecords" :key="item.id" class="glass-card deferred-card">
+          <text class="history-title">{{ item.taskTitle }}</text>
+          <text class="text-muted">{{ item.recordedAt }} · {{ item.durationMinutes }} 分钟 · {{ item.status === "UNMATCHED" ? "暂未匹配" : "待分析" }}</text>
+          <text class="raw">{{ item.content }}</text>
+          <text class="text-muted">{{ item.lastAnalysis }}</text>
+          <button class="glass-button retry-analysis-btn" :disabled="syncing || !!retryingId || importing" :loading="retryingId === item.id" @tap="retryRecord(item)">补分析</button>
+        </view>
       </view>
 
       <view class="section-head">
@@ -122,7 +139,7 @@
 import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats, getTasks, createCheckIn } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats, getTasks, saveDeferredLearningRecord, getDeferredLearningRecords, retryDeferredLearningRecord, importDeferredLearningRecords } from "../../services/api";
 
 const plans = ref([]);
 const selectedTaskId = ref(null);
@@ -146,6 +163,41 @@ const rawInput = ref("");
 const duration = ref("");
 const syncing = ref(false);
 const syncResult = ref(null);
+const resultIsRetry = ref(false);
+const deferredRecords = ref([]);
+const deferredLoading = ref(false);
+const deferredError = ref("");
+const retryingId = ref(null);
+const importing = ref(false);
+const pendingRecords = computed(() => deferredRecords.value.filter(r => r.status !== "APPLIED"));
+async function loadDeferredRecords() {
+  deferredLoading.value = true;
+  try { deferredRecords.value = await getDeferredLearningRecords(); deferredError.value = ""; }
+  catch { deferredError.value = "待分析记录加载失败，请重试"; }
+  finally { deferredLoading.value = false; }
+}
+async function retryRecord(item) {
+  if (syncing.value || retryingId.value || importing.value) return;
+  retryingId.value = item.id;
+  try {
+    syncResult.value = await retryDeferredLearningRecord(item.id);
+    resultIsRetry.value = true;
+    await Promise.all([loadDeferredRecords(), loadData(), loadPlans()]);
+    uni.showToast({ title: syncResult.value.updates?.length ? "补分析完成，进度已恢复" : "本次未更新进度，原记录保留", icon: "none" });
+  } catch (error) { console.warn("retry learning record failed", error); }
+  finally { retryingId.value = null; }
+}
+async function importLegacyRecords() {
+  if (syncing.value || retryingId.value || importing.value) return;
+  importing.value = true;
+  try {
+    const count = await importDeferredLearningRecords();
+    await loadDeferredRecords();
+    uni.showToast({ title: `已导入${count}条待分析记录`, icon: "none" });
+  } catch (error) { console.warn("import legacy records failed", error); }
+  finally { importing.value = false; }
+}
+onShow(loadDeferredRecords);
 const history = ref([]);
 const historyLoading = ref(false);
 const historyError = ref("");
@@ -163,7 +215,8 @@ function formatProgress(value) {
 }
 
 async function submitRecord() {
-  if (syncing.value) return;
+  if (syncing.value || retryingId.value || importing.value) return;
+  resultIsRetry.value = false;
   const value = rawInput.value.trim();
   const mins = duration.value.trim();
 
@@ -185,7 +238,7 @@ async function submitRecord() {
     }
     rawInput.value = "";
     duration.value = "";
-    await Promise.all([loadData(), loadPlans()]);
+    await Promise.all([loadData(), loadPlans(), loadDeferredRecords()]);
     uni.showToast({ title: "学习记录已保存", icon: "none" });
   } catch (error) {
     console.warn("sync action failed", error);
@@ -199,7 +252,7 @@ function changeMood(event) {
 }
 
 async function submitManualCheckIn() {
-  if (syncing.value || !selectedTaskId.value) return;
+  if (syncing.value || retryingId.value || importing.value || !selectedTaskId.value) return;
   const content = rawInput.value.trim();
   const match = duration.value.trim().match(/^(\d+(?:\.\d+)?)\s*(分钟|小时)?$/);
   if (!content || !match) {
@@ -213,12 +266,12 @@ async function submitManualCheckIn() {
   }
   syncing.value = true;
   try {
-    await createCheckIn({ taskId: selectedTaskId.value, content, durationMinutes: minutes });
+    await saveDeferredLearningRecord({ taskId: selectedTaskId.value, content, durationMinutes: minutes });
     rawInput.value = "";
     duration.value = "";
     syncResult.value = null;
-    await Promise.all([loadData(), loadPlans()]);
-    uni.showToast({ title: "手动打卡成功，未自动增加进度", icon: "none" });
+    await Promise.all([loadData(), loadPlans(), loadDeferredRecords()]);
+    uni.showToast({ title: "记录已保存并打卡，恢复后可补分析", icon: "none" });
   } catch (error) {
     console.warn("manual check-in failed", error);
   } finally {
@@ -264,7 +317,7 @@ async function removeHistory(id) {
     await deleteAction(id);
     history.value = history.value.filter((item) => item.id !== id);
     syncResult.value = null;
-    await loadPlans();
+    await Promise.all([loadPlans(), loadDeferredRecords()]);
     uni.showToast({ title: "记录已撤销", icon: "none" });
   } catch (error) {
     console.warn("delete action failed", error);
@@ -275,6 +328,9 @@ onShow(loadData);
 </script>
 
 <style scoped>
+.deferred-card { display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
+.import-deferred-btn, .retry-analysis-btn { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
+.retry-analysis-btn { align-self: flex-end; }
 .record-hero {
   padding: 26rpx 28rpx;
   display: flex;

@@ -29,6 +29,14 @@ public class TaskController {
 
     private final TaskService taskService;
 
+    @Operation(summary = "新增学习子计划")
+    @PostMapping("/{taskId}/subtasks")
+    public Result<Void> addSubTask(@PathVariable Long taskId,
+            @RequestBody @Validated com.lifetrack.dto.SubTaskCreateRequest request) {
+        taskService.addSubTask(taskId, request);
+        return Result.success();
+    }
+
     @Operation(summary = "批量删除学习计划")
     @PostMapping("/batch-delete")
     public Result<Void> batchDelete(@RequestBody @Validated com.lifetrack.dto.TaskBatchDeleteRequest request) {

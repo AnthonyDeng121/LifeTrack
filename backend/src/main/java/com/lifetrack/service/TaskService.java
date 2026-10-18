@@ -40,6 +40,44 @@ public class TaskService {
     private final ActionLogRepository actionLogRepository;
     private final AIService aiService;
     private final CheckInRecordRepository checkInRecordRepository;
+    private final com.lifetrack.repository.DeferredLearningRecordRepository deferredRecords;
+
+    @Transactional
+    public void addSubTask(Long taskId, com.lifetrack.dto.SubTaskCreateRequest request) {
+        Task task = taskRepository.findLockedById(taskId)
+                .orElseThrow(() -> new BusinessException(404, "计划不存在"));
+        if (!task.getUserId().equals(UserContext.getUserId())) throw new BusinessException(403, "无权操作该计划");
+        if (request.getContent() == null || request.getContent().isBlank() || request.getContent().trim().length() > 255) {
+            throw new BusinessException(400, "子计划内容应为1到255字");
+        }
+        BigDecimal weight = request.getWeight();
+        if (weight == null || weight.compareTo(new BigDecimal("0.01")) < 0 || weight.compareTo(BigDecimal.ONE) > 0) {
+            throw new BusinessException(400, "子计划权重应为1%到100%");
+        }
+        List<SubTask> existing = subTaskRepository.findByTaskIdOrderByOrderNumAsc(taskId);
+        if (existing.size() >= 100) throw new BusinessException(400, "每个计划最多保留100个子计划");
+        weight = existing.isEmpty() ? BigDecimal.ONE : weight.setScale(4, RoundingMode.HALF_UP);
+        redistributeWeights(existing, BigDecimal.ONE.subtract(weight));
+        subTaskRepository.saveAll(existing);
+        int order = existing.stream().map(SubTask::getOrderNum).filter(java.util.Objects::nonNull).max(Integer::compareTo).orElse(0) + 1;
+        subTaskRepository.save(SubTask.builder().taskId(taskId).content(request.getContent().trim())
+                .weight(weight).currentProgress(BigDecimal.ZERO).isCompleted(0).orderNum(order).build());
+        if (task.getStatus() == PlanStatus.COMPLETED) task.setStatus(PlanStatus.IN_PROGRESS);
+        updateTaskProgress(taskId);
+    }
+
+    private void redistributeWeights(List<SubTask> steps, BigDecimal total) {
+        if (steps.isEmpty()) return;
+        BigDecimal original = steps.stream().map(SubTask::getWeight).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal assigned = BigDecimal.ZERO;
+        for (int i = 0; i < steps.size(); i++) {
+            BigDecimal next = i == steps.size() - 1 ? total.subtract(assigned)
+                    : (original.signum() > 0 ? steps.get(i).getWeight().multiply(total).divide(original, 4, RoundingMode.DOWN)
+                    : total.divide(BigDecimal.valueOf(steps.size()), 4, RoundingMode.DOWN));
+            steps.get(i).setWeight(next);
+            assigned = assigned.add(next);
+        }
+    }
 
     /**
      * 手动创建任务
@@ -278,7 +316,7 @@ public class TaskService {
 
         // 2. 权限校验
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findById(targetSubTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(targetSubTask.getTaskId())
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
@@ -290,30 +328,9 @@ public class TaskService {
                 .filter(st -> !st.getId().equals(subTaskId))
                 .collect(Collectors.toList());
 
-        // 4. 重新分配权重
-        if (!remainingSubTasks.isEmpty()) {
-            // 计算剩余子任务的总权重
-            BigDecimal remainingWeightSum = remainingSubTasks.stream()
-                    .map(SubTask::getWeight)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            if (remainingWeightSum.compareTo(BigDecimal.ZERO) > 0) {
-                // 按比例分配，确保总和为 1.0 (使用 1 / remainingWeightSum 作为系数)
-                for (SubTask st : remainingSubTasks) {
-                    BigDecimal newWeight = st.getWeight().divide(remainingWeightSum, 4, RoundingMode.HALF_UP);
-                    st.setWeight(newWeight);
-                }
-                // 修正最后一个子任务的权重，防止精度丢失导致总和不为1
-                BigDecimal totalNewWeight = remainingSubTasks.stream()
-                        .map(SubTask::getWeight)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                if (totalNewWeight.compareTo(BigDecimal.ONE) != 0) {
-                    SubTask last = remainingSubTasks.get(remainingSubTasks.size() - 1);
-                    last.setWeight(last.getWeight().add(BigDecimal.ONE.subtract(totalNewWeight)));
-                }
-                subTaskRepository.saveAll(remainingSubTasks);
-            }
-        }
+        if (remainingSubTasks.isEmpty()) throw new BusinessException(400, "至少保留一个子计划，请先添加替代步骤");
+        redistributeWeights(remainingSubTasks, BigDecimal.ONE);
+        subTaskRepository.saveAll(remainingSubTasks);
 
         // 5. 删除子任务
         subTaskRepository.delete(targetSubTask);
@@ -333,7 +350,7 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException(404, "子任务不存在"));
         
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findById(subTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(subTask.getTaskId())
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
@@ -359,7 +376,7 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException(404, "子任务不存在"));
         
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findById(subTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(subTask.getTaskId())
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
@@ -367,58 +384,23 @@ public class TaskService {
 
         // 2. 更新内容
         if (request.getContent() != null) {
-            subTask.setContent(request.getContent());
+            if (request.getContent().isBlank() || request.getContent().trim().length() > 255) {
+                throw new BusinessException(400, "子计划内容应为1到255字");
+            }
+            subTask.setContent(request.getContent().trim());
         }
 
-        // 3. 更新权重并重新分配
         if (request.getWeight() != null) {
-            BigDecimal newWeight = request.getWeight();
-            
-            // 获取其他子任务
-            List<SubTask> otherSubTasks = subTaskRepository.findByTaskIdOrderByOrderNumAsc(parentTask.getId())
-                    .stream()
-                    .filter(st -> !st.getId().equals(subTaskId))
-                    .collect(Collectors.toList());
-
-            if (otherSubTasks.isEmpty()) {
-                // 只有一个子任务时，权重必须为 1.0
-                subTask.setWeight(BigDecimal.ONE);
-            } else {
-                // 计算其他子任务原有的总权重
-                BigDecimal othersOldWeightSum = otherSubTasks.stream()
-                        .map(SubTask::getWeight)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                // 剩余需要分配的权重
-                BigDecimal remainingToDistribute = BigDecimal.ONE.subtract(newWeight);
-
-                if (othersOldWeightSum.compareTo(BigDecimal.ZERO) > 0) {
-                    // 按比例分配剩余权重
-                    for (SubTask ost : otherSubTasks) {
-                        BigDecimal ostNewWeight = ost.getWeight()
-                                .multiply(remainingToDistribute)
-                                .divide(othersOldWeightSum, 4, RoundingMode.HALF_UP);
-                        ost.setWeight(ostNewWeight);
-                    }
-                } else {
-                    // 如果原本其他子任务权重都是0，则平均分配
-                    BigDecimal average = remainingToDistribute.divide(new BigDecimal(otherSubTasks.size()), 4, RoundingMode.HALF_UP);
-                    otherSubTasks.forEach(ost -> ost.setWeight(average));
-                }
-
-                // 修正精度，确保总和为 1.0
-                BigDecimal totalWeight = otherSubTasks.stream()
-                        .map(SubTask::getWeight)
-                        .reduce(newWeight, BigDecimal::add);
-                
-                if (totalWeight.compareTo(BigDecimal.ONE) != 0) {
-                    SubTask last = otherSubTasks.get(otherSubTasks.size() - 1);
-                    last.setWeight(last.getWeight().add(BigDecimal.ONE.subtract(totalWeight)));
-                }
-
-                subTask.setWeight(newWeight);
-                subTaskRepository.saveAll(otherSubTasks);
+            BigDecimal weight = request.getWeight();
+            if (weight.compareTo(new BigDecimal("0.01")) < 0 || weight.compareTo(BigDecimal.ONE) > 0) {
+                throw new BusinessException(400, "子计划权重应为1%到100%");
             }
+            List<SubTask> others = subTaskRepository.findByTaskIdOrderByOrderNumAsc(parentTask.getId()).stream()
+                    .filter(st -> !st.getId().equals(subTaskId)).toList();
+            weight = others.isEmpty() ? BigDecimal.ONE : weight.setScale(4, RoundingMode.HALF_UP);
+            redistributeWeights(others, BigDecimal.ONE.subtract(weight));
+            subTask.setWeight(weight);
+            subTaskRepository.saveAll(others);
         }
 
         subTaskRepository.save(subTask);
@@ -473,6 +455,7 @@ public class TaskService {
 
         // 4. 删除正式打卡记录
         checkInRecordRepository.deleteByTaskId(taskId);
+        deferredRecords.deleteByTaskId(taskId);
 
         // 5. 删除主任务
         taskRepository.delete(task);

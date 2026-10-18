@@ -81,7 +81,7 @@
         <view class="edit-dialog glass-card" @tap.stop>
           <view class="modal-head">
             <text class="modal-title">编辑学习计划</text>
-            <button class="close-btn" @tap="closePlanEdit">×</button>
+            <button class="close-btn" aria-label="关闭弹窗" @tap="closePlanEdit">×</button>
           </view>
           <view class="form-block"><text class="field-label">计划名称</text><input v-model="planForm.title" class="glass-input edit-input" /></view>
           <view class="form-block"><text class="field-label">分类</text><picker :range="categories" :value="categoryIndex" @change="planForm.category = categories[$event.detail.value]"><view class="glass-input date-picker">{{ planForm.category }}</view></picker></view>
@@ -94,9 +94,11 @@
       </view>
 
       <view class="section-head">
-        <text class="section-title">拆解步骤</text>
+        <text class="section-title">子计划（{{ subtasks.length }}）</text>
+        <button class="glass-button add-step-btn" :disabled="loading || saving" @tap="openAddDialog">新增子计划</button>
       </view>
 
+      <text class="text-muted small">可以自行增减子计划，至少保留1个；权重会自动调整。</text>
       <view v-if="loading" class="glass-card empty-card">
         <text>正在加载子任务...</text>
       </view>
@@ -135,7 +137,7 @@
               {{ isDone(item) ? "已完成" : "完成" }}
             </button>
             <button class="glass-button step-edit-btn" @tap.stop="openEditDialog(item)">编辑</button>
-            <button class="glass-button step-delete-btn" @tap.stop="handleDeleteSubtask(item)">删除</button>
+            <button class="glass-button step-delete-btn" :disabled="subtasks.length <= 1 || saving" @tap.stop="handleDeleteSubtask(item)">删除</button>
           </view>
         </view>
       </view>
@@ -143,8 +145,8 @@
       <view v-if="showEditDialog" class="modal-mask" @tap="closeEditDialog">
         <view class="edit-dialog glass-card" @tap.stop>
           <view class="modal-head">
-            <text class="modal-title">编辑子任务</text>
-            <button class="close-btn" @tap="closeEditDialog">×</button>
+            <text class="modal-title">{{ editingSubtask.id ? "编辑子计划" : "新增子计划" }}</text>
+            <button class="close-btn" aria-label="关闭弹窗" @tap="closeEditDialog">×</button>
           </view>
           
           <view class="form-block">
@@ -167,7 +169,7 @@
             <text class="text-muted small">修改权重后，其他子任务的权重将自动按比例重新分配。</text>
           </view>
 
-          <button class="glass-button save-btn" :loading="saving" @tap="saveSubtask">保存修改</button>
+          <button class="glass-button save-btn" :disabled="saving" :loading="saving" @tap="saveSubtask">{{ editingSubtask.id ? "保存修改" : "添加子计划" }}</button>
         </view>
       </view>
 
@@ -182,7 +184,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats } from "../../services/api";
+import { addSubtask, completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 import { validatePlanPeriod } from "../../services/planRules";
 
@@ -236,8 +238,8 @@ function clampProgress(value) {
 }
 
 function formatWeight(value) {
-  const next = Number(value || 0);
-  return next <= 1 ? Math.round(next * 100) : Math.round(next);
+  // 子计划列表接口统一返回百分数，1 表示 1%，不能再次乘100。
+  return Number(Number(value || 0).toFixed(2));
 }
 
 function isDone(item) {
@@ -375,6 +377,10 @@ async function handleDeleteTask() {
 }
 
 async function handleDeleteSubtask(item) {
+  if (subtasks.value.length <= 1) {
+    uni.showToast({ title: "至少保留一个子计划，请先添加替代步骤", icon: "none" });
+    return;
+  }
   uni.showModal({
     title: "删除子任务？",
     content: "删除后权重将自动分配给剩余步骤。",
@@ -383,15 +389,18 @@ async function handleDeleteSubtask(item) {
         try {
           await deleteSubtask(item.id);
           uni.showToast({ title: "已删除并重新分配权重", icon: "none" });
-          loadSubtasks();
-          // 刷新主任务进度
-          refreshTaskProgress();
+          await Promise.all([loadSubtasks(), refreshTaskProgress()]);
         } catch (error) {
           console.warn("delete subtask failed", error);
         }
       }
     },
   });
+}
+
+function openAddDialog() {
+  editingSubtask.value = { id: null, content: "", weight: Math.max(1, Math.round(100 / (subtasks.value.length + 1))) };
+  showEditDialog.value = true;
 }
 
 function openEditDialog(item) {
@@ -422,10 +431,9 @@ async function saveSubtask() {
 
   saving.value = true;
   try {
-    await updateSubtask(id, {
-      content: content.trim(),
-      weight: Number(weight) / 100
-    });
+    const payload = { content: content.trim(), weight: Number(weight) / 100 };
+    if (id) await updateSubtask(id, payload);
+    else await addSubtask(task.value.id, payload);
     uni.showToast({ title: "更新成功", icon: "none" });
     showEditDialog.value = false;
     await loadSubtasks();
@@ -642,8 +650,10 @@ onLoad((options) => {
 .edit-dialog { max-width: 560px; max-height: calc(100dvh - 48px); overflow-y: auto; padding: 24px; }
 .modal-mask { position: fixed; inset: 0; z-index: 50; padding: 24px 16px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; background: rgba(25, 63, 88, .35); backdrop-filter: blur(8px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.modal-title { font-size: 20px; font-weight: 800; }
-.close-btn { width: 36px; height: 36px; line-height: 34px; font-size: 28px; flex-shrink: 0; }
+.modal-title { flex: 1; min-width: 0; font-size: 20px; font-weight: 800; }
+.close-btn { width: 36px; height: 36px; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; line-height: 1; font-size: 28px; flex-shrink: 0; border: 0; }
+.close-btn::after { border: 0; }
+.add-step-btn { margin: 0; padding: 8px 14px; line-height: 1.4; font-size: 14px; flex-shrink: 0; }
 .form-block { display: flex; flex-direction: column; gap: 8px; }
 .field-label { font-size: 14px; font-weight: 700; color: #236894; }
 @media screen and (min-width: 700px) {

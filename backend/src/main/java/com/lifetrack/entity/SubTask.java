@@ -33,7 +33,7 @@ public class SubTask {
     @Schema(description = "子任务内容", example = "编写代码")
     private String content;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 10, scale = 4)
     @NotNull(message = "权重不能为空")
     @Schema(description = "子任务权重 (0.00-1.00)", example = "0.20")
     private BigDecimal weight;
