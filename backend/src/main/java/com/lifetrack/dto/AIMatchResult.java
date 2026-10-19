@@ -24,6 +24,7 @@ public class AIMatchResult {
     public static class MatchDetail {
         private Long subTaskId;
         private BigDecimal increment;
+        private String matchEvidence;
         private boolean completed;
         private String completionEvidence;
     }

@@ -50,6 +50,9 @@ public class AIService {
 
             if (resp == null || !(resp.get("code") instanceof Number)
                     || ((Number) resp.get("code")).intValue() != 200) {
+                if (resp != null && resp.get("code") instanceof Number code && code.intValue() == 502) {
+                    throw new BusinessException(502, "AI 拆解结果未满足要求，请调整建议后重试");
+                }
                 throw new IllegalStateException("AI 服务返回失败响应");
             }
 
@@ -71,6 +74,8 @@ public class AIService {
             }
             return dtos;
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("AI 拆解服务不可用，未生成或保存伪造的拆解结果: {}", e.getMessage());
             throw new BusinessException(503, "AI 拆解服务暂不可用，请切换手动创建计划");
@@ -166,6 +171,7 @@ public class AIService {
                             matches.add(AIMatchResult.MatchDetail.builder()
                                     .subTaskId(subTaskId)
                                     .increment(increment)
+                                    .matchEvidence(m.get("match_evidence") instanceof String ? (String) m.get("match_evidence") : null)
                                     .completed(Boolean.TRUE.equals(m.get("completed")))
                                     .completionEvidence(m.get("completion_evidence") instanceof String ? (String) m.get("completion_evidence") : null)
                                     .build());
@@ -194,14 +200,21 @@ public class AIService {
     // 3. 周报总结（AI 生成）
     // ==========================
     public FeedbackReportResponse generateWeeklyReport(Long userId, List<ActionLog> logs) {
+        return generateWeeklyReport(userId, logs, List.of());
+    }
+
+    public FeedbackReportResponse generateWeeklyReport(Long userId, List<ActionLog> logs, List<Map<String, Object>> planOutcomes) {
+        // 一次输入可能写入多个步骤日志，摘要按输入事件合并，不能重复算学习次数或相加步骤百分比。
+        Map<String, List<ActionLog>> events = logs.stream().collect(java.util.stream.Collectors.groupingBy(
+                log -> String.valueOf(log.getCreatedAt()) + "\u0000" + log.getRawInput(), LinkedHashMap::new,
+                java.util.stream.Collectors.toList()));
+        List<String> logTexts = events.values().stream().map(event -> event.get(0).getRawInput()
+                + "（学习时长：" + event.stream().mapToInt(log -> log.getDurationMinutes() == null ? 0 : log.getDurationMinutes()).sum()
+                + "分钟）").toList();
         try {
             String url = PYTHON_HOST + "/report";
             
-            List<String> logTexts = logs.stream()
-                    .map(log -> log.getRawInput() + " (贡献度:" + log.getContribution() + ")")
-                    .toList();
-            
-            Map<String, Object> req = Map.of("logs", logTexts);
+            Map<String, Object> req = Map.of("logs", logTexts, "plan_outcomes", planOutcomes);
             Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
 
             if (resp != null && (Integer) resp.get("code") == 200) {
@@ -220,7 +233,7 @@ public class AIService {
         // 兜底逻辑
         return FeedbackReportResponse.builder()
             .title("AI 周报告 (生成失败)")
-            .aiSummary("本周共记录 " + logs.size() + " 次行为，暂无法生成深度分析。")
+            .aiSummary("本周共记录 " + logTexts.size() + " 次行为，暂无法生成深度分析。")
             .achievementTags(List.of("系统生成"))
             .suggestion("请检查 AI 服务状态")
             .build();

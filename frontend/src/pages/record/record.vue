@@ -43,7 +43,7 @@
           分析并保存记录
         </button>
         <text class="hint">
-          仅实际增加步骤进度的记录会保存并触发打卡；无关内容不会打卡。
+          只记录明确匹配的学习内容；范围不明确时请补充知识点，无关内容不会打卡。
         </text>
       </view>
 
@@ -54,7 +54,7 @@
           <text class="hint">AI 暂不可用，选择计划后可先保存记录并打卡。原始内容和日期会保留，恢复后点击“补分析”恢复对应进度。</text>
           <button class="glass-button" :disabled="!selectedTaskId || syncing" :loading="syncing" @tap="submitManualCheckIn">保存记录并打卡（待补分析）</button>
         </template>
-        <text v-if="!syncResult.updates?.length" class="hint">{{ resultIsRetry ? "原始记录仍保留，本次未增加进度，也未重复打卡。" : "未产生有效进度，未保存学习记录，也未新增打卡。请补充学习内容，或选择计划后重试。" }}</text>
+        <text v-if="!syncResult.updates?.length" class="hint">{{ resultIsRetry ? "原始记录仍保留，本次未增加进度，也未重复打卡。" : syncResult.matchingAmbiguous ? "匹配范围不明确；输入已保留，请补充具体学习内容后重试。" : "未产生有效进度，未保存学习记录，也未新增打卡。请补充学习内容，或选择计划后重试。" }}</text>
         <view class="update-list">
           <view v-for="item in syncResult.updates" :key="item.subTaskId" class="update-row">
             <view>

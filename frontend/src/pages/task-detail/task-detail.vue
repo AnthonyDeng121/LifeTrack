@@ -44,10 +44,10 @@
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
-        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡目标达成率</text></view>
+        <view class="glass-card metric-card"><text>{{ task.status === 'COMPLETED' ? '已完成' : formatProgress(checkInStats.completionRate) + '%' }}</text><text>{{ task.status === 'COMPLETED' ? '学习目标' : '坚持目标达成率' }}</text></view>
       </view>
       <view v-if="!checkInLoading && !checkInError" class="target-feedback">
-        <text>坚持目标：已打卡 {{ checkInStats.checkedInDays }} / {{ checkInStats.targetDays || task.targetDays }} 天</text>
+        <text>坚持记录：已打卡 {{ checkInStats.checkedInDays }} 天 · 原定 {{ checkInStats.targetDays || task.targetDays }} 天（{{ formatProgress(checkInStats.completionRate) }}%）</text>
         <text>{{ targetFeedback }}</text>
       </view>
       <view v-if="checkInLoading" class="glass-card empty-card"><text>正在加载打卡数据...</text></view>
@@ -222,7 +222,7 @@ const targetFeedback = computed(() => {
   const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
   if (task.value.status === "COMPLETED") return remaining === 0
     ? "学习计划和打卡目标均已完成，已保留真实记录"
-    : `学习计划已提前完成；打卡目标尚差 ${remaining} 天，保留实际达成率，不影响学习完成状态`;
+    : "学习目标已提前完成；坚持记录作为独立参考，不降低学习成果评价";
   if (remaining === 0) return "已达成打卡目标；学习进度单独计算，请继续完成剩余子计划";
   if (task.value.status === "EXPIRED") return `本期已结束，距打卡目标还差 ${remaining} 天`;
   if (task.value.status === "CANCELLED") return "计划已取消，已保留本期打卡记录";

@@ -17,9 +17,9 @@
 
       <view class="hero-card glass-card">
         <view class="hero-copy">
-          <text class="pill">打卡目标完成率</text>
-          <text class="hero-number">{{ formatProgress(stats.checkInCompletionRate) }}%</text>
-          <text class="hero-desc">按真实打卡天数与目标天数计算，和学习进度分别统计</text>
+          <text class="pill">学习计划完成率</text>
+          <text class="hero-number">{{ formatProgress(stats.learningPlanCompletionRate) }}%</text>
+          <text class="hero-desc">已完成 {{ stats.completedPlanCount || 0 }} / {{ stats.totalPlanCount || 0 }} 个计划；提前完成同样计入成果</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -27,6 +27,10 @@
       </view>
 
       <view class="metric-grid">
+        <view class="metric-card glass-card">
+          <text class="metric-value">{{ formatProgress(stats.checkInCompletionRate) }}%</text>
+          <text class="metric-label">坚持目标达成率</text>
+        </view>
         <view class="metric-card glass-card">
           <text class="metric-value">{{ stats.checkedInDays || 0 }}</text>
           <text class="metric-label">累计打卡</text>
@@ -85,6 +89,7 @@
       </view>
       <view v-if="report" class="glass-card feedback-card">
         <text class="feedback-title">{{ report.title }}</text>
+        <text v-if="report.planOutcomeSummary" class="feedback-summary outcome-summary">{{ report.planOutcomeSummary }}</text>
         <text class="feedback-summary">{{ report.aiSummary }}</text>
         <view class="tag-row">
           <text v-for="tag in report.achievementTags" :key="tag" class="pill">{{ tag }}</text>
@@ -290,7 +295,7 @@ onShow(() => { startClock(); loadPage(); });
 .metric-grid {
   margin-top: 24rpx;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 18rpx;
 }
 

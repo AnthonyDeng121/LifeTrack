@@ -14,6 +14,8 @@ public class FeedbackReportResponse {
 
     @Schema(description = "AI 总结文案", example = "虽然你本周在多个子任务中只前进了小步，但核心代码逻辑的完成为你下周的爆发奠定了基础。")
     private String aiSummary;
+    @Schema(description = "程序根据持久化计划和出勤生成的当前成果事实，不由模型决定")
+    private String planOutcomeSummary;
 
     @Schema(description = "成就标签列表", example = "[\"深度思考者\", \"代码稳健派\"]")
     private List<String> achievementTags;

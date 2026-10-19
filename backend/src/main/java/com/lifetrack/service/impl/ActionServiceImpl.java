@@ -99,6 +99,18 @@ public class ActionServiceImpl implements ActionService {
         Set<Long> processedPlans = new HashSet<>();
         int duration = fixedDuration != null ? fixedDuration : Math.max(0, aiResult.getDurationMinutes() == null ? 0 : aiResult.getDurationMinutes());
         List<AIMatchResult.MatchDetail> rawMatches = aiResult.getMatches() == null ? Collections.emptyList() : aiResult.getMatches();
+        // 每个被推进的步骤必须有各自独立的学习事实，不能把同一句笼统记录分摊给整门课程。
+        Map<Long, AIMatchResult.MatchDetail> uniqueMatches = new LinkedHashMap<>();
+        for (var match : rawMatches) {
+            if (match != null && match.getIncrement() != null && match.getIncrement().signum() > 0
+                    && eligible.containsKey(match.getSubTaskId())) uniqueMatches.putIfAbsent(match.getSubTaskId(), match);
+        }
+        if (uniqueMatches.size() > 1 && !hasIndependentEvidence(request.getRawInput(), uniqueMatches.values())) {
+            return ActionSyncResponse.builder().updates(Collections.emptyList()).matchingAmbiguous(true)
+                    .aiAnalysis("这条记录不足以分别证明多个步骤的学习内容，未保存或改变进度。请补充具体知识点与实际动作，例如‘整理了表、主键和外键的概念笔记’；记录多项内容时请分别描述。")
+                    .build();
+        }
+        rawMatches = new ArrayList<>(uniqueMatches.values());
         long matchCount = rawMatches.stream().filter(Objects::nonNull)
                 .filter(m -> m.getIncrement() != null && m.getIncrement().signum() > 0 && eligible.containsKey(m.getSubTaskId()))
                 .map(AIMatchResult.MatchDetail::getSubTaskId).distinct().count();
@@ -174,6 +186,21 @@ public class ActionServiceImpl implements ActionService {
                 .collect(Collectors.toList());
 
         return PageResponse.of(page.getTotalElements(), list);
+    }
+
+    private boolean hasIndependentEvidence(String input, java.util.Collection<AIMatchResult.MatchDetail> matches) {
+        List<int[]> occupied = new ArrayList<>();
+        for (var match : matches) {
+            String evidence = match.getMatchEvidence();
+            if (evidence == null || evidence.trim().length() < 4) return false;
+            evidence = evidence.trim();
+            int start = input.indexOf(evidence);
+            if (start < 0) return false;
+            int end = start + evidence.length();
+            for (int[] span : occupied) if (start < span[1] && end > span[0]) return false;
+            occupied.add(new int[]{start, end});
+        }
+        return true;
     }
 
     @Override

@@ -21,6 +21,10 @@ public class DashboardStatsResponse {
 
     @Schema(description = "全部有效学习计划的真实打卡完成率")
     private BigDecimal checkInCompletionRate;
+    @Schema(description = "已完成学习计划数占全部未取消计划数的比例")
+    private BigDecimal learningPlanCompletionRate;
+    private Integer completedPlanCount;
+    private Integer totalPlanCount;
 
     @Schema(description = "累计正式打卡次数")
     private Integer checkedInDays;

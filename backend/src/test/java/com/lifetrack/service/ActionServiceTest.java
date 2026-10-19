@@ -52,11 +52,12 @@ class ActionServiceTest {
     }
     ActionSyncRequest request() {
         ActionSyncRequest request = new ActionSyncRequest();
-        request.setRawInput("练习编曲软件30分钟"); request.setDurationInput("30分钟");
+        request.setRawInput("练习编曲软件并编写节奏，同时完成英语听力练习30分钟"); request.setDurationInput("30分钟");
         return request;
     }
     AIMatchResult.MatchDetail match(long id, String increment) {
-        return AIMatchResult.MatchDetail.builder().subTaskId(id).increment(new BigDecimal(increment)).build();
+        return AIMatchResult.MatchDetail.builder().subTaskId(id).increment(new BigDecimal(increment))
+                .matchEvidence(id == 11 ? "练习编曲软件" : id == 12 ? "编写节奏" : "完成英语听力练习").build();
     }
     void analysis(AIMatchResult.MatchDetail... matches) {
         when(ai.analyzeAction(anyString(), eq("30分钟"), anyList())).thenReturn(AIMatchResult.builder()
@@ -136,6 +137,34 @@ class ActionServiceTest {
         ArgumentCaptor<ActionLog> saved = ArgumentCaptor.forClass(ActionLog.class);
         verify(logs, times(2)).save(saved.capture());
         assertEquals(30, saved.getAllValues().stream().mapToInt(ActionLog::getDurationMinutes).sum());
+    }
+    @Test void broadDatabaseNoteCannotAdvanceEightStepsUsingSameEvidence() {
+        eligible(false);
+        List<SubTask> candidates = new ArrayList<>();
+        List<AIMatchResult.MatchDetail> matches = new ArrayList<>();
+        for (long id = 11; id < 19; id++) {
+            candidates.add(SubTask.builder().id(id).taskId(1L).content("数据库步骤" + id)
+                    .currentProgress(BigDecimal.ZERO).build());
+            var match = match(id, "0.05"); match.setMatchEvidence("整理了关系型数据库的笔记"); matches.add(match);
+        }
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(candidates);
+        analysis(matches.toArray(AIMatchResult.MatchDetail[]::new));
+        var request = request(); request.setRawInput("整理了关系型数据库的笔记");
+        var result = service.syncAction(request);
+        assertTrue(result.isMatchingAmbiguous());
+        assertTrue(result.getUpdates().isEmpty());
+        verifyNoInteractions(logs, checkIns, taskService);
+    }
+    @Test void inventedOrOverlappingMultiStepEvidenceIsRejected() {
+        eligible(false);
+        var second = SubTask.builder().id(12L).taskId(1L).content("编写节奏").currentProgress(BigDecimal.ZERO).build();
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step, second));
+        var firstMatch = match(11, "0.10"); firstMatch.setMatchEvidence("练习编曲软件并编写节奏");
+        analysis(firstMatch, match(12, "0.10"));
+        assertTrue(service.syncAction(request()).isMatchingAmbiguous());
+        firstMatch.setMatchEvidence("不在用户原文中的学习事实");
+        assertTrue(service.syncAction(request()).isMatchingAmbiguous());
+        verifyNoInteractions(logs, checkIns, taskService);
     }
     @Test void undoLastEffectiveRecordRemovesAutomaticAttendance() {
         ActionLog action = ActionLog.builder().id(100L).userId(7L).taskId(1L).subTaskId(11L)

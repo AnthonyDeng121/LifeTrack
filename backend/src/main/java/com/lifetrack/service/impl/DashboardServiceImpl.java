@@ -65,6 +65,9 @@ public class DashboardServiceImpl implements DashboardService {
                 .filter(record -> validTaskIds.contains(record.getTaskId()))
                 .toList();
         int totalTargetDays = validPlans.stream().mapToInt(Task::getTargetDays).sum();
+        int completedPlanCount = (int) validPlans.stream().filter(t -> t.getStatus() == PlanStatus.COMPLETED).count();
+        BigDecimal learningPlanCompletionRate = validPlans.isEmpty() ? BigDecimal.ZERO
+                : BigDecimal.valueOf(completedPlanCount * 100L).divide(BigDecimal.valueOf(validPlans.size()), 1, RoundingMode.HALF_UP);
         int checkedInDays = allCheckIns.size();
         BigDecimal checkInCompletionRate = totalTargetDays == 0
                 ? BigDecimal.ZERO
@@ -151,6 +154,9 @@ public class DashboardServiceImpl implements DashboardService {
                 .timeDistribution(distribution)
                 .weeklyTrend(weeklyTrend)
                 .checkInCompletionRate(checkInCompletionRate)
+                .learningPlanCompletionRate(learningPlanCompletionRate)
+                .completedPlanCount(completedPlanCount)
+                .totalPlanCount(validPlans.size())
                 .checkedInDays(checkedInDays)
                 .currentCheckInStreak(checkInStreaks[0])
                 .longestCheckInStreak(checkInStreaks[1])

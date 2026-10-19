@@ -15,6 +15,7 @@ import java.util.List;
 @Schema(description = "行为同步响应")
 public class ActionSyncResponse {
     private boolean analysisUnavailable;
+    private boolean matchingAmbiguous;
     @Schema(description = "本次影响的任务更新明细")
     private List<TaskUpdateDetail> updates;
     

@@ -11,8 +11,8 @@ public class TaskPreviewRequest {
     private String title;
     @Size(max = 1000)
     private String guidance;
-    @Min(2) @Max(8)
+    @Min(2) @Max(10)
     private Integer stepCount;
-    @Size(max = 8)
+    @Size(max = 10)
     private List<@NotBlank @Size(max = 120) String> previousSteps;
 }

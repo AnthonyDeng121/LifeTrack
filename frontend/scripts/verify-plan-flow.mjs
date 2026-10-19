@@ -147,6 +147,9 @@ const previousCallCount = previewCalls.length;
 await page.createTask();
 assert.equal(previewCalls.length, previousCallCount + 1, "请求期间改变建议也必须重新生成，不能保存旧要求的方案");
 assert.equal(page.showCreator.value, true);
+page.stepCountIndex.value = 9;
+await page.generatePreview();
+assert.equal(previewCalls.at(-1).stepCount, 10, "第十个步骤选项正确映射为10步");
 assert.deepEqual(endpoints.tasks.preview({ title: "网络", guidance: "重点抓包" }), {
   method: "POST", path: "/tasks/deconstruct/preview", data: { title: "网络", guidance: "重点抓包" },
 });
@@ -172,6 +175,9 @@ await recording.submitRecord();
 assert.deepEqual(syncArguments, ["学习编曲", "30分钟", 101]);
 assert.equal(recording.rawInput.value, "学习编曲", "无匹配保留输入，方便修改或选择计划后重试");
 assert.equal(recording.syncing.value, false);
+syncResponse = { updates: [], matchingAmbiguous: true, aiAnalysis: "请补充具体知识点" };
+await recording.submitRecord();
+assert.equal(recording.rawInput.value, "学习编曲", "匹配范围不明确时保留输入");
 syncResponse = { updates: [{ taskId: 101, subTaskId: 1, checkedInNow: true }] };
 await recording.submitRecord();
 assert.equal(recording.rawInput.value, "");
@@ -228,4 +234,8 @@ detail.task.value.status = "EXPIRED";
 assert.match(detail.targetFeedback.value, /本期已结束/);
 detail.checkInStats.value.checkedInDays = 20;
 assert.match(detail.targetFeedback.value, /已达成打卡目标/);
+detail.task.value.status = "COMPLETED";
+detail.checkInStats.value.checkedInDays = 1;
+assert.match(detail.targetFeedback.value, /学习目标已提前完成/);
+assert.doesNotMatch(detail.targetFeedback.value, /还差|尚差/);
 console.log("Plan and check-in flow checks passed.");

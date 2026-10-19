@@ -77,4 +77,19 @@ class DashboardServiceImplTest {
                 .content("学习").durationMinutes(duration)
                 .build();
     }
+
+    @Test
+    void earlyCompletionCountsAsAchievementWithoutInflatingAttendance() {
+        Task plan = Task.builder().id(1L).userId(7L).title("提前学完")
+                .targetDays(3).status(PlanStatus.COMPLETED).build();
+        when(taskRepository.findByUserId(7L)).thenReturn(List.of(plan));
+        when(checkInRecordRepository.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
+                eq(7L), any(), any())).thenReturn(List.of(record(LocalDate.now(), 30)));
+        when(userProfileRepository.findByUserId(7L)).thenReturn(Optional.empty());
+        var stats = dashboardService.getStats();
+        assertEquals("100.0", stats.getLearningPlanCompletionRate().toPlainString());
+        assertEquals("33.3", stats.getCheckInCompletionRate().toPlainString());
+        assertEquals(1, stats.getCompletedPlanCount());
+        assertEquals(1, stats.getTotalPlanCount());
+    }
 }

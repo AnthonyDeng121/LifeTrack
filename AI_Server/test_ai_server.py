@@ -32,6 +32,25 @@ class DecompositionTests(unittest.TestCase):
         self.assertEqual(502, self.client.post("/ai/deconstruct", json={"title": "计算机网络", "step_count": 3}).get_json()["code"])
 
     @patch("ai_server.call_llm")
+    def test_ten_steps_supported_and_eleven_rejected(self, llm):
+        steps = example([f"完成网络协议实验{i}并验证对应协议行为" for i in range(10)])
+        llm.return_value = json.dumps(steps)
+        result = self.client.post("/ai/deconstruct", json={"title": "网络课程", "step_count": 10,
+            "previous_steps": [step["step"] for step in steps["goals"][0]["sub_tasks"]]}).get_json()
+        self.assertEqual(200, result["code"])
+        self.assertEqual(10, len(result["data"]["goals"][0]["sub_tasks"]))
+        self.assertEqual(400, self.client.post("/ai/deconstruct", json={"title": "网络课程", "step_count": 11}).get_json()["code"])
+
+    @patch("ai_server.call_llm")
+    def test_report_receives_separate_achievement_and_attendance(self, llm):
+        llm.return_value = json.dumps({"title": "学习总结", "ai_summary": "提前完成"})
+        self.client.post("/ai/report", json={"logs": [], "plan_outcomes": [{"title": "Spring Boot",
+            "status": "COMPLETED", "target_days": 3, "actual_check_in_days": 1}]})
+        prompt = llm.call_args.args[0]
+        self.assertIn('"actual_check_in_days": 1', prompt)
+        self.assertIn("不能判为学习未达标", prompt)
+
+    @patch("ai_server.call_llm")
     def test_specific_result_is_returned_without_replacement(self, llm):
         llm.return_value = json.dumps(self.valid)
         response = self.client.post("/ai/deconstruct", json={"title": "学习计算机网络"}).get_json()

@@ -199,7 +199,7 @@
           <view class="mini-subtasks">
             <text v-for="(item, index) in aiResult.subTasks" :key="item.content">{{ index + 1 }}. {{ item.content }}（{{ formatProgress(item.weight * 100) }}%）</text>
           </view>
-          <button class="glass-button" :disabled="creating" @tap="generatePreview">按当前建议重新生成</button>
+          <button class="glass-button create-btn regenerate-btn" :disabled="creating" @tap="generatePreview">按当前建议重新生成</button>
         </view>
 
         <button class="glass-button create-btn" :disabled="creating" :loading="creating" @tap="createTask">
@@ -254,7 +254,7 @@ const newEndDate = ref(formatDate(defaultEnd));
 const newTargetDays = ref("20");
 const aiResult = ref(null);
 const decompositionGuidance = ref("");
-const stepCountOptions = ["自动决定", "2步", "3步", "4步", "5步", "6步", "7步", "8步"];
+const stepCountOptions = ["自动决定", "2步", "3步", "4步", "5步", "6步", "7步", "8步", "9步", "10步"];
 const stepCountIndex = ref(0);
 let previewTitle = "";
 let previewGuidance = "";
