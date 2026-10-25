@@ -26,6 +26,18 @@
         </view>
       </view>
 
+      <view class="filter-group date-filter">
+        <text class="filter-label">按计划周期筛选</text>
+        <text class="text-muted">显示与日期范围有交集的计划，可只选开始或结束日期。</text>
+        <view class="date-filter-row">
+          <picker mode="date" :value="filterStartDate" @change="filterStartDate = $event.detail.value"><view class="glass-input">{{ filterStartDate || "选择开始日期" }}</view></picker>
+          <picker mode="date" :value="filterEndDate" @change="filterEndDate = $event.detail.value"><view class="glass-input">{{ filterEndDate || "选择结束日期" }}</view></picker>
+          <button class="glass-button" :disabled="loading || deleting" @tap="applyDateFilters">筛选计划</button>
+          <button class="glass-button" :disabled="loading || deleting" @tap="resetDateFilters">清除日期</button>
+        </view>
+        <text v-if="dateFilterError" class="error-state">{{ dateFilterError }}</text>
+      </view>
+
       <view class="section-head">
         <text class="section-title">我的任务</text>
         <button class="glass-button batch-toggle" :disabled="deleting" @tap="toggleBatchMode">{{ batchMode ? "完成" : "批量管理" }}</button>
@@ -47,8 +59,8 @@
       </view>
 
       <view v-else-if="filteredTasks.length === 0" class="glass-card empty-card">
-        <text>还没有这个分类的任务</text>
-        <text class="text-muted">点右上角新建任务，可以 AI 拆解，也可以手动填写。</text>
+        <text>当前筛选条件下暂无计划</text>
+        <text class="text-muted">可以清除日期、切换状态或分类，也可点右上角新建计划。</text>
       </view>
 
       <view v-else class="task-list">
@@ -224,6 +236,27 @@ const categories = ["全部", ...TASK_CATEGORIES];
 const selectableCategories = TASK_CATEGORIES;
 const activeCategory = ref("全部");
 const activeStatus = ref("");
+const filterStartDate = ref("");
+const filterEndDate = ref("");
+const dateFilterError = ref("");
+let appliedDateFilters = {};
+let tasksVersion = 0;
+function applyDateFilters() {
+  if (loading.value || deleting.value) return;
+  if (filterStartDate.value && filterEndDate.value && filterStartDate.value > filterEndDate.value) {
+    dateFilterError.value = "筛选开始日期不能晚于结束日期";
+    return;
+  }
+  dateFilterError.value = "";
+  appliedDateFilters = { ...(filterStartDate.value ? { startDate: filterStartDate.value } : {}), ...(filterEndDate.value ? { endDate: filterEndDate.value } : {}) };
+  selectedIds.value = [];
+  return loadTasks();
+}
+function resetDateFilters() {
+  if (loading.value || deleting.value) return;
+  filterStartDate.value = ""; filterEndDate.value = "";
+  return applyDateFilters();
+}
 const statusOptions = [
   { value: "", label: "全部状态" },
   { value: "NOT_STARTED", label: "未开始" },
@@ -346,18 +379,21 @@ function clampProgress(value) {
 }
 
 async function loadTasks() {
+  const version = ++tasksVersion;
   loading.value = true;
   loadError.value = "";
   try {
-    const data = await getTasks(activeStatus.value ? { status: activeStatus.value } : {});
+    const data = await getTasks({ ...appliedDateFilters, ...(activeStatus.value ? { status: activeStatus.value } : {}) });
+    if (version !== tasksVersion) return;
     tasks.value = Array.isArray(data) ? data : [];
     selectedIds.value = selectedIds.value.filter(id => tasks.value.some(task => task.id === id));
   } catch (error) {
+    if (version !== tasksVersion) return;
     console.warn("load tasks failed", error);
     tasks.value = [];
     loadError.value = "计划加载失败，请稍后重试";
   } finally {
-    loading.value = false;
+    if (version === tasksVersion) loading.value = false;
   }
 }
 
@@ -480,6 +516,10 @@ onShow(loadTasks);
 </script>
 
 <style scoped>
+.filter-group.date-filter { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.date-filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.date-filter-row picker { flex: 1 1 160px; }
+.date-filter-row button { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
 .batch-toggle { width: 170rpx; font-size: 24rpx; margin: 0; }
 .batch-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20rpx; flex-wrap: wrap; font-size: 14px; }
 .select-all-btn, .delete-selected { padding: 10px 16px; min-height: 42px; line-height: 1.4; flex-shrink: 0; font-size: 14px; }

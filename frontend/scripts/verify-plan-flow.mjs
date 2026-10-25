@@ -162,13 +162,13 @@ let manualPayload;
 let deferredData = [];
 let retriedId;
 const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", `${recordScript}
+const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript}
   return { rawInput, duration, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, submitManualCheckIn, retryRecord, loadDeferredRecords };
 `)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
   syncArguments = args;
   return syncResponse;
 }, async () => ({}), async () => ({ list: [] }), async () => [], async payload => { manualPayload = payload; }, async () => deferredData,
-async id => { retriedId = id; deferredData = [{ id, status: "APPLIED" }]; return { updates: [{ taskId: 101, subTaskId: 1 }] }; });
+async id => { retriedId = id; deferredData = [{ id, status: "APPLIED" }]; return { updates: [{ taskId: 101, subTaskId: 1 }] }; }, getBusinessDate);
 recording.rawInput.value = "学习编曲";
 recording.duration.value = "30分钟";
 recording.selectedTaskId.value = 101;

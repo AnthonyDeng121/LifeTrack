@@ -15,8 +15,8 @@ export async function phoneLogin(phone, verifyCode) {
   return data;
 }
 
-export function getDashboardStats() {
-  return request({ ...endpoints.dashboard.stats });
+export function getDashboardStats(showError = true) {
+  return request({ ...endpoints.dashboard.stats, showError });
 }
 
 export function getFeedbackReport(showError = true) {

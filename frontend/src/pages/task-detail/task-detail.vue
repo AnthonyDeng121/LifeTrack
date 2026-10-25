@@ -69,8 +69,21 @@
       <view class="section-head">
         <text class="section-title">打卡历史</text>
       </view>
-      <view v-if="!checkInLoading && !checkInError && checkInHistory.length === 0" class="glass-card empty-card"><text>还没有正式打卡记录</text></view>
-      <view v-else-if="!checkInLoading && !checkInError" class="checkin-history">
+      <view class="glass-card history-filters">
+        <text class="text-muted">仅筛选下方历史，概览和最近七天仍展示完整计划统计。</text>
+        <view class="history-filter-row">
+          <picker mode="date" :value="historyStartDate" @change="historyStartDate = $event.detail.value"><view class="glass-input">{{ historyStartDate || "开始日期" }}</view></picker>
+          <picker mode="date" :value="historyEndDate" @change="historyEndDate = $event.detail.value"><view class="glass-input">{{ historyEndDate || "结束日期" }}</view></picker>
+          <button class="glass-button" :disabled="checkInLoading || historyLoading" @tap="filterCheckInHistory">查询打卡</button>
+          <button class="glass-button" :disabled="checkInLoading || historyLoading" @tap="resetCheckInHistory">清除日期</button>
+        </view>
+        <text v-if="historyFilterError" class="text-muted">{{ historyFilterError }}</text>
+        <text v-if="historyLoading">正在查询打卡历史...</text>
+        <text v-if="historyLoadError">{{ historyLoadError }}</text>
+        <button v-if="historyLoadError" class="glass-button" @tap="loadFilteredHistory">重试历史查询</button>
+      </view>
+      <view v-if="!historyLoading && !historyLoadError && checkInHistory.length === 0" class="glass-card empty-card"><text>所选日期范围暂无正式打卡记录</text></view>
+      <view v-if="checkInHistory.length" class="checkin-history">
         <view v-for="record in checkInHistory" :key="record.id" class="glass-card history-item">
           <view class="history-head"><text>{{ record.checkInDate }}</text><text class="pill">{{ record.durationMinutes }} 分钟</text></view>
           <text class="history-content">{{ record.content }}</text>
@@ -226,6 +239,40 @@ watch(() => [planForm.value.startDate, planForm.value.endDate], () => {
     : planForm.value.startDate > today ? "NOT_STARTED" : "IN_PROGRESS";
 }, { flush: "sync" });
 const checkInHistory = ref([]);
+const historyStartDate = ref("");
+const historyEndDate = ref("");
+const historyFilterError = ref("");
+const historyLoadError = ref("");
+const historyLoading = ref(false);
+let appliedHistoryFilters = {};
+let historyQueryVersion = 0;
+function filterCheckInHistory() {
+  if (checkInLoading.value || historyLoading.value) return;
+  if (historyStartDate.value && historyEndDate.value && historyStartDate.value > historyEndDate.value) {
+    historyFilterError.value = "查询开始日期不能晚于结束日期";
+    return;
+  }
+  historyFilterError.value = "";
+  appliedHistoryFilters = { ...(historyStartDate.value ? { startDate: historyStartDate.value } : {}), ...(historyEndDate.value ? { endDate: historyEndDate.value } : {}) };
+  return loadFilteredHistory();
+}
+function resetCheckInHistory() {
+  if (checkInLoading.value || historyLoading.value) return;
+  historyStartDate.value = ""; historyEndDate.value = "";
+  return filterCheckInHistory();
+}
+async function loadFilteredHistory() {
+  if (!task.value.id) return;
+  const version = ++historyQueryVersion;
+  historyLoading.value = true;
+  historyLoadError.value = "";
+  try {
+    const rows = await getCheckInHistory({ taskId: task.value.id, ...appliedHistoryFilters });
+    if (version === historyQueryVersion) checkInHistory.value = Array.isArray(rows) ? rows : [];
+  } catch {
+    if (version === historyQueryVersion) historyLoadError.value = "打卡历史查询失败，已保留上次结果，请重试";
+  } finally { if (version === historyQueryVersion) historyLoading.value = false; }
+}
 const checkInLoading = ref(false);
 const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
@@ -301,25 +348,21 @@ function shortDate(date) {
   return `${Number(parts[1])}/${Number(parts[2])}`;
 }
 
-async function loadCheckIns() {
+async function loadCheckInStats() {
   if (!task.value.id) return;
   checkInLoading.value = true;
   checkInError.value = "";
   try {
-    const [history, stats] = await Promise.all([
-      getCheckInHistory({ taskId: task.value.id }),
-      getCheckInStats(task.value.id),
-    ]);
-    checkInHistory.value = Array.isArray(history) ? history : [];
+    const stats = await getCheckInStats(task.value.id);
     checkInStats.value = stats || checkInStats.value;
   } catch (error) {
     console.warn("load check-ins failed", error);
-    checkInHistory.value = [];
     checkInError.value = "打卡数据加载失败";
   } finally {
     checkInLoading.value = false;
   }
 }
+function loadCheckIns() { return Promise.all([loadFilteredHistory(), loadCheckInStats()]); }
 
 function openPlanEdit() {
   planForm.value = {
@@ -509,6 +552,10 @@ onLoad((options) => {
 </script>
 
 <style scoped>
+.history-filters { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.history-filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.history-filter-row picker { flex: 1 1 140px; }
+.history-filter-row button { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
 .target-feedback { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 14px; color: #236894; font-size: 14px; }
 .detail-top {
   display: flex;

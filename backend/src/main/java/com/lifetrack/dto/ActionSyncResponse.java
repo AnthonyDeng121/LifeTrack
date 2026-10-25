@@ -16,6 +16,12 @@ import java.util.List;
 public class ActionSyncResponse {
     private boolean analysisUnavailable;
     private boolean matchingAmbiguous;
+    @Schema(description = "本次持久化的步骤学习记录数，同一次输入可能对应多个步骤")
+    private int savedRecordCount;
+    @Schema(description = "本次新建的正式每日打卡数，重复学习不重复打卡")
+    private int newCheckInCount;
+    @Schema(description = "本次实际保存的学习时长，跨步骤和计划分摊后合计")
+    private int durationMinutes;
     @Schema(description = "本次影响的任务更新明细")
     private List<TaskUpdateDetail> updates;
     

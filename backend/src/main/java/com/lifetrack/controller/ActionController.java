@@ -32,7 +32,7 @@ public class ActionController {
     @Operation(summary = "获取行为日志列表", description = "分页获取用户过往输入的自然语言记录及 AI 给出的贡献度评价")
     @GetMapping("/history")
     public Result<PageResponse<ActionHistoryResponse>> getHistory(
-            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
         return Result.success(actionService.getHistory(pageable));
     }
 

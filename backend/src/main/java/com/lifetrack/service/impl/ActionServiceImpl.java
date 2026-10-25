@@ -95,6 +95,7 @@ public class ActionServiceImpl implements ActionService {
             throw new BusinessException(409, "日期已变化，请重新提交今日记录");
         }
         List<ActionSyncResponse.TaskUpdateDetail> updates = new ArrayList<>();
+        int savedDuration = 0;
         Set<Long> matchedSteps = new HashSet<>();
         Set<Long> processedPlans = new HashSet<>();
         int duration = fixedDuration != null ? fixedDuration : Math.max(0, aiResult.getDurationMinutes() == null ? 0 : aiResult.getDurationMinutes());
@@ -141,6 +142,7 @@ public class ActionServiceImpl implements ActionService {
             }
             // 按匹配步骤分摊时长，总和等于本次输入时长，避免多计划重复统计。
             int allocatedDuration = (int) (duration / matchCount + (updates.size() < duration % matchCount ? 1 : 0));
+            savedDuration += allocatedDuration;
             actionLogRepository.save(ActionLog.builder().userId(userId).taskId(task.getId()).subTaskId(step.getId())
                     .rawInput(request.getRawInput().trim()).contribution(increment).category(task.getCategory())
                     .durationMinutes(allocatedDuration).aiAnalysis(aiResult.getAiAnalysis())
@@ -155,7 +157,9 @@ public class ActionServiceImpl implements ActionService {
                     .newTotalProgress(task.getTotalProgress().multiply(new BigDecimal("100"))).build());
         }
         for (Long taskId : processedPlans) refreshAutomaticAttendance(userId, taskId, today);
-        return ActionSyncResponse.builder().updates(updates).analysisUnavailable(aiResult.isUnavailable())
+        return ActionSyncResponse.builder().updates(updates).savedRecordCount(updates.size())
+                .newCheckInCount((int) updates.stream().filter(ActionSyncResponse.TaskUpdateDetail::isCheckedInNow).count())
+                .durationMinutes(savedDuration).analysisUnavailable(aiResult.isUnavailable())
                 .aiAnalysis(aiResult.getAiAnalysis() == null ? "未匹配到有效学习步骤，未保存记录或打卡" : aiResult.getAiAnalysis()).build();
     }
 

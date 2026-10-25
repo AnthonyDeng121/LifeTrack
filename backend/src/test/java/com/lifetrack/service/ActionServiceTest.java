@@ -66,8 +66,12 @@ class ActionServiceTest {
     @Test void firstRecordCreatesAttendanceAndSecondOnlyUpdatesProgress() {
         eligible(); analysis(match(11, "0.20"));
         when(checkIns.existsByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(false, true);
-        assertTrue(service.syncAction(request()).getUpdates().get(0).isCheckedInNow());
-        assertFalse(service.syncAction(request()).getUpdates().get(0).isCheckedInNow());
+        var first = service.syncAction(request());
+        assertTrue(first.getUpdates().get(0).isCheckedInNow());
+        assertEquals(1, first.getSavedRecordCount()); assertEquals(1, first.getNewCheckInCount()); assertEquals(30, first.getDurationMinutes());
+        var second = service.syncAction(request());
+        assertFalse(second.getUpdates().get(0).isCheckedInNow());
+        assertEquals(1, second.getSavedRecordCount()); assertEquals(0, second.getNewCheckInCount()); assertEquals(30, second.getDurationMinutes());
         assertEquals(new BigDecimal("0.40"), step.getCurrentProgress());
         verify(checkIns, times(1)).saveAndFlush(any());
         verify(logs, times(2)).save(any());
@@ -132,7 +136,9 @@ class ActionServiceTest {
                 .currentProgress(BigDecimal.ZERO).build();
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step, second));
         analysis(match(11, "0.10"), match(12, "0.10"));
-        assertEquals(2, service.syncAction(request()).getUpdates().size());
+        var result = service.syncAction(request());
+        assertEquals(2, result.getUpdates().size());
+        assertEquals(2, result.getSavedRecordCount()); assertEquals(1, result.getNewCheckInCount()); assertEquals(30, result.getDurationMinutes());
         verify(checkIns).saveAndFlush(any());
         ArgumentCaptor<ActionLog> saved = ArgumentCaptor.forClass(ActionLog.class);
         verify(logs, times(2)).save(saved.capture());
