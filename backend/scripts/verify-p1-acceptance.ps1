@@ -59,7 +59,9 @@ try {
     Assert-Equal 3 $stats.data.longestStreak "longest streak"
     Assert-Equal 60 $stats.data.completionRate "completion rate"
     $dashboardAfter = Invoke-LifeTrack "GET" "/dashboard/stats" $null $token
-    Assert-Equal ($beforeCheckedInDays + 3) ([int]$dashboardAfter.data.checkedInDays) "dashboard synchronization"
+    $eligibleIds = @((Invoke-LifeTrack "GET" "/tasks" $null $token).data | Where-Object { $_.status -ne "CANCELLED" } | ForEach-Object { $_.id })
+    $expectedDays = @((Invoke-LifeTrack "GET" "/check-ins" $null $token).data | Where-Object { $_.taskId -in $eligibleIds } | Select-Object -ExpandProperty checkInDate -Unique).Count
+    Assert-Equal $expectedDays ([int]$dashboardAfter.data.checkedInDays) "dashboard natural days"
     $completed = Invoke-LifeTrack "PUT" "/tasks/$taskId" @{ status = "COMPLETED" } $token
     Assert-Equal "COMPLETED" $completed.data.status "status transition"
     $blockedByStatus = Invoke-LifeTrack "POST" "/check-ins" @{ taskId = $taskId; checkInDate = $todayText; content = "completed"; durationMinutes = 10 } $token

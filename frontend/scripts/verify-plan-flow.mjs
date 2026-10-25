@@ -15,7 +15,7 @@ assert.equal(validatePlanPeriod("2026-10-11", "2026-10-10", 1), "开始日期不
 assert.equal(validatePlanPeriod("2026-10-01", "2026-10-10", 11), "目标天数应为1-10天");
 assert.equal(validatePlanPeriod("2026-10-01", "2026-10-10", 7), "");
 
-assert.equal(validateCheckInForm({ content: "", durationMinutes: 30, status: "IN_PROGRESS" }), "请填写打卡内容");
+assert.equal(validateCheckInForm({ content: "", durationMinutes: 0, status: "IN_PROGRESS" }), "");
 assert.equal(validateCheckInForm({ content: "学习", durationMinutes: -1, status: "IN_PROGRESS" }), "学习时长必须为非负整数");
 assert.equal(validateCheckInForm({ content: "学习", durationMinutes: 30, status: "CANCELLED" }), "当前计划状态不可打卡");
 assert.equal(validateCheckInForm({ content: "学习", durationMinutes: 30, status: "IN_PROGRESS" }), "");

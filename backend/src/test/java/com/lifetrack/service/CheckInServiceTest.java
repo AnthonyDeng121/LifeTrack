@@ -57,6 +57,16 @@ class CheckInServiceTest {
         assertTrue(error.getMessage().contains("重复打卡"));
     }
 
+    @Test void oneClickAttendanceNeedsNoRemarkOrInventedDuration() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(activePlan(today.minusDays(1), today.plusDays(1))));
+        when(checkInRecordRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+        var request = new CheckInCreateRequest(); request.setTaskId(1L);
+        var response = checkInService.create(request);
+        assertEquals("", response.getContent()); assertEquals(0, response.getDurationMinutes());
+        assertEquals(today, response.getCheckInDate());
+    }
+
     @Test
     void shouldRejectDateOutsidePlanPeriod() {
         LocalDate today = LocalDate.now();

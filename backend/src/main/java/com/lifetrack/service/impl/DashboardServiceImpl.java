@@ -48,14 +48,15 @@ public class DashboardServiceImpl implements DashboardService {
     private final CheckInRecordRepository checkInRecordRepository;
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DashboardStatsResponse getStats() {
         Long userId = UserContext.getUserId();
         String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
-        List<Task> validPlans = taskRepository.findByUserId(userId).stream()
+        List<Task> allPlans = taskRepository.findByUserId(userId);
+        List<Task> validPlans = allPlans.stream()
                 .filter(task -> task.getStatus() != PlanStatus.CANCELLED)
-                .filter(task -> task.getTargetDays() != null && task.getTargetDays() > 0)
                 .toList();
         Set<Long> validTaskIds = validPlans.stream().map(Task::getId).collect(Collectors.toSet());
         List<CheckInRecord> allCheckIns = checkInRecordRepository
@@ -64,20 +65,17 @@ public class DashboardServiceImpl implements DashboardService {
                 .stream()
                 .filter(record -> validTaskIds.contains(record.getTaskId()))
                 .toList();
-        int totalTargetDays = validPlans.stream().mapToInt(Task::getTargetDays).sum();
         int completedPlanCount = (int) validPlans.stream().filter(t -> t.getStatus() == PlanStatus.COMPLETED).count();
         BigDecimal learningPlanCompletionRate = validPlans.isEmpty() ? BigDecimal.ZERO
                 : BigDecimal.valueOf(completedPlanCount * 100L).divide(BigDecimal.valueOf(validPlans.size()), 1, RoundingMode.HALF_UP);
-        int checkedInDays = allCheckIns.size();
-        BigDecimal checkInCompletionRate = totalTargetDays == 0
-                ? BigDecimal.ZERO
-                : BigDecimal.valueOf(checkedInDays).multiply(BigDecimal.valueOf(100))
-                        .divide(BigDecimal.valueOf(totalTargetDays), 1, RoundingMode.HALF_UP)
-                        .min(BigDecimal.valueOf(100));
         SortedSet<LocalDate> checkInDates = allCheckIns.stream()
                 .map(CheckInRecord::getCheckInDate)
                 .collect(Collectors.toCollection(TreeSet::new));
         int[] checkInStreaks = CheckInService.calculateStreaks(checkInDates, today);
+        int checkedInDays = checkInDates.size();
+        List<ActionLog> periodLogs = actionLogRepository.findByUserIdAndCreatedAtBetween(
+                userId, today.minusDays(6).atStartOfDay(), today.atTime(LocalTime.MAX)).stream()
+                .filter(log -> validTaskIds.contains(log.getTaskId())).toList();
 
         Map<LocalDate, List<CheckInRecord>> checkInsByDate = allCheckIns.stream()
                 .collect(Collectors.groupingBy(CheckInRecord::getCheckInDate));
@@ -87,18 +85,17 @@ public class DashboardServiceImpl implements DashboardService {
             List<CheckInRecord> records = checkInsByDate.getOrDefault(date, List.of());
             checkInTrend.add(DashboardStatsResponse.CheckInTrend.builder()
                     .date(date.format(DateTimeFormatter.ofPattern("M/d")))
-                    .checkInCount(records.size())
+                    .checkInCount(records.isEmpty() ? 0 : 1)
                     .durationMinutes(records.stream().mapToInt(record ->
                             record.getDurationMinutes() == null ? 0 : record.getDurationMinutes()).sum())
                     .build());
         }
 
         // 1. 今日累计进度增量 (百分制)
-        BigDecimal todayProgress = sumContribution(userId, today, today);
+        BigDecimal todayProgress = sumContribution(periodLogs, today);
 
         // 2. 今日时间分配 (从行为记录中统计)
-        List<ActionLog> todayLogs = actionLogRepository.findByUserIdAndCreatedAtBetween(
-                userId, today.atStartOfDay(), today.atTime(LocalTime.MAX));
+        List<ActionLog> todayLogs = periodLogs.stream().filter(log -> log.getCreatedAt().toLocalDate().equals(today)).toList();
         
         int totalMinutes = todayLogs.stream()
                 .mapToInt(log -> log.getDurationMinutes() != null ? log.getDurationMinutes() : 0)
@@ -137,7 +134,7 @@ public class DashboardServiceImpl implements DashboardService {
         List<DashboardStatsResponse.WeeklyTrend> weeklyTrend = new ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             LocalDate date = today.minusDays(i);
-            BigDecimal dayInc = sumContribution(userId, date, date);
+            BigDecimal dayInc = sumContribution(periodLogs, date);
             weeklyTrend.add(DashboardStatsResponse.WeeklyTrend.builder()
                     .date(date.format(DateTimeFormatter.ofPattern("M/d")))
                     .progress(dayInc)
@@ -153,10 +150,10 @@ public class DashboardServiceImpl implements DashboardService {
                 .todayTotalProgress(todayProgress)
                 .timeDistribution(distribution)
                 .weeklyTrend(weeklyTrend)
-                .checkInCompletionRate(checkInCompletionRate)
                 .learningPlanCompletionRate(learningPlanCompletionRate)
                 .completedPlanCount(completedPlanCount)
                 .totalPlanCount(validPlans.size())
+                .cancelledPlanCount((int) allPlans.stream().filter(t -> t.getStatus() == PlanStatus.CANCELLED).count())
                 .checkedInDays(checkedInDays)
                 .currentCheckInStreak(checkInStreaks[0])
                 .longestCheckInStreak(checkInStreaks[1])
@@ -211,10 +208,10 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 
-    private BigDecimal sumContribution(Long userId, LocalDate start, LocalDate end) {
-        return actionLogRepository.findByUserIdAndCreatedAtBetween(userId, 
-                start.atStartOfDay(), end.atTime(LocalTime.MAX))
+    private BigDecimal sumContribution(List<ActionLog> logs, LocalDate date) {
+        return logs
                 .stream()
+                .filter(log -> log.getCreatedAt().toLocalDate().equals(date))
                 .map(log -> log.getContribution() != null ? log.getContribution() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .multiply(new BigDecimal("100"))

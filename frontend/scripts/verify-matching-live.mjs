@@ -43,12 +43,13 @@ try {
   for (const step of persisted) await api("PUT", `/tasks/subtasks/${step.id}/complete`);
   const stats = await api("GET", "/dashboard/stats");
   assert.equal(stats.learningPlanCompletionRate, 100);
-  assert.equal(stats.checkInCompletionRate, 33.3);
+  const attendance = await api("GET", `/check-ins/tasks/${plan}/stats`);
+  assert.equal(attendance.completionRate, 33.3);
   const report = await api("GET", "/feedback/report");
   assert.ok(!report.title.includes("失败"), JSON.stringify(report));
   assert.match(report.planOutcomeSummary, /已完成 1 \/ 1 项/);
-  assert.match(report.planOutcomeSummary, /累计打卡 1 次/);
+  assert.match(report.planOutcomeSummary, /累计打卡 1 天/);
   console.log(JSON.stringify({ result: "passed", tenStepPreviewTested: !matchingOnly, broadNoteUpdates: ambiguous.updates.length,
     specificNoteUpdates: 1, independentFactsUpdateTwoSteps: true, learningRate: stats.learningPlanCompletionRate,
-    attendanceRate: stats.checkInCompletionRate, outcomeSummary: report.planOutcomeSummary, reportSummary: report.aiSummary }));
+    attendanceRate: attendance.completionRate, outcomeSummary: report.planOutcomeSummary, reportSummary: report.aiSummary }));
 } finally { for (const id of ids) await api("DELETE", `/tasks/${id}`); }

@@ -20,5 +20,6 @@ public class CheckInResponse {
     private String content;
     private Integer durationMinutes;
     private String mood;
+    private boolean automatic;
     private LocalDateTime createdAt;
 }

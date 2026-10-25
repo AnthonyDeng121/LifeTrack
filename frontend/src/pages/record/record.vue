@@ -13,19 +13,16 @@
 
       <view class="glass-card input-card">
         <text class="section-title">每日正式打卡</text>
-        <text class="hint">无需 AI 分析。每个计划每天仅保留一条正式打卡；本操作不增加学习进度。</text>
+        <text class="hint">选好计划即可打卡。首条有效学习记录也会自动打卡，无需重复填写；打卡不增加学习进度或学习时长。</text>
         <view class="input-group"><text class="input-label">打卡计划</text>
           <picker :range="manualPlanLabels" :value="manualPlanIndex" :disabled="manualSaving" @change="selectManualPlan"><view class="glass-input">{{ manualPlanLabels[manualPlanIndex] }}</view></picker>
           <text v-if="plansError" class="hint">{{ plansError }}</text>
           <button v-if="plansError" class="glass-button" @tap="loadPlans">重新加载计划</button>
           <text v-else-if="!plans.length" class="hint">暂无进行中的计划，请先创建或开始学习计划。</text>
         </view>
-        <view class="input-group"><text class="input-label">打卡日期</text>
-          <picker mode="date" :value="manualDate" :end="businessToday" :disabled="manualSaving" @change="manualDate = $event.detail.value"><view class="glass-input">{{ manualDate }}</view></picker>
-        </view>
-        <view class="input-group"><text class="input-label">学习内容</text><textarea v-model="manualContent" :disabled="manualSaving" class="glass-input action-input" maxlength="500" placeholder="填写本次实际学习内容，无需匹配 AI 步骤" /></view>
-        <view class="input-group"><text class="input-label">学习时长（整数分钟）</text><input v-model="manualMinutes" :disabled="manualSaving" type="number" class="glass-input duration-input" placeholder="例如：30" /></view>
-        <button class="glass-button sync-btn" :disabled="manualSaving || syncing || !!retryingId || importing" :loading="manualSaving" @tap="submitDailyCheckIn">提交正式打卡</button>
+        <text class="hint">日期：{{ businessToday }}</text>
+        <view class="input-group"><text class="input-label">打卡备注（可选）</text><input v-model="manualContent" :disabled="manualSaving" class="glass-input duration-input" maxlength="500" placeholder="可以直接打卡，不必填写每日总结" /></view>
+        <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!retryingId || importing" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
         <text v-if="manualMessage" class="hint" role="status">{{ manualMessage }}</text>
         <button v-if="manualResultTaskId" class="glass-button" @tap="viewManualHistory">查看该计划打卡历史</button>
       </view>
@@ -88,29 +85,6 @@
       </view>
 
       <view class="section-head">
-        <text class="section-title">情绪打卡</text>
-      </view>
-      <view class="glass-card mood-card">
-        <view class="mood-top">
-          <text>焦虑程度: {{ anxietyLevel }}/10</text>
-          <text class="mood-text">{{ moodText }}</text>
-        </view>
-        <slider
-          class="mood-slider"
-          :value="anxietyLevel"
-          min="1"
-          max="10"
-          step="1"
-          activeColor="#6BBEFF"
-          backgroundColor="rgba(255,255,255,.45)"
-          block-size="20"
-          @change="changeMood"
-        />
-        <button class="glass-button mood-btn" @tap="saveMood">保存情绪记录</button>
-        <text v-if="moodError" class="hint">{{ moodError }}；不影响学习历史查看。</text>
-      </view>
-
-      <view class="section-head">
         <text class="section-title">待补分析</text>
         <button class="glass-button import-deferred-btn" :disabled="syncing || manualSaving || retryingId || importing" @tap="importLegacyRecords">导入手动打卡待分析</button>
       </view>
@@ -153,9 +127,11 @@
         </view>
       </view>
       <view v-if="history.length" class="history-footer">
-        <text class="hint">已显示 {{ history.length }} / {{ historyTotal }} 条学习记录</text>
-        <button v-if="historyHasMore" class="glass-button" :disabled="historyLoading" :loading="historyLoading" @tap="loadMoreHistory">加载更多历史</button>
-        <text v-else class="hint">已显示全部学习记录</text>
+        <text class="hint">第 {{ historyPage + 1 }} / {{ historyPageCount }} 页，共 {{ historyTotal }} 条学习记录</text>
+        <view class="history-pages">
+          <button class="glass-button" :disabled="historyLoading || historyPage <= 0" @tap="previousHistoryPage">上一页</button>
+          <button class="glass-button" :disabled="historyLoading || historyPage >= historyPageCount - 1" @tap="nextHistoryPage">下一页</button>
+        </view>
       </view>
 
       <view class="tabbar-space"></view>
@@ -168,19 +144,19 @@
 import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, updateMood, getDashboardStats, getTasks, createCheckIn, saveDeferredLearningRecord, getDeferredLearningRecords, retryDeferredLearningRecord, importDeferredLearningRecords } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, saveDeferredLearningRecord, getDeferredLearningRecords, retryDeferredLearningRecord, importDeferredLearningRecords } from "../../services/api";
 import { getBusinessDate } from "../../services/businessTime";
-import { validateCheckInForm } from "../../services/planRules";
 
 const plans = ref([]);
 const selectedTaskId = ref(null);
 const plansError = ref("");
 const businessToday = ref(getBusinessDate());
 const manualTaskId = ref(null);
-const manualDate = ref(businessToday.value);
 const manualContent = ref("");
-const manualMinutes = ref("30");
 const manualSaving = ref(false);
+const manualAlreadyChecked = ref(false);
+const manualChecking = ref(false);
+let manualStatusVersion = 0;
 const manualMessage = ref("");
 const manualResultTaskId = ref(null);
 const manualPlanLabels = computed(() => ["请选择学习计划", ...plans.value.map(plan => plan.title)]);
@@ -189,31 +165,52 @@ function selectManualPlan(event) {
   manualTaskId.value = plans.value[Number(event.detail.value) - 1]?.id ?? null;
   manualMessage.value = "";
   manualResultTaskId.value = null;
+  manualAlreadyChecked.value = false;
+  loadManualAttendance();
+}
+async function loadManualAttendance() {
+  const version = ++manualStatusVersion;
+  const taskId = manualTaskId.value;
+  if (!taskId) { manualChecking.value = false; manualAlreadyChecked.value = false; return; }
+  manualChecking.value = true;
+  manualAlreadyChecked.value = false;
+  try {
+    const date = getBusinessDate();
+    const rows = await getCheckInHistory({ taskId, startDate: date, endDate: date });
+    if (version !== manualStatusVersion) return;
+    manualAlreadyChecked.value = rows.length > 0;
+    if (manualAlreadyChecked.value) {
+      manualResultTaskId.value = taskId;
+      manualMessage.value = "今日已打卡。可继续追加学习记录，无需再次打卡或补写每日总结。";
+    }
+  } catch {
+    if (version === manualStatusVersion) manualMessage.value = "暂时无法查询今日打卡状态，可尝试提交，由系统校验是否重复。";
+  } finally { if (version === manualStatusVersion) manualChecking.value = false; }
 }
 function viewManualHistory() {
   if (manualResultTaskId.value) uni.navigateTo({ url: `/pages/task-detail/task-detail?id=${manualResultTaskId.value}` });
 }
 async function submitDailyCheckIn() {
-  if (manualSaving.value || syncing.value || retryingId.value || importing.value) return;
+  if (manualSaving.value || manualChecking.value || manualAlreadyChecked.value || syncing.value || retryingId.value || importing.value) return;
   const plan = plans.value.find(item => item.id === manualTaskId.value);
   if (!plan) return uni.showToast({ title: "请选择进行中的学习计划", icon: "none" });
-  const error = validateCheckInForm({ content: manualContent.value, durationMinutes: manualMinutes.value, status: plan.status });
-  if (error || manualMinutes.value === "") return uni.showToast({ title: error || "请填写整数分钟时长", icon: "none" });
-  if (!manualDate.value || manualDate.value > getBusinessDate() || manualDate.value < plan.startDate || manualDate.value > plan.endDate) {
-    return uni.showToast({ title: "请选择计划周期内且不晚于今天的日期", icon: "none" });
+  const date = getBusinessDate();
+  if (plan.status !== "IN_PROGRESS" || date < plan.startDate || date > plan.endDate) {
+    return uni.showToast({ title: "仅有效周期内的进行中计划可以打卡", icon: "none" });
   }
-  const payload = { taskId: plan.id, checkInDate: manualDate.value, content: manualContent.value.trim(), durationMinutes: Number(manualMinutes.value) };
+  const payload = { taskId: plan.id, content: manualContent.value.trim() };
   manualSaving.value = true;
   manualMessage.value = "";
   manualResultTaskId.value = null;
   try {
     const saved = await createCheckIn(payload);
     manualResultTaskId.value = saved.taskId;
-    manualMessage.value = `已保存 1 条正式打卡（${saved.checkInDate}，${saved.durationMinutes} 分钟），新增学习记录 0 条，学习进度保持不变。同计划同日再次提交将被拒绝。`;
+    manualAlreadyChecked.value = true;
+    manualMessage.value = `${saved.checkInDate} 打卡成功，未增加学习进度或虚构学习时长。实际学习内容可在下方分次记录。`;
     uni.showToast({ title: "正式打卡成功", icon: "none" });
   } catch (error) {
     manualMessage.value = error.code === 409 ? "该计划当天已打卡，未新增记录或重复累计时长。继续学习可使用下方 AI 学习记录。" : error.message || "打卡失败，请检查网络后重试";
-    if (error.code === 409) manualResultTaskId.value = payload.taskId;
+    if (error.code === 409) { manualResultTaskId.value = payload.taskId; manualAlreadyChecked.value = true; }
   } finally { manualSaving.value = false; }
 }
 const planLabels = computed(() => ["自动匹配全部进行中的计划", ...plans.value.map(p => p.title)]);
@@ -226,6 +223,7 @@ async function loadPlans() {
     plans.value = await getTasks({ status: "IN_PROGRESS" });
     if (!plans.value.some(p => p.id === selectedTaskId.value)) selectedTaskId.value = null;
     if (!plans.value.some(p => p.id === manualTaskId.value)) manualTaskId.value = null;
+    loadManualAttendance();
     plansError.value = "";
   } catch {
     plansError.value = "计划列表加载失败，仍可尝试自动匹配";
@@ -275,27 +273,18 @@ const history = ref([]);
 const historyLoading = ref(false);
 const historyError = ref("");
 const historyTotal = ref(0);
-const historyPage = ref(-1);
-const historyHasMore = ref(false);
+const historyPage = ref(0);
 const historyPageSize = 20;
+const historyPageCount = computed(() => Math.max(1, Math.ceil(historyTotal.value / historyPageSize)));
 let historyVersion = 0;
-let lastHistoryReset = true;
+let requestedHistoryPage = 0;
 const undoingId = ref(null);
-const moodError = ref("");
-const anxietyLevel = ref(1);
 const syncSummary = computed(() => {
   const result = syncResult.value;
   if (!result?.updates?.length) return "";
   const count = result.savedRecordCount ?? result.updates.length;
   const checkIns = result.newCheckInCount ?? result.updates.filter(item => item.checkedInNow).length;
   return `本次新增 ${count} 条步骤学习记录，新增 ${checkIns} 条正式打卡${result.durationMinutes == null ? "" : `，记录时长合计 ${result.durationMinutes} 分钟`}。同一计划当天继续记录不会重复打卡。`;
-});
-
-const moodText = computed(() => {
-  if (anxietyLevel.value <= 3) return "非常放松，动力十足";
-  if (anxietyLevel.value <= 6) return "有点压力，正常节奏";
-  if (anxietyLevel.value <= 8) return "比较焦虑，需要调整";
-  return "极度焦虑，建议休息";
 });
 
 function formatProgress(value) {
@@ -337,10 +326,6 @@ async function submitRecord() {
   }
 }
 
-function changeMood(event) {
-  anxietyLevel.value = Number(event.detail.value);
-}
-
 async function submitManualCheckIn() {
   if (syncing.value || manualSaving.value || retryingId.value || importing.value || !selectedTaskId.value) return;
   const content = rawInput.value.trim();
@@ -369,65 +354,52 @@ async function submitManualCheckIn() {
   }
 }
 
-async function saveMood() {
-  try {
-    await updateMood(anxietyLevel.value);
-    uni.showToast({ title: "情绪记录已保存", icon: "none" });
-  } catch (error) {
-    console.warn("save mood failed", error);
-  }
-}
-
-async function loadHistory(reset = true) {
-  if (!reset && (historyLoading.value || !historyHasMore.value)) return;
-  const version = reset ? ++historyVersion : historyVersion;
-  const page = reset ? 0 : historyPage.value + 1;
-  lastHistoryReset = reset;
+async function loadHistory(requestedPage = 0) {
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 0;
+  const version = ++historyVersion;
+  requestedHistoryPage = page;
   historyLoading.value = true;
   historyError.value = "";
   try {
     const data = await getActionHistory(page, historyPageSize);
     if (version !== historyVersion) return;
     const rows = Array.isArray(data) ? data : data?.list || [];
-    history.value = reset ? rows : [...new Map([...history.value, ...rows].map(item => [item.id, item])).values()];
-    historyTotal.value = Number(data?.total ?? rows.length);
+    const total = Number(data?.total ?? rows.length);
+    const lastPage = Math.max(0, Math.ceil(total / historyPageSize) - 1);
+    if (page > lastPage) return loadHistory(lastPage);
+    history.value = rows;
+    historyTotal.value = total;
     historyPage.value = page;
-    historyHasMore.value = rows.length > 0 && (page * historyPageSize + rows.length < historyTotal.value);
   } catch (error) {
     if (version === historyVersion) historyError.value = "历史记录加载失败，请稍后重试";
   } finally {
     if (version === historyVersion) historyLoading.value = false;
   }
 }
-function loadData() { return loadHistory(true); }
-function loadMoreHistory() { return loadHistory(false); }
-function retryHistory() { return loadHistory(lastHistoryReset); }
-async function loadMood() {
-  try {
-    const stats = await getDashboardStats(false);
-    if (stats?.currentAnxietyLevel) anxietyLevel.value = stats.currentAnxietyLevel;
-    moodError.value = "";
-  } catch { moodError.value = "情绪状态暂时无法加载"; }
-}
-
+function loadData() { return loadHistory(0); }
+function nextHistoryPage() { if (!historyLoading.value && historyPage.value + 1 < historyPageCount.value) return loadHistory(historyPage.value + 1); }
+function previousHistoryPage() { if (!historyLoading.value && historyPage.value > 0) return loadHistory(historyPage.value - 1); }
+function retryHistory() { return loadHistory(requestedHistoryPage); }
 async function removeHistory(id) {
   if (undoingId.value || syncing.value || manualSaving.value || retryingId.value) return;
   undoingId.value = id;
   try {
     await deleteAction(id);
     syncResult.value = null;
-    await Promise.all([loadHistory(true), loadPlans(), loadDeferredRecords()]);
+    await Promise.all([loadHistory(historyPage.value), loadPlans(), loadDeferredRecords()]);
     uni.showToast({ title: "记录已撤销", icon: "none" });
   } catch (error) {
     console.warn("delete action failed", error);
   } finally { undoingId.value = null; }
 }
 
-onShow(() => { businessToday.value = getBusinessDate(); loadMood(); loadData(); });
+onShow(() => { businessToday.value = getBusinessDate(); loadData(); });
 </script>
 
 <style scoped>
 .history-footer { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 16px; }
+.history-pages { display: flex; gap: 12px; }
+.history-pages button { margin: 0; padding: 8px 18px; line-height: 1.5; font-size: 14px; }
 .deferred-card { display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
 .import-deferred-btn, .retry-analysis-btn { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
 .retry-analysis-btn { align-self: flex-end; }
@@ -513,8 +485,7 @@ onShow(() => { businessToday.value = getBusinessDate(); loadMood(); loadData(); 
   font-size: 26rpx;
 }
 
-.sync-btn,
-.mood-btn {
+.sync-btn {
   height: 92rpx;
   line-height: 92rpx;
   font-size: 26rpx;
@@ -571,31 +542,6 @@ onShow(() => { businessToday.value = getBusinessDate(); loadMood(); loadData(); 
 
 .small {
   font-size: 22rpx;
-}
-
-.mood-card {
-  display: flex;
-  flex-direction: column;
-  gap: 18rpx;
-}
-
-.mood-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  color: #236894;
-  font-size: 28rpx;
-  font-weight: 900;
-}
-
-.mood-text {
-  font-size: 24rpx;
-  font-weight: normal;
-  color: rgba(45, 62, 80, 0.56);
-}
-
-.mood-slider {
-  margin: 10rpx 0;
 }
 
 .history-list {

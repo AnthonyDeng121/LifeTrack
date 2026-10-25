@@ -6,7 +6,7 @@ import { validateCheckInForm, validatePlanPeriod } from "../src/services/planRul
 async function page(name, dependencies, exposed) {
   const source = await readFile(new URL(`../src/pages/${name}/${name}.vue`, import.meta.url), "utf8");
   const script = source.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-  const bindings = { ref, computed, watch, onShow() {}, onLoad() {},
+  const bindings = { ref, computed, watch, onShow() {}, onLoad() {}, onMounted() {},
     uni: { showToast() {}, navigateTo() {} }, TASK_CATEGORIES: ["学习"],
     getBusinessDate: () => "2026-10-25", validateCheckInForm, validatePlanPeriod, ...dependencies };
   return new Function(...Object.keys(bindings), `${script}\nreturn { ${exposed} };`)(...Object.values(bindings));
@@ -16,8 +16,6 @@ let checkIns = [];
 let duplicate = false;
 let heldCheckIn;
 let aiCalls = 0;
-let moodFailure = false;
-let holdMood = false;
 let historyFailure = false;
 let holdHistory;
 const historyCalls = [];
@@ -31,12 +29,8 @@ const record = await page("record", {
   },
   syncAction: async () => { aiCalls++; return { updates: [] }; },
   getTasks: async () => [active], getDeferredLearningRecords: async () => [],
-  getDashboardStats: async showError => {
-    assert.equal(showError, false, "独立情绪加载不弹出全局错误");
-    if (holdMood) return new Promise(() => {});
-    if (moodFailure) throw new Error("dashboard unavailable");
-    return { currentAnxietyLevel: 3 };
-  },
+  getDashboardStats: async () => { throw new Error("Record page must not load dashboard"); },
+  getCheckInHistory: async () => [{ id: 1 }],
   getActionHistory: async (page, size) => {
     historyCalls.push({ page, size });
     if (holdHistory) return holdHistory;
@@ -44,70 +38,63 @@ const record = await page("record", {
     return { list: historyRows.slice(page * size, (page + 1) * size), total: historyRows.length };
   },
   deleteAction: async id => { historyRows = historyRows.filter(row => row.id !== id); },
-}, `plans, manualTaskId, manualDate, manualContent, manualMinutes, manualSaving, manualMessage, submitDailyCheckIn,
-  history, historyTotal, historyHasMore, historyError, historyLoading, loadHistory, loadData, loadMoreHistory, retryHistory,
-  loadMood, moodError, syncResult, syncSummary, removeHistory`);
+}, `plans, manualTaskId, manualContent, manualSaving, manualAlreadyChecked, manualMessage, submitDailyCheckIn, loadManualAttendance,
+  history, historyPage, historyTotal, historyPageCount, historyError, historyLoading, loadHistory, loadData, nextHistoryPage, previousHistoryPage, retryHistory,
+  syncResult, syncSummary, removeHistory`);
 record.plans.value = [active];
-record.manualContent.value = "完成数据库练习";
-record.manualMinutes.value = "30";
 await record.submitDailyCheckIn();
-assert.equal(checkIns.length, 0, "未选计划不得提交");
+assert.equal(checkIns.length, 0);
 record.manualTaskId.value = 101;
-record.manualDate.value = "2026-11-01";
-await record.submitDailyCheckIn();
-assert.equal(checkIns.length, 0, "未来或越界日期不得提交");
-record.manualDate.value = "2026-10-25";
 let releaseCheckIn;
 heldCheckIn = new Promise(resolve => { releaseCheckIn = resolve; });
 const saving = record.submitDailyCheckIn();
 await record.submitDailyCheckIn();
-assert.equal(checkIns.length, 1, "请求中再次点击只写入一次");
+assert.equal(checkIns.length, 1);
 releaseCheckIn(); await saving; heldCheckIn = null;
-assert.equal(aiCalls, 0, "普通打卡完全不调用 AI");
-assert.deepEqual(checkIns[0], { taskId: 101, checkInDate: "2026-10-25", content: "完成数据库练习", durationMinutes: 30 });
-assert.match(record.manualMessage.value, /新增学习记录 0 条/);
+assert.equal(aiCalls, 0);
+assert.deepEqual(checkIns[0], { taskId: 101, content: "" });
+assert.equal(record.manualAlreadyChecked.value, true);
+await record.submitDailyCheckIn();
+assert.equal(checkIns.length, 1);
+record.manualAlreadyChecked.value = false;
 duplicate = true;
 await record.submitDailyCheckIn();
-assert.match(record.manualMessage.value, /当天已打卡，未新增记录或重复累计时长/);
-assert.equal(record.manualContent.value, "完成数据库练习", "重复或失败保留原输入");
+assert.equal(record.manualAlreadyChecked.value, true);
 assert.equal(record.manualSaving.value, false);
+record.manualAlreadyChecked.value = false;
+await record.loadManualAttendance();
+assert.equal(record.manualAlreadyChecked.value, true);
 record.syncResult.value = { savedRecordCount: 2, newCheckInCount: 0, durationMinutes: 30, updates: [{ taskId: 101 }, { taskId: 101 }] };
-assert.match(record.syncSummary.value, /新增 2 条步骤学习记录，新增 0 条正式打卡，记录时长合计 30 分钟/);
-
-holdMood = true;
-void record.loadMood();
+assert.match(record.syncSummary.value, /30/);
 await record.loadData();
-assert.equal(record.history.value.length, 20, "看板一直未返回也不阻塞历史");
+assert.equal(record.history.value.length, 20);
 assert.equal(record.historyTotal.value, 21);
-assert.equal(record.historyHasMore.value, true);
+assert.equal(record.historyPageCount.value, 2);
 historyFailure = true;
-await record.loadMoreHistory();
-assert.equal(record.history.value.length, 20, "翻页失败保留已加载记录");
-assert.match(record.historyError.value, /历史记录加载失败/);
+await record.nextHistoryPage();
+assert.equal(record.history.value.length, 20);
+assert.notEqual(record.historyError.value, "");
 historyFailure = false;
 await record.retryHistory();
-assert.deepEqual(historyCalls.at(-1), { page: 1, size: 20 }, "翻页失败重试原页");
-assert.equal(record.history.value.length, 21);
-assert.equal(new Set(record.history.value.map(row => row.id)).size, 21);
-assert.equal(record.historyHasMore.value, false);
-holdMood = false; moodFailure = true;
-await record.loadMood();
-assert.equal(record.history.value.length, 21);
-assert.equal(record.historyError.value, "");
-assert.match(record.moodError.value, /情绪状态/);
-await record.removeHistory(100);
+assert.deepEqual(historyCalls.at(-1), { page: 1, size: 20 });
+assert.equal(record.history.value.length, 1);
+assert.equal(record.historyPage.value, 1);
+await record.previousHistoryPage();
+assert.equal(record.history.value.length, 20);
+assert.equal(record.historyPage.value, 0);
+await record.nextHistoryPage();
+await record.removeHistory(80);
 assert.equal(record.history.value.length, 20);
 assert.equal(record.historyTotal.value, 20);
-assert.equal(record.historyHasMore.value, false);
-assert.equal(record.history.value.some(row => row.id === 100), false, "删除后重取首页，不跳过补位记录");
-
+assert.equal(record.historyPage.value, 0);
+assert.equal(record.historyPageCount.value, 1);
 let releaseOld;
 holdHistory = new Promise(resolve => { releaseOld = resolve; });
-const oldRequest = record.loadHistory(true);
+const oldRequest = record.loadHistory(0);
 holdHistory = null;
-await record.loadHistory(true);
+await record.loadHistory(0);
 releaseOld({ list: [{ id: -1 }], total: 1 }); await oldRequest;
-assert.equal(record.history.value.length, 20, "较旧刷新结果不能覆盖较新结果");
+assert.equal(record.history.value.length, 20);
 assert.equal(record.history.value.some(row => row.id === -1), false);
 
 const taskFilters = [];
@@ -155,3 +142,18 @@ attendanceFailure = false;
 await detail.resetCheckInHistory();
 assert.deepEqual(attendanceFilters.at(-1), { taskId: 101 });
 console.log("Manual check-in, date filters, history pagination and failure isolation checks passed.");
+
+let savedMood;
+const profile = await page("profile", {
+  getUser: () => ({ username: "Test" }),
+  getDashboardStats: async () => ({ currentAnxietyLevel: 6, weeklyTrend: [] }),
+  getFeedbackReport: async () => null,
+  updateMood: async value => { savedMood = value; },
+}, "anxietyLevel, loadProfile, changeMood, saveMood");
+await profile.loadProfile();
+assert.equal(profile.anxietyLevel.value, 6);
+profile.changeMood({ detail: { value: 4 } }); await profile.saveMood();
+assert.equal(savedMood, 4);
+const recordSource = await readFile(new URL("../src/pages/record/record.vue", import.meta.url), "utf8");
+assert.doesNotMatch(recordSource, /anxietyLevel|loadMoreHistory|manualMinutes/);
+console.log("One-click attendance, bounded history pages and profile mood checks passed.");

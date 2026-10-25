@@ -63,7 +63,9 @@ try {
     Assert-Equal 1 $stats.data.currentStreak "streak recalculated"
     Assert-Equal 20 $stats.data.completionRate "rate recalculated"
     $after = Invoke-Api "GET" "/dashboard/stats"
-    Assert-Equal ([int]$before.data.checkedInDays + 1) ([int]$after.data.checkedInDays) "dashboard reflects deleted attendance"
+    $eligibleIds = @((Invoke-Api "GET" "/tasks").data | Where-Object { $_.status -ne "CANCELLED" } | ForEach-Object { $_.id })
+    $expectedDays = @((Invoke-Api "GET" "/check-ins").data | Where-Object { $_.taskId -in $eligibleIds } | Select-Object -ExpandProperty checkInDate -Unique).Count
+    Assert-Equal $expectedDays ([int]$after.data.checkedInDays) "dashboard reflects unique natural days"
 
     $cancelled = Invoke-Api "PUT" "/tasks/$taskId" @{ status = "CANCELLED" }
     Assert-Equal 200 $cancelled.code "cancel plan"

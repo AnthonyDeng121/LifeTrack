@@ -107,4 +107,39 @@ class UserOperationIntegrationTest {
         assertEquals(saved.get(0).getId().longValue(), refreshed.path("list").get(19).path("id").asLong());
         assertEquals(0, api("GET", "/actions/history?page=1&size=20", null).path("data").path("list").size());
     }
+
+    @Test void cancelledHistoryRemainsQueryableButAllDashboardMetricsExcludeIt() throws Exception {
+        long completed = create(today.minusDays(2), today.plusDays(7));
+        long active = create(today.minusDays(2), today.plusDays(7));
+        long cancelled = create(today.minusDays(2), today.plusDays(7));
+        for (long id : List.of(completed, active)) {
+            var response = api("POST", "/check-ins", Map.of("taskId", id));
+            assertEquals(200, response.path("code").asInt());
+            assertEquals("", response.path("data").path("content").asText());
+            assertEquals(0, response.path("data").path("durationMinutes").asInt());
+        }
+        assertEquals(409, api("POST", "/check-ins", Map.of("taskId", active)).path("code").asInt());
+        assertEquals(200, api("PUT", "/tasks/" + completed, Map.of("status", "COMPLETED")).path("code").asInt());
+        assertEquals(200, api("POST", "/check-ins", Map.of("taskId", cancelled, "checkInDate", today.minusDays(1).toString(),
+                "content", "取消前打卡", "durationMinutes", 15)).path("code").asInt());
+        logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(cancelled).rawInput("取消前学习记录")
+                .category(Task.Category.学习).durationMinutes(77).contribution(new BigDecimal("0.25"))
+                .createdAt(today.atTime(10, 0)).build());
+        var before = api("GET", "/dashboard/stats", null).path("data");
+        assertEquals(2, before.path("checkedInDays").asInt(), "同日两个计划只增加一个自然日");
+        assertEquals(77, before.path("timeDistribution").get(0).path("minutes").asInt());
+        assertEquals(200, api("PUT", "/tasks/" + cancelled, Map.of("status", "CANCELLED")).path("code").asInt());
+        var after = api("GET", "/dashboard/stats", null).path("data");
+        assertEquals(50, after.path("learningPlanCompletionRate").asInt());
+        assertEquals(2, after.path("totalPlanCount").asInt()); assertEquals(1, after.path("cancelledPlanCount").asInt());
+        assertEquals(1, after.path("checkedInDays").asInt()); assertEquals(1, after.path("currentCheckInStreak").asInt());
+        assertEquals(1, after.path("longestCheckInStreak").asInt());
+        assertEquals(0, after.path("todayTotalProgress").asInt()); assertEquals(0, after.path("timeDistribution").size());
+        assertEquals(0, after.path("checkInTrend").get(5).path("checkInCount").asInt());
+        assertEquals(1, after.path("checkInTrend").get(6).path("checkInCount").asInt());
+        assertEquals(0, after.path("weeklyTrend").get(6).path("progress").asInt());
+        assertFalse(after.has("checkInCompletionRate"));
+        assertEquals(1, api("GET", "/check-ins?taskId=" + cancelled, null).path("data").size());
+        assertEquals(1, api("GET", "/actions/history", null).path("data").path("total").asInt());
+    }
 }

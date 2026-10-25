@@ -85,7 +85,7 @@ public class DeferredLearningRecordService {
         for (CheckInRecord checkIn : checkIns.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
                 userId, LocalDate.of(1970, 1, 1), LocalDate.now(ZONE)).stream()
                 .sorted(Comparator.comparing(CheckInRecord::getTaskId).thenComparing(CheckInRecord::getCheckInDate)).toList()) {
-            if (Boolean.TRUE.equals(checkIn.getAutomatic())) continue;
+            if (Boolean.TRUE.equals(checkIn.getAutomatic()) || checkIn.getContent() == null || checkIn.getContent().isBlank()) continue;
             ownedLockedTask(checkIn.getTaskId(), userId);
             LocalDate date = checkIn.getCheckInDate();
             boolean known = records.findByUserIdAndTaskId(userId, checkIn.getTaskId()).stream()

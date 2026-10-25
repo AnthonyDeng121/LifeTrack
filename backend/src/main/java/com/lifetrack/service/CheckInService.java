@@ -47,7 +47,7 @@ public class CheckInService {
                 .userId(userId)
                 .taskId(task.getId())
                 .checkInDate(checkInDate)
-                .content(request.getContent().trim())
+                .content(request.getContent() == null ? "" : request.getContent().trim())
                 .durationMinutes(request.getDurationMinutes() == null ? 0 : request.getDurationMinutes())
                 .mood(request.getMood() == null ? null : request.getMood().trim())
                 .build();
@@ -199,6 +199,7 @@ public class CheckInService {
                 .content(record.getContent())
                 .durationMinutes(record.getDurationMinutes())
                 .mood(record.getMood())
+                .automatic(Boolean.TRUE.equals(record.getAutomatic()))
                 .createdAt(record.getCreatedAt())
                 .build();
     }

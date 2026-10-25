@@ -19,14 +19,13 @@ public class DashboardStatsResponse {
     @Schema(description = "周趋势数据 (过去7天每日进度增量)")
     private List<WeeklyTrend> weeklyTrend;
 
-    @Schema(description = "全部有效学习计划的真实打卡完成率")
-    private BigDecimal checkInCompletionRate;
     @Schema(description = "已完成学习计划数占全部未取消计划数的比例")
     private BigDecimal learningPlanCompletionRate;
     private Integer completedPlanCount;
     private Integer totalPlanCount;
+    private Integer cancelledPlanCount;
 
-    @Schema(description = "累计正式打卡次数")
+    @Schema(description = "未取消计划的打卡自然日去重数，同一天多个计划只算一天")
     private Integer checkedInDays;
 
     @Schema(description = "当前连续打卡天数")
@@ -82,6 +81,7 @@ public class DashboardStatsResponse {
     @Builder
     public static class CheckInTrend {
         private String date;
+        @Schema(description = "当日是否有未取消计划打卡，0表示未打卡，1表示已打卡")
         private Integer checkInCount;
         private Integer durationMinutes;
     }

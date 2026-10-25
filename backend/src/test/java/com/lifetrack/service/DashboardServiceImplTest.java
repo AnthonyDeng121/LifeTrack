@@ -63,7 +63,7 @@ class DashboardServiceImplTest {
 
         var stats = dashboardService.getStats();
         assertEquals(2, stats.getCheckedInDays());
-        assertEquals("50.0", stats.getCheckInCompletionRate().toPlainString());
+        assertEquals("0.0", stats.getLearningPlanCompletionRate().toPlainString());
         assertEquals(2, stats.getCurrentCheckInStreak());
         assertEquals(2, stats.getLongestCheckInStreak());
         assertEquals(7, stats.getCheckInTrend().size());
@@ -88,8 +88,51 @@ class DashboardServiceImplTest {
         when(userProfileRepository.findByUserId(7L)).thenReturn(Optional.empty());
         var stats = dashboardService.getStats();
         assertEquals("100.0", stats.getLearningPlanCompletionRate().toPlainString());
-        assertEquals("33.3", stats.getCheckInCompletionRate().toPlainString());
+        assertEquals(1, stats.getCheckedInDays());
         assertEquals(1, stats.getCompletedPlanCount());
         assertEquals(1, stats.getTotalPlanCount());
+    }
+
+    @Test
+    void deduplicatesNaturalDaysAndExcludesCancelledPlansFromEveryDashboardMetric() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        Task completed = Task.builder().id(1L).userId(7L).status(PlanStatus.COMPLETED).targetDays(1).build();
+        Task active = Task.builder().id(2L).userId(7L).status(PlanStatus.IN_PROGRESS).targetDays(9).build();
+        Task cancelled = Task.builder().id(3L).userId(7L).status(PlanStatus.CANCELLED).targetDays(2).build();
+        when(taskRepository.findByUserId(7L)).thenReturn(List.of(completed, active, cancelled));
+        var first = record(today, 30);
+        var second = record(today, 20); second.setTaskId(2L);
+        var excluded = record(today.minusDays(1), 100); excluded.setTaskId(3L);
+        when(checkInRecordRepository.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(eq(7L), any(), any()))
+                .thenReturn(List.of(first, second, excluded));
+        var includedLog = com.lifetrack.entity.ActionLog.builder().taskId(2L).category(Task.Category.学习)
+                .createdAt(today.atTime(10, 0)).durationMinutes(10).contribution(new java.math.BigDecimal("0.2")).build();
+        var cancelledLog = com.lifetrack.entity.ActionLog.builder().taskId(3L).category(Task.Category.学习)
+                .createdAt(today.atTime(10, 0)).durationMinutes(100).contribution(java.math.BigDecimal.ONE).build();
+        when(actionLogRepository.findByUserIdAndCreatedAtBetween(eq(7L), any(), any())).thenReturn(List.of(includedLog, cancelledLog));
+        var stats = dashboardService.getStats();
+        assertEquals("50.0", stats.getLearningPlanCompletionRate().toPlainString());
+        assertEquals(2, stats.getTotalPlanCount()); assertEquals(1, stats.getCancelledPlanCount());
+        assertEquals(1, stats.getCheckedInDays()); assertEquals(1, stats.getCurrentCheckInStreak());
+        assertEquals(1, stats.getLongestCheckInStreak());
+        assertEquals(0, stats.getCheckInTrend().get(5).getCheckInCount());
+        assertEquals(1, stats.getCheckInTrend().get(6).getCheckInCount());
+        assertEquals(50, stats.getCheckInTrend().get(6).getDurationMinutes());
+        assertEquals("20.0", stats.getTodayTotalProgress().toPlainString());
+        assertEquals(10, stats.getTimeDistribution().get(0).getMinutes());
+        assertEquals("20.0", stats.getWeeklyTrend().get(6).getProgress().toPlainString());
+        org.mockito.Mockito.verify(checkInRecordRepository, org.mockito.Mockito.never()).deleteAll(anyIterable());
+    }
+
+    @Test void cancelledOnlyHasZeroDashboardButDoesNotDeleteHistory() {
+        when(taskRepository.findByUserId(7L)).thenReturn(List.of(Task.builder().id(1L).userId(7L).status(PlanStatus.CANCELLED).build()));
+        when(checkInRecordRepository.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(eq(7L), any(), any()))
+                .thenReturn(List.of(record(LocalDate.now(), 30)));
+        var stats = dashboardService.getStats();
+        assertEquals(0, stats.getCheckedInDays()); assertEquals(0, stats.getTotalPlanCount());
+        assertEquals(1, stats.getCancelledPlanCount());
+        assertEquals(0, stats.getLearningPlanCompletionRate().signum());
+        assertEquals(0, stats.getTodayTotalProgress().signum());
+        assertEquals(0, stats.getTimeDistribution().size());
     }
 }

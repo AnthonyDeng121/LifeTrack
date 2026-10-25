@@ -19,7 +19,7 @@
         <view class="hero-copy">
           <text class="pill">学习计划完成率</text>
           <text class="hero-number">{{ formatProgress(stats.learningPlanCompletionRate) }}%</text>
-          <text class="hero-desc">已完成 {{ stats.completedPlanCount || 0 }} / {{ stats.totalPlanCount || 0 }} 个计划；提前完成同样计入成果</text>
+          <text class="hero-desc">已完成 {{ stats.completedPlanCount || 0 }} / {{ stats.totalPlanCount || 0 }} 个未取消计划；已取消 {{ stats.cancelledPlanCount || 0 }} 个，不计入看板统计</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -28,12 +28,12 @@
 
       <view class="metric-grid">
         <view class="metric-card glass-card">
-          <text class="metric-value">{{ formatProgress(stats.checkInCompletionRate) }}%</text>
-          <text class="metric-label">坚持目标达成率</text>
+          <text class="metric-value">{{ stats.completedPlanCount || 0 }}</text>
+          <text class="metric-label">已完成计划</text>
         </view>
         <view class="metric-card glass-card">
           <text class="metric-value">{{ stats.checkedInDays || 0 }}</text>
-          <text class="metric-label">累计打卡</text>
+          <text class="metric-label">累计打卡天数</text>
         </view>
         <view class="metric-card glass-card">
           <text class="metric-value">{{ stats.currentCheckInStreak || 0 }}</text>
@@ -56,7 +56,7 @@
             <view class="trend-bar-wrap">
               <view class="trend-bar" :style="{ height: checkInTrendHeight(item.checkInCount) }"></view>
             </view>
-            <text>{{ item.checkInCount }}次</text>
+            <text>{{ item.checkInCount ? "已打卡" : "未打卡" }}</text>
             <text>{{ item.date }}</text>
           </view>
         </view>
@@ -146,7 +146,6 @@ const stats = ref({
   timeDistribution: [],
   weeklyTrend: [],
   checkInTrend: [],
-  checkInCompletionRate: 0,
   checkedInDays: 0,
   currentCheckInStreak: 0,
   longestCheckInStreak: 0,

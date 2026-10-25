@@ -85,8 +85,8 @@
       <view v-if="!historyLoading && !historyLoadError && checkInHistory.length === 0" class="glass-card empty-card"><text>所选日期范围暂无正式打卡记录</text></view>
       <view v-if="checkInHistory.length" class="checkin-history">
         <view v-for="record in checkInHistory" :key="record.id" class="glass-card history-item">
-          <view class="history-head"><text>{{ record.checkInDate }}</text><text class="pill">{{ record.durationMinutes }} 分钟</text></view>
-          <text class="history-content">{{ record.content }}</text>
+          <view class="history-head"><text>{{ record.checkInDate }}</text><text v-if="record.durationMinutes > 0" class="pill">{{ record.durationMinutes }} 分钟</text><text v-else class="pill">已打卡</text></view>
+          <text class="history-content">{{ record.automatic ? "关联学习片段" : "打卡备注" }}：{{ record.content || "未填写备注" }}</text>
           <text v-if="record.mood" class="text-muted small">心情：{{ record.mood }}</text>
         </view>
       </view>

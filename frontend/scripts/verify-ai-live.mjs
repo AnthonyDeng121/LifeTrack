@@ -61,11 +61,11 @@ try {
   const history = await api("GET", "/actions/history?size=100");
   const lastLog = history.list.find(log => log.rawInput.includes("完整JUnit和MockMvc"));
   assert.ok(lastLog);
-  await api("DELETE", `/actions/${lastLog.id}`);
-  assert.equal((await api("GET", `/tasks/${plan}`)).status, "IN_PROGRESS");
-  assert.ok((await api("GET", `/tasks/${plan}`)).totalProgress < 100);
+  await api("DELETE", `/actions/${lastLog.id}`, undefined, 400);
+  assert.equal((await api("GET", `/tasks/${plan}`)).status, "COMPLETED");
+  assert.equal((await api("GET", `/tasks/${plan}`)).totalProgress, 100);
   console.log(JSON.stringify({ result: "passed", naturalLanguageProgress: 100, attendanceDays: stats.checkedInDays,
-    attendanceRate: stats.completionRate, attendanceDoesNotCompleteLearning: true, undoReopensPlan: true, timestampsStableOnRead: true }));
+    attendanceRate: stats.completionRate, attendanceDoesNotCompleteLearning: true, completedPlanCannotReopen: true, timestampsStableOnRead: true }));
 } finally {
   for (const id of ids) await api("DELETE", `/tasks/${id}`);
 }

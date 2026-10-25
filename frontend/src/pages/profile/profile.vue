@@ -53,6 +53,28 @@
         <text class="text-muted small">基础计划与打卡功能仍可正常使用。</text>
       </view>
 
+      <view class="section-head">
+        <text class="section-title">情绪打卡</text>
+      </view>
+      <view class="glass-card mood-card">
+        <view class="mood-top">
+          <text>焦虑程度: {{ anxietyLevel }}/10</text>
+          <text class="mood-text">{{ moodText }}</text>
+        </view>
+        <slider
+          class="mood-slider"
+          :value="anxietyLevel"
+          min="1"
+          max="10"
+          step="1"
+          activeColor="#6BBEFF"
+          backgroundColor="rgba(255,255,255,.45)"
+          block-size="20"
+          @change="changeMood"
+        />
+        <button class="glass-button mood-btn" @tap="saveMood">保存情绪记录</button>
+      </view>
+
       <button class="glass-button logout-btn" @tap="handleLogout">退出登录</button>
       </template>
 
@@ -65,7 +87,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { getDashboardStats, getFeedbackReport } from "../../services/api";
+import { getDashboardStats, getFeedbackReport, updateMood } from "../../services/api";
 import { getUser, logout } from "../../services/http";
 
 const user = ref(getUser());
@@ -83,6 +105,27 @@ const avatarText = computed(() => username.value.slice(0, 1));
 
 
 
+const anxietyLevel = ref(1);
+const moodText = computed(() => {
+  if (anxietyLevel.value <= 3) return "非常放松，动力十足";
+  if (anxietyLevel.value <= 6) return "有点压力，正常节奏";
+  if (anxietyLevel.value <= 8) return "比较焦虑，需要调整";
+  return "极度焦虑，建议休息";
+});
+
+function changeMood(event) {
+  anxietyLevel.value = Number(event.detail.value);
+}
+
+async function saveMood() {
+  try {
+    await updateMood(anxietyLevel.value);
+    uni.showToast({ title: "情绪记录已保存", icon: "none" });
+  } catch (error) {
+    console.warn("save mood failed", error);
+  }
+}
+
 function formatProgress(value) {
   return Number(value || 0).toFixed(Number(value || 0) % 1 === 0 ? 0 : 1);
 }
@@ -92,7 +135,7 @@ async function loadProfile() {
   pageError.value = "";
   reportError.value = "";
   const [statsResult, reportResult] = await Promise.allSettled([getDashboardStats(), getFeedbackReport(false)]);
-  if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
+  if (statsResult.status === "fulfilled") { stats.value = statsResult.value || stats.value; anxietyLevel.value = stats.value.currentAnxietyLevel || 1; }
   else pageError.value = "个人统计加载失败，请稍后重试";
   if (reportResult.status === "fulfilled") report.value = reportResult.value;
   else {
@@ -288,4 +331,31 @@ onMounted(loadProfile);
   line-height: 88rpx;
   font-size: 26rpx;
 }
+.mood-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.mood-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: #236894;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.mood-text {
+  font-size: 24rpx;
+  font-weight: normal;
+  color: rgba(45, 62, 80, 0.56);
+}
+
+.mood-slider {
+  margin: 10rpx 0;
+}
+
+
+.mood-btn { height: 92rpx; line-height: 92rpx; font-size: 26rpx; }
 </style>
