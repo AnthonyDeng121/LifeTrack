@@ -47,6 +47,7 @@ public class TaskService {
         Task task = taskRepository.findLockedById(taskId)
                 .orElseThrow(() -> new BusinessException(404, "计划不存在"));
         if (!task.getUserId().equals(UserContext.getUserId())) throw new BusinessException(403, "无权操作该计划");
+        requireEditableSteps(task);
         if (request.getContent() == null || request.getContent().isBlank() || request.getContent().trim().length() > 255) {
             throw new BusinessException(400, "子计划内容应为1到255字");
         }
@@ -62,7 +63,6 @@ public class TaskService {
         int order = existing.stream().map(SubTask::getOrderNum).filter(java.util.Objects::nonNull).max(Integer::compareTo).orElse(0) + 1;
         subTaskRepository.save(SubTask.builder().taskId(taskId).content(request.getContent().trim())
                 .weight(weight).currentProgress(BigDecimal.ZERO).isCompleted(0).orderNum(order).build());
-        if (task.getStatus() == PlanStatus.COMPLETED) task.setStatus(PlanStatus.IN_PROGRESS);
         updateTaskProgress(taskId);
     }
 
@@ -86,13 +86,14 @@ public class TaskService {
     public TaskDeconstructResponse createManualTask(com.lifetrack.dto.ManualTaskCreateRequest request) {
         Long userId = UserContext.getUserId();
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
+        List<SubTask> subTaskList = prepareManualSteps(request.getSubTasks());
         
         // 1. 创建主任务
         Task task = Task.builder()
                 .userId(userId)
                 .title(request.getTitle())
                 .category(Task.Category.valueOf(request.getCategory()))
-                .status(initialStatus(request.getStartDate()))
+                .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .targetDays(request.getTargetDays())
@@ -101,35 +102,7 @@ public class TaskService {
                 .build();
         Task savedTask = taskRepository.save(task);
 
-        // 2. 准备子任务
-        List<SubTask> subTaskList = new ArrayList<>();
-        List<com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO> dtoList = request.getSubTasks();
-        
-        // 如果用户没填权重，平均分配
-        BigDecimal defaultWeight = BigDecimal.ONE.divide(new BigDecimal(dtoList.size()), 4, RoundingMode.HALF_UP);
-
-        for (int i = 0; i < dtoList.size(); i++) {
-            com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO dto = dtoList.get(i);
-            subTaskList.add(SubTask.builder()
-                    .taskId(savedTask.getId())
-                    .content(dto.getContent())
-                    .weight(dto.getWeight() != null ? dto.getWeight() : defaultWeight)
-                    .currentProgress(BigDecimal.ZERO)
-                    .isCompleted(0)
-                    .orderNum(i)
-                    .build());
-        }
-
-        // 校验总权重是否为 1.0，如果不是，修正最后一个
-        BigDecimal totalWeight = subTaskList.stream()
-                .map(SubTask::getWeight)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        
-        if (totalWeight.compareTo(BigDecimal.ONE) != 0) {
-            SubTask last = subTaskList.get(subTaskList.size() - 1);
-            last.setWeight(last.getWeight().add(BigDecimal.ONE.subtract(totalWeight)));
-        }
-
+        subTaskList.forEach(step -> step.setTaskId(savedTask.getId()));
         subTaskRepository.saveAll(subTaskList);
 
         return TaskDeconstructResponse.builder()
@@ -188,7 +161,9 @@ public class TaskService {
 
     @Transactional
     public TaskDetailResponse updateTask(Long taskId, TaskUpdateRequest request) {
-        Task task = getOwnedTask(taskId);
+        Task task = taskRepository.findLockedById(taskId)
+                .orElseThrow(() -> new BusinessException(404, "学习计划不存在"));
+        if (!task.getUserId().equals(UserContext.getUserId())) throw new BusinessException(403, "无权访问该学习计划");
         normalizeLegacyPlan(task);
 
         if (request.getTitle() != null) {
@@ -209,20 +184,48 @@ public class TaskService {
         LocalDate nextEnd = request.getEndDate() != null ? request.getEndDate() : task.getEndDate();
         Integer nextTargetDays = request.getTargetDays() != null ? request.getTargetDays() : task.getTargetDays();
         validatePlanPeriod(nextStart, nextEnd, nextTargetDays);
-        task.setStartDate(nextStart);
-        task.setEndDate(nextEnd);
-        task.setTargetDays(nextTargetDays);
-
         PlanStatus targetStatus = PlanStatus.fromValue(request.getStatus());
-        if (targetStatus != null && !task.getStatus().canTransitionTo(targetStatus)) {
+        boolean periodChanged = !nextStart.equals(task.getStartDate()) || !nextEnd.equals(task.getEndDate());
+        boolean closed = task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED;
+        if (closed && (periodChanged || !nextTargetDays.equals(task.getTargetDays()))) {
+            throw new BusinessException(400, "已完成或已取消计划不可修改周期和打卡目标，请新建计划");
+        }
+        PlanStatus datedStatus = statusByDate(nextStart, nextEnd);
+        if (task.getStatus() == PlanStatus.EXPIRED && datedStatus != PlanStatus.EXPIRED) {
+            throw new BusinessException(400, "已过期计划不可重新开始，请新建计划");
+        }
+        // 日期状态随周期派生；完成和取消为业务终态，不能通过改日期或显式状态绕过。
+        if (targetStatus != null && (closed || targetStatus == PlanStatus.COMPLETED || targetStatus == PlanStatus.CANCELLED)
+                && !task.getStatus().canTransitionTo(targetStatus)) {
             throw new BusinessException(400, "计划状态不能从" + task.getStatus().getDescription()
                     + "变更为" + targetStatus.getDescription());
         }
-        if (targetStatus != null) {
-            task.setStatus(targetStatus);
-        } else {
-            refreshStatusByDate(task);
+        if (!closed && targetStatus != null && targetStatus != PlanStatus.COMPLETED
+                && targetStatus != PlanStatus.CANCELLED && targetStatus != datedStatus) {
+            throw new BusinessException(400, "计划状态与周期不一致，当前周期对应" + datedStatus.getDescription());
         }
+        if (targetStatus == PlanStatus.COMPLETED && !closed && datedStatus != PlanStatus.IN_PROGRESS) {
+            throw new BusinessException(400, "只有有效周期内的进行中计划可以完成");
+        }
+        if (periodChanged) {
+            List<com.lifetrack.entity.CheckInRecord> outside = checkInRecordRepository
+                    .findByUserIdAndTaskIdOrderByCheckInDateAsc(task.getUserId(), taskId).stream()
+                    .filter(record -> record.getCheckInDate().isBefore(nextStart) || record.getCheckInDate().isAfter(nextEnd))
+                    .toList();
+            java.util.Set<Long> ids = outside.stream().map(com.lifetrack.entity.CheckInRecord::getId)
+                    .collect(Collectors.toSet());
+            java.util.Set<Long> confirmed = request.getConfirmedDiscardCheckInIds() == null ? java.util.Set.of()
+                    : new java.util.HashSet<>(request.getConfirmedDiscardCheckInIds());
+            if (!outside.isEmpty() && (!Boolean.TRUE.equals(request.getDiscardOutsideCheckIns()) || !ids.equals(confirmed))) {
+                throw new BusinessException(409, "新周期外有" + outside.size() + "条打卡记录，请重新预览并确认清零后修改");
+            }
+            checkInRecordRepository.deleteAll(outside);
+        }
+        task.setStartDate(nextStart);
+        task.setEndDate(nextEnd);
+        task.setTargetDays(nextTargetDays);
+        task.setStatus(closed ? task.getStatus() : targetStatus == PlanStatus.COMPLETED || targetStatus == PlanStatus.CANCELLED
+                ? targetStatus : datedStatus);
 
         return toDetailResponse(taskRepository.save(task));
     }
@@ -266,6 +269,14 @@ public class TaskService {
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         // 1. 调用 AI 服务获取拆解结果
         TaskDeconstructResponse.SubTaskDTO[] subTaskDTOs = aiService.deconstructTask(request.getTitle());
+        List<com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO> input = java.util.Arrays.stream(subTaskDTOs)
+                .map(dto -> {
+                    var step = new com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO();
+                    step.setContent(dto.getContent());
+                    step.setWeight(dto.getWeight());
+                    return step;
+                }).toList();
+        List<SubTask> subTaskList = prepareManualSteps(input);
         
         // 获取当前用户进度并生成激励语
         String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
@@ -277,7 +288,7 @@ public class TaskService {
                 .userId(userId)
                 .title(request.getTitle())
                 .category(Task.Category.valueOf(request.getCategory()))
-                .status(initialStatus(request.getStartDate()))
+                .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .targetDays(request.getTargetDays())
@@ -287,18 +298,7 @@ public class TaskService {
         Task savedTask = taskRepository.save(task);
 
         // 3. 批量保存子任务
-        List<SubTask> subTaskList = new ArrayList<>();
-        for (int i = 0; i < subTaskDTOs.length; i++) {
-            TaskDeconstructResponse.SubTaskDTO dto = subTaskDTOs[i];
-            subTaskList.add(SubTask.builder()
-                    .taskId(savedTask.getId())
-                    .content(dto.getContent())
-                    .weight(dto.getWeight())
-                    .currentProgress(BigDecimal.ZERO)
-                    .isCompleted(0)
-                    .orderNum(i)
-                    .build());
-        }
+        subTaskList.forEach(step -> step.setTaskId(savedTask.getId()));
         subTaskRepository.saveAll(subTaskList);
 
         // 4. 封装返回结果
@@ -330,6 +330,7 @@ public class TaskService {
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
+        requireEditableSteps(parentTask);
 
         // 3. 获取同属于该主任务的其他子任务
         List<SubTask> remainingSubTasks = subTaskRepository.findByTaskIdOrderByOrderNumAsc(parentTask.getId())
@@ -364,6 +365,10 @@ public class TaskService {
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
+        requireEditableSteps(parentTask);
+        if (parentTask.getStatus() != PlanStatus.IN_PROGRESS) {
+            throw new BusinessException(400, "只有进行中的计划可以完成子计划");
+        }
 
         // 2. 更新状态
         subTask.setIsCompleted(1);
@@ -390,6 +395,7 @@ public class TaskService {
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
+        requireEditableSteps(parentTask);
 
         // 2. 更新内容
         if (request.getContent() != null) {
@@ -430,9 +436,12 @@ public class TaskService {
         
         Task task = taskRepository.findById(taskId).orElse(null);
         if (task != null) {
+            // 完成计划为冻结快照，所有进度入口都不得隐式重新打开。
+            if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) return;
+            refreshStatusByDate(task);
             task.setTotalProgress(totalProgress);
             // 如果进度达到 1.0，自动标记主任务为已完成 (可选逻辑，按需添加)
-            if (totalProgress.compareTo(BigDecimal.ONE) >= 0) {
+            if (task.getStatus() == PlanStatus.IN_PROGRESS && totalProgress.compareTo(BigDecimal.ONE) >= 0) {
                 task.setStatus(PlanStatus.COMPLETED);
             } else {
                 refreshStatusByDate(task);
@@ -505,8 +514,55 @@ public class TaskService {
         }
     }
 
-    private PlanStatus initialStatus(LocalDate startDate) {
-        return startDate.isAfter(today()) ? PlanStatus.NOT_STARTED : PlanStatus.IN_PROGRESS;
+    private PlanStatus statusByDate(LocalDate startDate, LocalDate endDate) {
+        LocalDate businessToday = today();
+        if (endDate.isBefore(businessToday)) return PlanStatus.EXPIRED;
+        return startDate.isAfter(businessToday) ? PlanStatus.NOT_STARTED : PlanStatus.IN_PROGRESS;
+    }
+
+    private void requireEditableSteps(Task task) {
+        normalizeLegacyPlan(task);
+        if (task.getStatus() != PlanStatus.IN_PROGRESS && task.getStatus() != PlanStatus.NOT_STARTED) {
+            throw new BusinessException(400, task.getStatus().getDescription() + "计划不可修改子计划或学习进度，请新建计划");
+        }
+    }
+
+    private List<SubTask> prepareManualSteps(List<com.lifetrack.dto.ManualTaskCreateRequest.SubTaskDTO> input) {
+        if (input == null || input.isEmpty() || input.size() > 100) {
+            throw new BusinessException(400, "每个计划需要1到100个子计划");
+        }
+        BigDecimal specified = BigDecimal.ZERO;
+        int missing = 0;
+        for (var dto : input) {
+            if (dto == null || dto.getContent() == null || dto.getContent().isBlank() || dto.getContent().trim().length() > 255) {
+                throw new BusinessException(400, "子计划内容应为1到255字");
+            }
+            BigDecimal weight = dto.getWeight();
+            if (weight == null) { missing++; continue; }
+            if (weight.signum() <= 0 || weight.compareTo(BigDecimal.ONE) > 0) {
+                throw new BusinessException(400, "子计划权重必须大于0且不超过100%");
+            }
+            specified = specified.add(weight);
+        }
+        BigDecimal remainder = BigDecimal.ONE.subtract(specified);
+        BigDecimal tolerance = new BigDecimal("0.0001").multiply(BigDecimal.valueOf(input.size()));
+        if (missing > 0 ? remainder.signum() <= 0 : remainder.abs().compareTo(tolerance) > 0) {
+            throw new BusinessException(400, "子计划权重总和必须为100%，未填写项将分配剩余权重");
+        }
+        BigDecimal defaultWeight = missing == 0 ? BigDecimal.ZERO : remainder.divide(BigDecimal.valueOf(missing), 8, RoundingMode.HALF_UP);
+        List<SubTask> result = new ArrayList<>();
+        for (int i = 0; i < input.size(); i++) {
+            var dto = input.get(i);
+            result.add(SubTask.builder().content(dto.getContent().trim())
+                    .weight(dto.getWeight() == null ? defaultWeight : dto.getWeight())
+                    .currentProgress(BigDecimal.ZERO).isCompleted(0).orderNum(i).build());
+        }
+        // 比例归一化消除有限精度误差；不再把任意差额压给最后一项。
+        redistributeWeights(result, BigDecimal.ONE);
+        if (result.stream().anyMatch(step -> step.getWeight().signum() <= 0 || step.getWeight().compareTo(BigDecimal.ONE) > 0)) {
+            throw new BusinessException(400, "子计划权重过小，请调整后重试");
+        }
+        return result;
     }
 
     private void normalizeLegacyPlan(Task task) {
@@ -521,15 +577,8 @@ public class TaskService {
     }
 
     private void refreshStatusByDate(Task task) {
-        if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) return;
-        LocalDate businessToday = today();
-        if (task.getEndDate().isBefore(businessToday)) {
-            task.setStatus(PlanStatus.EXPIRED);
-        } else if (task.getStartDate().isAfter(businessToday)) {
-            task.setStatus(PlanStatus.NOT_STARTED);
-        } else {
-            task.setStatus(PlanStatus.IN_PROGRESS);
-        }
+        if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED || task.getStatus() == PlanStatus.EXPIRED) return;
+        task.setStatus(statusByDate(task.getStartDate(), task.getEndDate()));
     }
 
     private LocalDate today() {

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class TaskUpdateRequest {
@@ -16,4 +17,7 @@ public class TaskUpdateRequest {
     @Min(value = 1, message = "目标打卡天数至少为1天")
     private Integer targetDays;
     private String status;
+    // 必须明确确认本次预览的记录，防止确认后新增的记录被意外删除。
+    private Boolean discardOutsideCheckIns;
+    private List<Long> confirmedDiscardCheckInIds;
 }

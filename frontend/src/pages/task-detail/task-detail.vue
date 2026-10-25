@@ -86,17 +86,18 @@
           </view>
           <view class="form-block"><text class="field-label">计划名称</text><input v-model="planForm.title" class="glass-input edit-input" /></view>
           <view class="form-block"><text class="field-label">分类</text><picker :range="categories" :value="categoryIndex" @change="planForm.category = categories[$event.detail.value]"><view class="glass-input date-picker">{{ planForm.category }}</view></picker></view>
-          <view class="form-block"><text class="field-label">开始日期</text><picker mode="date" :value="planForm.startDate" @change="planForm.startDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.startDate }}</view></picker></view>
-          <view class="form-block"><text class="field-label">结束日期</text><picker mode="date" :value="planForm.endDate" @change="planForm.endDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.endDate }}</view></picker></view>
-          <view class="form-block"><text class="field-label">目标打卡天数</text><input v-model="planForm.targetDays" type="number" class="glass-input edit-input" /></view>
-          <view class="form-block"><text class="field-label">状态</text><picker :range="statusLabels" :value="statusIndex" @change="planForm.status = statusOptions[$event.detail.value].value"><view class="glass-input date-picker">{{ currentStatusLabel }}</view></picker></view>
-          <button class="glass-button save-btn" :loading="savingPlan" @tap="savePlan">保存计划</button>
+          <view class="form-block"><text class="field-label">开始日期</text><view v-if="planClosed" class="glass-input date-picker">{{ planForm.startDate }}</view><picker v-else mode="date" :disabled="savingPlan" :value="planForm.startDate" @change="planForm.startDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.startDate }}</view></picker></view>
+          <view class="form-block"><text class="field-label">结束日期</text><view v-if="planClosed" class="glass-input date-picker">{{ planForm.endDate }}</view><picker v-else mode="date" :disabled="savingPlan" :value="planForm.endDate" @change="planForm.endDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.endDate }}</view></picker></view>
+          <view class="form-block"><text class="field-label">目标打卡天数</text><input v-model="planForm.targetDays" :disabled="planClosed || savingPlan" type="number" class="glass-input edit-input" /></view>
+          <view class="form-block"><text class="field-label">状态</text><view v-if="planClosed" class="glass-input date-picker">{{ currentStatusLabel }}</view><picker v-else :disabled="savingPlan" :range="statusLabels" :value="statusIndex" @change="planForm.status = statusOptions[$event.detail.value].value"><view class="glass-input date-picker">{{ currentStatusLabel }}</view></picker></view>
+          <text class="text-muted small">{{ planClosed ? "已完成或已取消计划不可重新打开，仅可修改名称和分类。" : "未开始、进行中和已过期状态由计划周期决定。" }}</text>
+          <button class="glass-button save-btn" :disabled="savingPlan" :loading="savingPlan" @tap="savePlan">保存计划</button>
         </view>
       </view>
 
       <view class="section-head">
         <text class="section-title">子计划（{{ subtasks.length }}）</text>
-        <button class="glass-button add-step-btn" :disabled="loading || saving" @tap="openAddDialog">新增子计划</button>
+        <button class="glass-button add-step-btn" :disabled="loading || saving || !stepsEditable" @tap="openAddDialog">新增子计划</button>
       </view>
 
       <view v-if="loading" class="glass-card empty-card">
@@ -131,13 +132,13 @@
           <view class="subtask-ops">
             <button
               class="glass-button complete-btn"
-              :disabled="isDone(item)"
+              :disabled="isDone(item) || task.status !== 'IN_PROGRESS'"
               @tap.stop="finishSubtask(item)"
             >
               {{ isDone(item) ? "已完成" : "完成" }}
             </button>
-            <button class="glass-button step-edit-btn" @tap.stop="openEditDialog(item)">编辑</button>
-            <button class="glass-button step-delete-btn" :disabled="subtasks.length <= 1 || saving" @tap.stop="handleDeleteSubtask(item)">删除</button>
+            <button class="glass-button step-edit-btn" :disabled="!stepsEditable" @tap.stop="openEditDialog(item)">编辑</button>
+            <button class="glass-button step-delete-btn" :disabled="subtasks.length <= 1 || saving || !stepsEditable" @tap.stop="handleDeleteSubtask(item)">删除</button>
           </view>
         </view>
       </view>
@@ -182,11 +183,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
 import { addSubtask, completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 import { validatePlanPeriod } from "../../services/planRules";
+import { getBusinessDate } from "../../services/businessTime";
 
 const task = ref({
   id: "",
@@ -201,6 +203,8 @@ const task = ref({
 });
 const detailLoading = ref(false);
 const detailError = ref("");
+const planClosed = computed(() => ["COMPLETED", "CANCELLED"].includes(task.value.status));
+const stepsEditable = computed(() => ["NOT_STARTED", "IN_PROGRESS"].includes(task.value.status));
 const categories = TASK_CATEGORIES;
 const statusOptions = [
   { value: "NOT_STARTED", label: "未开始" }, { value: "IN_PROGRESS", label: "进行中" },
@@ -214,6 +218,13 @@ const planForm = ref({ title: "", category: "学习", startDate: "", endDate: ""
 const categoryIndex = computed(() => Math.max(0, categories.indexOf(planForm.value.category)));
 const statusIndex = computed(() => Math.max(0, statusOptions.findIndex(item => item.value === planForm.value.status)));
 const currentStatusLabel = computed(() => statusOptions[statusIndex.value].label);
+// 改周期时同步日期状态，避免提交旧状态。完成和取消仍由用户明确选择。
+watch(() => [planForm.value.startDate, planForm.value.endDate], () => {
+  if (planClosed.value || ["COMPLETED", "CANCELLED"].includes(planForm.value.status)) return;
+  const today = getBusinessDate();
+  planForm.value.status = planForm.value.endDate < today ? "EXPIRED"
+    : planForm.value.startDate > today ? "NOT_STARTED" : "IN_PROGRESS";
+}, { flush: "sync" });
 const checkInHistory = ref([]);
 const checkInLoading = ref(false);
 const checkInError = ref("");
@@ -325,12 +336,32 @@ function openPlanEdit() {
 function closePlanEdit() { if (!savingPlan.value) showPlanEdit.value = false; }
 
 async function savePlan() {
+  if (savingPlan.value) return;
   if (!planForm.value.title.trim()) return uni.showToast({ title: "计划名称不能为空", icon: "none" });
   const periodError = validatePlanPeriod(planForm.value.startDate, planForm.value.endDate, Number(planForm.value.targetDays));
   if (periodError) return uni.showToast({ title: periodError, icon: "none" });
   savingPlan.value = true;
   try {
-    task.value = await updateTask(task.value.id, { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) });
+    const payload = { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) };
+    if (payload.startDate !== task.value.startDate || payload.endDate !== task.value.endDate) {
+      // 每次保存重新读取，不能使用页面初次加载的旧历史作为删除确认依据。
+      const history = await getCheckInHistory({ taskId: task.value.id });
+      const outside = history.filter(record => record.checkInDate < payload.startDate || record.checkInDate > payload.endDate);
+      if (outside.length) {
+        const confirmed = await new Promise(resolve => uni.showModal({
+          title: "确认修改计划周期？",
+          content: `未在新计划周期内的打卡记录将清零，是否确认修改？共 ${outside.length} 条，删除后无法恢复。学习记录和学习进度保留。`,
+          confirmText: "确认清零",
+          cancelText: "暂不修改",
+          success: result => resolve(result.confirm === true),
+          fail: () => resolve(false),
+        }));
+        if (!confirmed) return;
+        payload.discardOutsideCheckIns = true;
+        payload.confirmedDiscardCheckInIds = outside.map(record => record.id);
+      }
+    }
+    task.value = await updateTask(task.value.id, payload);
     showPlanEdit.value = false;
     uni.showToast({ title: "计划已更新", icon: "none" });
     await loadCheckIns();
@@ -356,7 +387,7 @@ async function loadSubtasks() {
 }
 
 async function finishSubtask(item) {
-  if (isDone(item)) return;
+  if (isDone(item) || task.value.status !== "IN_PROGRESS") return;
   try {
     await completeSubtask(item.id);
     item.isCompleted = 1;
@@ -389,6 +420,7 @@ async function handleDeleteTask() {
 }
 
 async function handleDeleteSubtask(item) {
+  if (!stepsEditable.value) return;
   if (subtasks.value.length <= 1) {
     uni.showToast({ title: "至少保留一个子计划，请先添加替代步骤", icon: "none" });
     return;
@@ -411,11 +443,13 @@ async function handleDeleteSubtask(item) {
 }
 
 function openAddDialog() {
+  if (!stepsEditable.value) return;
   editingSubtask.value = { id: null, content: "", weight: Math.max(1, Math.round(100 / (subtasks.value.length + 1))) };
   showEditDialog.value = true;
 }
 
 function openEditDialog(item) {
+  if (!stepsEditable.value) return;
   editingSubtask.value = {
     id: item.id,
     content: item.content,
@@ -430,7 +464,7 @@ function closeEditDialog() {
 }
 
 async function saveSubtask() {
-  if (saving.value) return;
+  if (saving.value || !stepsEditable.value) return;
   const { id, content, weight } = editingSubtask.value;
   if (!content.trim()) {
     uni.showToast({ title: "内容不能为空", icon: "none" });

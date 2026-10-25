@@ -81,6 +81,12 @@ class DeferredLearningRecordServiceTest {
         assertThrows(BusinessException.class, () -> service.retry(10L));
         verifyNoInteractions(actions, tasks);
     }
+    @Test void completedPlanRejectsRetryWithoutConsumingPendingRecord() {
+        retryable(); task.setStatus(PlanStatus.COMPLETED);
+        assertThrows(BusinessException.class, () -> service.retry(10L));
+        assertEquals(DeferredLearningRecord.Status.PENDING, pending.getStatus());
+        verifyNoInteractions(actions); verify(records, never()).save(any());
+    }
     @Test void importsLegacyCheckInUsingCheckInDateInsteadOfCreationDate() {
         CheckInRecord checkIn = CheckInRecord.builder().userId(7L).taskId(1L).content("旧版学习记录").durationMinutes(30)
                 .checkInDate(today.minusDays(2)).createdAt(today.atTime(15, 0)).build();

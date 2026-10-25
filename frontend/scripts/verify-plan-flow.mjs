@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { endpoints } from "../src/services/config.js";
 import { getInclusivePeriodDays, validateCheckInForm, validatePlanPeriod } from "../src/services/planRules.js";
-import { getTimeGreeting, getBusinessDateLabel } from "../src/services/businessTime.js";
+import { getTimeGreeting, getBusinessDateLabel, getBusinessDate } from "../src/services/businessTime.js";
 
 for (const [hour, expected] of [[0, "夜深了"], [4, "夜深了"], [5, "早上好"], [10, "早上好"], [11, "中午好"], [13, "中午好"], [14, "下午好"], [17, "下午好"], [18, "晚上好"], [23, "晚上好"]]) {
   assert.equal(getTimeGreeting(new Date(`2026-10-18T${String(hour).padStart(2, "0")}:00:00+08:00`)), expected);
 }
 assert.equal(getBusinessDateLabel(new Date("2026-10-17T16:00:00Z")), "10月18日", "业务日期按上海跨日计算");
+assert.equal(getBusinessDate(new Date("2026-10-17T16:00:00Z")), "2026-10-18");
 
 assert.equal(getInclusivePeriodDays("2026-10-01", "2026-10-10"), 10);
 assert.equal(validatePlanPeriod("2026-10-11", "2026-10-10", 1), "开始日期不能晚于结束日期");
@@ -212,11 +213,12 @@ assert.deepEqual(endpoints.actions.saveDeferred(manualPayload), { method: "POST"
 let addedStep;
 let editedStep;
 const detailScript = detailPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-const detail = new Function("computed", "ref", "onLoad", "uni", "TASK_CATEGORIES", "getSubtasks", "getTaskDetail", "addSubtask", "updateSubtask", `${detailScript}
+const detail = new Function("computed", "ref", "onLoad", "uni", "TASK_CATEGORIES", "getSubtasks", "getTaskDetail", "addSubtask", "updateSubtask", "watch", "getBusinessDate", `${detailScript}
   return { task, subtasks, checkInStats, targetFeedback, editingSubtask, showEditDialog, openAddDialog, openEditDialog, closeEditDialog, saveSubtask };
-`)(computed, ref, () => {}, { showToast() {} }, ["学习"], async () => [], async () => ({ id: 101 }),
-async (id, data) => { addedStep = { id, data }; }, async (id, data) => { editedStep = { id, data }; });
+`)(computed, ref, () => {}, { showToast() {} }, ["学习"], async () => [], async () => ({ id: 101, status: "IN_PROGRESS" }),
+async (id, data) => { addedStep = { id, data }; }, async (id, data) => { editedStep = { id, data }; }, watch, getBusinessDate);
 detail.task.value.id = 101;
+detail.task.value.status = "IN_PROGRESS";
 detail.openAddDialog();
 detail.editingSubtask.value.content = "新增学习步骤";
 detail.editingSubtask.value.weight = 25;
@@ -238,4 +240,68 @@ detail.task.value.status = "COMPLETED";
 detail.checkInStats.value.checkedInDays = 1;
 assert.match(detail.targetFeedback.value, /学习目标已提前完成/);
 assert.doesNotMatch(detail.targetFeedback.value, /还差|尚差/);
+
+// 执行真实的周期编辑流程：取消不写入、确认精确记录ID、请求失败和重复点击均不误保存。
+let allowPrune = false;
+let editPayloads = [];
+let checkInHistory = [{ id: 21, checkInDate: "2026-10-23" }, { id: 22, checkInDate: "2026-10-25" }];
+let historyFailure = false;
+let saveFailure = false;
+let modalCopy;
+const editing = new Function("computed", "ref", "watch", "onLoad", "uni", "TASK_CATEGORIES", "getBusinessDate",
+  "validatePlanPeriod", "getCheckInHistory", "getCheckInStats", "updateTask", `${detailScript}
+  return { task, planForm, showPlanEdit, savingPlan, stepsEditable, planClosed, showEditDialog, editingSubtask,
+    openPlanEdit, savePlan, openAddDialog, openEditDialog, saveSubtask, finishSubtask };
+`)(computed, ref, watch, () => {}, {
+  showToast() {},
+  showModal: ({ content, success }) => { modalCopy = content; success({ confirm: allowPrune }); },
+}, ["学习"], () => "2026-10-25", validatePlanPeriod,
+async () => { if (historyFailure) throw new Error("history unavailable"); return checkInHistory; },
+async () => ({}), async (id, payload) => {
+  if (saveFailure) throw new Error("records changed, confirm again");
+  editPayloads.push({ id, payload });
+  return { ...editing.task.value, ...payload };
+});
+editing.task.value = { id: 101, title: "学习", category: "学习", startDate: "2026-10-23", endDate: "2026-10-31", targetDays: 5, status: "IN_PROGRESS" };
+editing.openPlanEdit();
+editing.planForm.value.startDate = "2026-10-25";
+await editing.savePlan();
+assert.equal(editPayloads.length, 0, "取消清零不能调用修改接口");
+assert.equal(editing.showPlanEdit.value, true);
+assert.equal(editing.savingPlan.value, false);
+assert.match(modalCopy, /未在新计划周期内的打卡记录将清零，是否确认修改/);
+assert.match(modalCopy, /1 条/);
+allowPrune = true;
+await editing.savePlan();
+assert.equal(editPayloads.length, 1);
+assert.equal(editPayloads[0].payload.discardOutsideCheckIns, true);
+assert.deepEqual(editPayloads[0].payload.confirmedDiscardCheckInIds, [21]);
+assert.equal(editing.showPlanEdit.value, false);
+editing.openPlanEdit();
+editing.planForm.value.startDate = "2026-10-26";
+assert.equal(editing.planForm.value.status, "NOT_STARTED", "移动周期到未来时同步日期状态");
+editing.planForm.value.startDate = "2026-10-25";
+assert.equal(editing.planForm.value.status, "IN_PROGRESS");
+editing.planForm.value.startDate = "2026-10-26";
+historyFailure = true;
+await editing.savePlan();
+assert.equal(editPayloads.length, 1, "影响记录无法读取时禁止盲目提交");
+historyFailure = false;
+saveFailure = true;
+await editing.savePlan();
+assert.equal(editing.showPlanEdit.value, true, "后端拒绝过时确认后保留表单，等待重新确认");
+saveFailure = false;
+checkInHistory = [];
+await editing.savePlan();
+assert.equal(editPayloads.length, 2);
+assert.equal(editPayloads[1].payload.discardOutsideCheckIns, undefined, "无删除影响不需要清零授权");
+editing.task.value.status = "COMPLETED";
+assert.equal(editing.planClosed.value, true);
+assert.equal(editing.stepsEditable.value, false);
+editing.openAddDialog();
+editing.openEditDialog({ id: 9, content: "旧步骤", weight: 100 });
+assert.equal(editing.showEditDialog.value, false, "完成计划禁止打开步骤修改框");
+await editing.finishSubtask({ id: 9, currentProgress: 0 });
+await editing.saveSubtask();
+assert.equal(editPayloads.length, 2);
 console.log("Plan and check-in flow checks passed.");

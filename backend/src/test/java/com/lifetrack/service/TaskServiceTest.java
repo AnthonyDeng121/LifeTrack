@@ -95,7 +95,7 @@ class TaskServiceTest {
     @Test
     void shouldRejectTargetDaysBeyondPlanPeriod() {
         Task task = planOwnedByCurrentUser();
-        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
         TaskUpdateRequest request = new TaskUpdateRequest();
         request.setStartDate(LocalDate.of(2026, 10, 1));
@@ -111,7 +111,7 @@ class TaskServiceTest {
     void shouldRejectTransitionFromCompletedBackToInProgress() {
         Task task = planOwnedByCurrentUser();
         task.setStatus(PlanStatus.COMPLETED);
-        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
         TaskUpdateRequest request = new TaskUpdateRequest();
         request.setStatus("IN_PROGRESS");
@@ -124,7 +124,7 @@ class TaskServiceTest {
     @Test
     void shouldUpdateEditablePlanFields() {
         Task task = planOwnedByCurrentUser();
-        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
         when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TaskUpdateRequest request = new TaskUpdateRequest();
@@ -141,7 +141,7 @@ class TaskServiceTest {
     void shouldRejectUpdatingAnotherUsersPlan() {
         Task task = planOwnedByCurrentUser();
         task.setUserId(99L);
-        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
         TaskUpdateRequest request = new TaskUpdateRequest();
         request.setTitle("不能修改的计划");
@@ -155,7 +155,7 @@ class TaskServiceTest {
     @Test
     void shouldAllowTransitionFromInProgressToCompleted() {
         Task task = planOwnedByCurrentUser();
-        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
         when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TaskUpdateRequest request = new TaskUpdateRequest();

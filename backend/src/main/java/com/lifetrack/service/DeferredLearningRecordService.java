@@ -60,7 +60,10 @@ public class DeferredLearningRecordService {
         DeferredLearningRecord record = records.findLockedById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
         if (!record.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
         if (record.getStatus() == DeferredLearningRecord.Status.APPLIED) throw new BusinessException(409, "该记录已处理，请勿重复补进度");
-        ownedLockedTask(record.getTaskId(), userId);
+        Task task = ownedLockedTask(record.getTaskId(), userId);
+        if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) {
+            throw new BusinessException(400, "已完成或已取消计划不可补分析，计划不会重新打开");
+        }
         ActionSyncRequest request = new ActionSyncRequest();
         request.setTaskId(record.getTaskId()); request.setRawInput(record.getContent());
         request.setDurationInput(record.getDurationMinutes() + "分钟");

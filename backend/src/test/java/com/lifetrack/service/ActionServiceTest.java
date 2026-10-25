@@ -173,7 +173,7 @@ class ActionServiceTest {
         when(logs.findById(100L)).thenReturn(Optional.of(action));
         when(logs.existsById(100L)).thenReturn(true);
         when(steps.findById(11L)).thenReturn(Optional.of(step));
-        when(tasks.findById(1L)).thenReturn(Optional.of(plan));
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
         when(logs.findByTaskId(1L)).thenReturn(List.of());
         CheckInRecord record = CheckInRecord.builder().automatic(true).build();
         when(checkIns.findByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(Optional.of(record));
@@ -225,6 +225,7 @@ class ActionServiceTest {
     }
 
     @Test void undoDoesNotRemoveLegacyManualAttendance() {
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
         ActionLog action = ActionLog.builder().id(100L).userId(7L).taskId(1L)
                 .contribution(new BigDecimal("0.20")).createdAt(today.atTime(10, 0)).build();
         when(logs.findById(100L)).thenReturn(Optional.of(action));
@@ -236,6 +237,7 @@ class ActionServiceTest {
     }
 
     @Test void rejectsSecondUndoAfterWaitingForPlanLock() {
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
         when(logs.findById(100L)).thenReturn(Optional.of(ActionLog.builder().id(100L).userId(7L).taskId(1L).build()));
         when(logs.existsById(100L)).thenReturn(false);
         assertThrows(BusinessException.class, () -> service.deleteAction(100L));
@@ -258,5 +260,23 @@ class ActionServiceTest {
         assertEquals(30, saved.getValue().getDurationMinutes());
         verify(checkIns).existsByUserIdAndTaskIdAndCheckInDate(7L, 1L, original.toLocalDate());
         verify(tasks, never()).findIdsByUserIdAndStatus(any(), any());
+    }
+
+    @Test void completedPlanCannotBeReopenedByUndoingLearningRecord() {
+        plan.setStatus(PlanStatus.COMPLETED);
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
+        when(logs.findById(100L)).thenReturn(Optional.of(ActionLog.builder().id(100L).userId(7L).taskId(1L).subTaskId(11L).build()));
+        var error = assertThrows(BusinessException.class, () -> service.deleteAction(100L));
+        assertEquals(400, error.getCode());
+        assertEquals(PlanStatus.COMPLETED, plan.getStatus());
+        verify(logs, never()).delete(any()); verifyNoInteractions(steps, taskService, checkIns);
+    }
+
+    @Test void historicalAnalysisCannotChangeCompletedPlan() {
+        plan.setStatus(PlanStatus.COMPLETED);
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
+        var request = request(); request.setTaskId(1L);
+        assertThrows(BusinessException.class, () -> service.syncHistoricalAction(request, today.minusDays(1).atTime(15, 0), 30));
+        verifyNoInteractions(ai, logs, steps, checkIns);
     }
 }

@@ -1,5 +1,11 @@
 const clock = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", hour: "numeric", hourCycle: "h23" });
 const calendar = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" });
+const businessCalendar = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
+
+export function getBusinessDate(date = new Date()) {
+  const parts = businessCalendar.formatToParts(date);
+  return ["year", "month", "day"].map(type => parts.find(part => part.type === type).value).join("-");
+}
 
 export function getTimeGreeting(date = new Date()) {
   const hour = Number(clock.formatToParts(date).find(part => part.type === "hour").value);

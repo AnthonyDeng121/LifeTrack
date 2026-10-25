@@ -70,7 +70,7 @@ public class ActionServiceImpl implements ActionService {
         candidates.stream().filter(id -> request.getTaskId() == null || id.equals(request.getTaskId()))
                 .sorted().forEach(candidate -> {
                     Task task = taskRepository.findLockedById(candidate).orElse(null);
-                    if (task != null && task.getUserId().equals(userId) && (task.getStatus() == PlanStatus.IN_PROGRESS || historical && task.getStatus() != PlanStatus.CANCELLED)
+                    if (task != null && task.getUserId().equals(userId) && (task.getStatus() == PlanStatus.IN_PROGRESS || historical && task.getStatus() == PlanStatus.EXPIRED)
                             && task.getStartDate() != null && task.getEndDate() != null
                             && !today.isBefore(task.getStartDate()) && !today.isAfter(task.getEndDate())) {
                         activeTasks.add(task);
@@ -214,7 +214,14 @@ public class ActionServiceImpl implements ActionService {
             throw new BusinessException(403, "无权删除该记录");
         }
 
-        if (actionLog.getTaskId() != null) taskRepository.findLockedById(actionLog.getTaskId());
+        if (actionLog.getTaskId() != null) {
+            Task parent = taskRepository.findLockedById(actionLog.getTaskId())
+                    .orElseThrow(() -> new BusinessException(404, "关联计划不存在"));
+            if (!parent.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该计划");
+            if (parent.getStatus() == PlanStatus.COMPLETED || parent.getStatus() == PlanStatus.CANCELLED) {
+                throw new BusinessException(400, "已完成或已取消计划不可撤销学习记录，计划不会重新打开");
+            }
+        }
         if (!actionLogRepository.existsById(actionId)) {
             throw new BusinessException(404, "记录已撤销，请勿重复操作");
         }
@@ -236,9 +243,6 @@ public class ActionServiceImpl implements ActionService {
                 subTaskRepository.save(subTask);
 
                 // 更新主任务总进度
-                taskRepository.findById(subTask.getTaskId()).ifPresent(parent -> {
-                    if (parent.getStatus() == PlanStatus.COMPLETED) parent.setStatus(PlanStatus.IN_PROGRESS);
-                });
                 taskService.updateTaskProgress(subTask.getTaskId());
             }
         }
