@@ -304,4 +304,4 @@ assert.equal(editing.showEditDialog.value, false, "完成计划禁止打开步�
 await editing.finishSubtask({ id: 9, currentProgress: 0 });
 await editing.saveSubtask();
 assert.equal(editPayloads.length, 2);
-console.log("Plan and check-in flow checks passed.");
+console.log("Frontend page logic checks passed (API/platform stubs; no browser).");

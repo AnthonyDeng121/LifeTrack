@@ -38,6 +38,7 @@ class DatabaseEngineeringIntegrationTest {
     @Autowired EntityManagerFactory emf;
     @Autowired JdbcTemplate jdbc;
     @Autowired javax.sql.DataSource dataSource;
+    @org.springframework.beans.factory.annotation.Value("${spring.datasource.password}") String testPassword;
     @MockitoBean AIService ai;
     User user;
     Long planId;
@@ -162,7 +163,7 @@ class DatabaseEngineeringIntegrationTest {
             String original = c.getCatalog();
             String url = c.getMetaData().getURL().replace("/"+original+"?", "/"+name+"?");
             String userName=c.getMetaData().getUserName().split("@")[0];
-            String password=System.getenv("DB_PASSWORD");
+            String password=testPassword;
             String sql=java.nio.file.Files.readString(java.nio.file.Path.of("sql/init_db.sql")).replace("lifetrack",name);
             var resource=new org.springframework.core.io.ByteArrayResource(sql.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(c,resource);

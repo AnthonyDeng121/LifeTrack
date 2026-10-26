@@ -1,4 +1,4 @@
-import { API_BASE_STORAGE_KEY, TOKEN_KEY, USER_KEY, resolveApiBaseUrl } from "./config";
+import { API_BASE_STORAGE_KEY, TOKEN_KEY, USER_KEY, resolveApiBaseUrl } from "./config.js";
 
 function getStorage(key) {
   try {

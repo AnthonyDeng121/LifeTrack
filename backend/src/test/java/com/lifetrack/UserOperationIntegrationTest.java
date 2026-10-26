@@ -27,6 +27,7 @@ class UserOperationIntegrationTest {
     @Autowired UserRepository users;
     @Autowired ActionLogRepository logs;
     @Autowired JwtUtil jwt;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate database;
     User user;
     String token;
     LocalDate today;
@@ -85,6 +86,80 @@ class UserOperationIntegrationTest {
         assertEquals(0, noMatch.size());
         assertEquals("NOT_STARTED", api("GET", "/tasks/" + future, null).path("data").path("status").asText());
         assertEquals(400, api("GET", "/check-ins?taskId=" + id + "&startDate=" + today + "&endDate=" + today.minusDays(1), null).path("code").asInt());
+    }
+
+    @Test void realAiConnectionFailureNeverCreatesFakeProgressAndFallbackRemainsDurable() throws Exception {
+        long id=create(today.minusDays(2),today.plusDays(7));
+        var preview=api("POST","/tasks/deconstruct/preview",Map.of("title","学习数据库事务","stepCount",3));
+        assertEquals(503,preview.path("code").asInt());
+        assertEquals(1,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
+        var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationInput","30分钟"));
+        assertEquals(200,failed.path("code").asInt());
+        assertTrue(failed.path("data").path("analysisUnavailable").asBoolean());
+        assertEquals(0,database.queryForObject("select count(*) from action_logs where task_id=?",Integer.class,id));
+        assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        var saved=api("POST","/actions/deferred",Map.of("taskId",id,"content","整理了数据库事务的学习笔记","durationMinutes",30));
+        assertEquals(200,saved.path("code").asInt());
+        long record=saved.path("data").path("id").asLong();
+        assertEquals("PENDING",database.queryForObject("select status from deferred_learning_records where id=?",String.class,record));
+        assertEquals(1,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        assertTrue(api("POST","/actions/deferred/"+record+"/retry",Map.of()).path("data").path("analysisUnavailable").asBoolean());
+        assertEquals("PENDING",database.queryForObject("select status from deferred_learning_records where id=?",String.class,record));
+        assertEquals(0,database.queryForObject("select total_progress from tasks where id=?",BigDecimal.class,id).signum());
+        assertEquals(30,database.queryForObject("select sum(duration_minutes) from check_in_records where task_id=?",Integer.class,id));
+    }
+
+    @Test void foreignUserCannotReadEditDeleteCheckInOrRevokeAndDatabaseRemainsUnchanged() throws Exception {
+        long id=create(today.minusDays(2),today.plusDays(7));
+        long step=api("GET","/tasks/"+id+"/subtasks",null).path("data").get(0).path("id").asLong();
+        var entry=logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(id).subTaskId(step).category(Task.Category.学习)
+                .rawInput("权限隔离测试记录").contribution(BigDecimal.ZERO).durationMinutes(1).build());
+        User foreign=users.saveAndFlush(User.builder().username("foreign-test-"+UUID.randomUUID()).password("TEST_ONLY").build());
+        String ownerToken=token;
+        try {
+            token=jwt.generateToken(foreign.getId(),foreign.getUsername());
+            assertEquals(0,api("GET","/tasks",null).path("data").size());
+            assertEquals(403,api("GET","/tasks/"+id,null).path("code").asInt());
+            assertEquals(403,api("PUT","/tasks/"+id,Map.of("title","非法修改")).path("code").asInt());
+            assertEquals(403,api("DELETE","/tasks/"+id,null).path("code").asInt());
+            assertEquals(403,api("POST","/check-ins",Map.of("taskId",id)).path("code").asInt());
+            assertEquals(403,api("GET","/check-ins?taskId="+id,null).path("code").asInt());
+            assertEquals(403,api("DELETE","/actions/"+entry.getId(),null).path("code").asInt());
+            assertEquals(403,api("PUT","/tasks/subtasks/"+step+"/complete",null).path("code").asInt());
+            assertEquals(1,database.queryForObject("select count(*) from tasks where id=? and user_id=?",Integer.class,id,user.getId()));
+            assertEquals(1,database.queryForObject("select count(*) from action_logs where id=?",Integer.class,entry.getId()));
+            assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        } finally { token=ownerToken;users.deleteById(foreign.getId()); }
+    }
+
+    @Test void invalidRequestsDoNotPersistAnythingAndDeleteActuallyRemovesAllRelations() throws Exception {
+        assertEquals(400,api("POST","/tasks/manual",Map.of("title"," ","category","学习","startDate",today.toString(),"endDate",today.minusDays(1).toString(),"targetDays",1,"subTasks",List.of())).path("code").asInt());
+        assertEquals(0,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
+        long id=create(today.minusDays(2),today.plusDays(7));
+        assertEquals(400,api("POST","/check-ins",Map.of("taskId",id,"durationMinutes",-1)).path("code").asInt());
+        assertEquals(200,api("POST","/check-ins",Map.of("taskId",id)).path("code").asInt());
+        assertEquals(409,api("POST","/check-ins",Map.of("taskId",id)).path("code").asInt());
+        assertEquals(1,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        assertEquals(200,api("DELETE","/tasks/"+id,null).path("code").asInt()); taskIds.remove(id);
+        for(String table:List.of("tasks","sub_tasks","action_logs","check_in_records","deferred_learning_records"))
+            assertEquals(0,database.queryForObject("select count(*) from "+table+" where "+(table.equals("tasks")?"id":"task_id")+"=?",Integer.class,id));
+        assertEquals(404,api("GET","/tasks/"+id,null).path("code").asInt());
+    }
+
+    @Test void frontendApiModuleWorksAgainstRealHttpServerAndMysql() throws Exception {
+        var process=new ProcessBuilder("node","../frontend/scripts/verify-http-contract.mjs");
+        process.environment().put("TEST_API_BASE","http://localhost:"+port+"/api/v1");
+        process.environment().put("TEST_API_TOKEN",token);
+        process.redirectErrorStream(true);
+        Process child=process.start();
+        try {
+            assertTrue(child.waitFor(60,java.util.concurrent.TimeUnit.SECONDS),"前端真实HTTP契约执行超时");
+            String output=new String(child.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            assertEquals(0,child.exitValue(),output);
+            assertTrue(output.contains("\"passed\":true"),output);
+            assertEquals(0,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
+            assertEquals(0,database.queryForObject("select count(*) from check_in_records where user_id=?",Integer.class,user.getId()));
+        } finally { if(child.isAlive()) child.destroyForcibly(); }
     }
 
     @Test void historyPaginatesBeyondTwentyWithStableTieOrderAndDeletionRefillsPage() throws Exception {

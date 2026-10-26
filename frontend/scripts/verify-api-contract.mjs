@@ -81,4 +81,4 @@ assert.deepEqual(endpoints.feedback.mood(6), {
   data: { anxietyLevel: 6 },
 });
 
-console.log("API contract checks passed.");
+console.log("Frontend endpoint declaration checks passed (no backend requests).");

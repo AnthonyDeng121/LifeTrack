@@ -76,7 +76,9 @@ npm run build:h5
 npm run verify
 ```
 
-`npm run verify` 会先检查接口契约，再构建 H5，适合提交前跑一次。
+`npm run verify` 执行前端接口声明检查、带 API/平台桩的页面逻辑测试和 H5 构建，不会操作浏览器或连接后端。
+
+根目录 `./verify-course.ps1` 还会在隔离 MySQL 和真实 Spring Boot 上运行 `scripts/verify-http-contract.mjs`，调用原始 `src/services/api.js` 与 `http.js` 验证字段、筛选、打卡和错误处理。此项只替换 uni 平台传输桥为 fetch，服务端响应真实；浏览器点击证据单独记录。
 
 ## 常见问题
 

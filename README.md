@@ -221,28 +221,35 @@ AI 服务默认地址：`http://127.0.0.1:5000`。如果服务或模型接口不
 
 ## 验证命令
 
-后端测试需要先设置数据库环境变量：
+推荐在根目录执行完整、可复现的隔离验收（需要 MySQL 客户端、JDK、Node 和已安装依赖的 AI_Server venv）：
 
 ```powershell
-cd backend
-.\mvnw.cmd test
+.\verify-course.ps1
 ```
 
-前端契约、核心流程和 H5 构建：
+脚本从总 SQL 创建全新的 `lifetrack_test_*` 数据库，运行后端、前端、Python 和验收工具测试，最后清理临时库。凭据读取本机 `.env` 的数据库配置，也可单独设置 `TEST_DB_USERNAME/TEST_DB_PASSWORD`；需要创建和清理测试库的权限。原始日志留在被忽略的 `.verification/`，脱敏结果、逐项用例和源码指纹写入 `docs/verification/`。
+
+所有 Spring 集成测试都拒绝连接普通 `lifetrack` 数据库。单独运行 `mvnw.cmd test` 时必须已准备好总脚本结构并设置 `TEST_DB_URL`（库名必须以 `lifetrack_test_` 开头）、`TEST_DB_USERNAME`、`TEST_DB_PASSWORD`。日常服务继续使用 `DB_*`，不受影响。
+
+前端声明检查、带桩的页面逻辑测试和 H5 构建可单独执行：
 
 ```powershell
 cd frontend
 npm run verify
 ```
 
-后端启动后可执行真实数据库验收：
+完整验收另含“原始前端 API/http 模块 → 真实 Spring Boot HTTP → MySQL”的契约测试；仅替换 uni 平台传输桥，响应不做 Mock。它仍不等于浏览器点击测试。
+
+后端启动后可执行现场 HTTP 验收：
 
 ```powershell
 cd backend
 .\scripts\verify-p1-acceptance.ps1
 ```
 
-脚本会创建临时计划并完成编辑、连续打卡、重复打卡拒绝、日期越界、历史查询和统计同步验证，最后清理本次创建的数据。
+脚本核对真实 HTTP 状态与 JSON 业务码，可传 `-Token` 使用专用验收账号；未传时使用共享开发账号，仅清理本次临时计划。其历史数量来自 API，不冒充直接 SQL 证据。全局日期增量取实际值，不固定假设增加三天。直接 SQL 的证据由隔离集成测试提供。
+
+测试层级、历史记录纠正及最新证据见[测试与验收可信度整改](docs/测试与验收可信度整改.md)和[验收证据索引](docs/verification/README.md)。
 
 ## AI 使用情况
 

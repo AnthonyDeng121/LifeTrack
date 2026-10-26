@@ -38,6 +38,7 @@ backend/docs/api_design.md
 .env.local
 *.env.local
 .lifetrack-run/
+.verification/
 AI_Server/venv/
 __pycache__/
 *.pyc

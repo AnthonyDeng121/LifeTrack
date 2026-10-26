@@ -1,4 +1,4 @@
-param([string]$BaseUrl = "http://localhost:8081/api/v1")
+﻿param([string]$BaseUrl = "http://localhost:8081/api/v1", [string]$Token = "")
 $ErrorActionPreference = "Stop"
 $createdTaskIds = [System.Collections.Generic.List[long]]::new()
 $assertionCount = 0
@@ -7,22 +7,9 @@ function Assert-Equal($Expected, $Actual, [string]$Label) {
     if ($Expected -ne $Actual) { throw "$Label failed: expected [$Expected], actual [$Actual]" }
     $script:assertionCount++
 }
+Import-Module (Join-Path $PSScriptRoot "AcceptanceHttp.psm1") -Force
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
-    $parameters = @{ Method = $Method; Uri = "$BaseUrl$Path"; ContentType = "application/json; charset=utf-8"; TimeoutSec = 60 }
-    if ($script:token) { $parameters.Headers = @{ Authorization = "Bearer $script:token" } }
-    if ($null -ne $Body) { $parameters.Body = ConvertTo-Json -InputObject $Body -Depth 8 -Compress }
-    try { Invoke-RestMethod @parameters }
-    catch {
-        if ($null -eq $_.Exception.Response) { throw }
-        $errorBody = $_.ErrorDetails.Message
-        if ([string]::IsNullOrWhiteSpace($errorBody)) {
-            $reader = [IO.StreamReader]::new($_.Exception.Response.GetResponseStream(), [Text.Encoding]::UTF8)
-            try { $errorBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
-        }
-        $parsed = $errorBody | ConvertFrom-Json
-        if ($null -eq $parsed.code) { throw }
-        return $parsed
-    }
+    Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $script:token
 }
 function New-Plan($Start, $End, $Steps = @(@{ content = "Business rules acceptance"; weight = 1 })) {
     $response = Invoke-Api "POST" "/tasks/manual" @{
@@ -33,9 +20,12 @@ function New-Plan($Start, $End, $Steps = @(@{ content = "Business rules acceptan
     return $response
 }
 
-$login = Invoke-Api "POST" "/auth/login/dev"
-Assert-Equal 200 $login.code "login"
-$script:token = $login.data.token
+$script:token = $Token
+if (-not $script:token) {
+    $login = Invoke-Api "POST" "/auth/login/dev"
+    Assert-Equal 200 $login.code "login"
+    $script:token = $login.data.token
+}
 $today = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, "China Standard Time").Date
 $todayText = $today.ToString("yyyy-MM-dd")
 $yesterday = $today.AddDays(-1).ToString("yyyy-MM-dd")

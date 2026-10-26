@@ -1,32 +1,20 @@
-param([string]$BaseUrl = "http://localhost:8081/api/v1")
+﻿param([string]$BaseUrl = "http://localhost:8081/api/v1", [string]$Token = "")
 $ErrorActionPreference = "Stop"
 
 function Assert-Equal($Expected, $Actual, [string]$Label) {
     if ($Expected -ne $Actual) { throw "$Label failed: expected [$Expected], actual [$Actual]" }
 }
+Import-Module (Join-Path $PSScriptRoot "AcceptanceHttp.psm1") -Force
 function Invoke-LifeTrack([string]$Method, [string]$Path, $Body = $null, [string]$Token = "") {
-    $headers = @{}
-    if ($Token) { $headers.Authorization = "Bearer $Token" }
-    $parameters = @{ Method = $Method; Uri = "$BaseUrl$Path"; Headers = $headers; ContentType = "application/json; charset=utf-8" }
-    if ($null -ne $Body) { $parameters.Body = $Body | ConvertTo-Json -Depth 8 -Compress }
-    try { Invoke-RestMethod @parameters }
-    catch {
-        if ($null -eq $_.Exception.Response) { throw }
-        $errorBody = $_.ErrorDetails.Message
-        if ([string]::IsNullOrWhiteSpace($errorBody)) {
-            $reader = [IO.StreamReader]::new($_.Exception.Response.GetResponseStream(), [Text.Encoding]::UTF8)
-            try { $errorBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
-        }
-        $parsed = $errorBody | ConvertFrom-Json
-        if ($null -eq $parsed.code) { throw }
-        return $parsed
-    }
+    Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $Token
 }
 
-$login = Invoke-LifeTrack "POST" "/auth/login/dev"
-Assert-Equal 200 $login.code "dev login"
-$token = $login.data.token
-$today = [DateTime]::Today
+if (-not $Token) {
+    $login = Invoke-LifeTrack "POST" "/auth/login/dev"
+    Assert-Equal 200 $login.code "dev login"
+    $token = $login.data.token
+}
+$today = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, "China Standard Time").Date
 $startDate = $today.AddDays(-2).ToString("yyyy-MM-dd")
 $endDate = $today.AddDays(7).ToString("yyyy-MM-dd")
 $todayText = $today.ToString("yyyy-MM-dd")
@@ -79,7 +67,7 @@ try {
     Assert-Equal 400 $blockedByStatus.code "status rejection"
 
     [pscustomobject]@{
-        taskId = $taskId; persistedCheckIns = @($history.data).Count; checkedInDays = $stats.data.checkedInDays
+        taskId = $taskId; historyApiCheckIns = @($history.data).Count; checkedInDays = $stats.data.checkedInDays
         currentStreak = $stats.data.currentStreak; longestStreak = $stats.data.longestStreak; completionRate = $stats.data.completionRate
         dashboardDelta = ([int]$dashboardAfter.data.checkedInDays - $beforeCheckedInDays); duplicateCode = $duplicate.code
         outsideDateCode = $outside.code; futureDateCode = $future.code; statusBlockedCode = $blockedByStatus.code

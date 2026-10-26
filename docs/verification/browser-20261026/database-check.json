@@ -1,0 +1,11 @@
+﻿{
+    "taskId":  201,
+    "title":  "第六部分浏览器验收计划-已编辑",
+    "targetDays":  5,
+    "learningProgress":  0.0000,
+    "sqlCheckInCount":  1,
+    "sqlDurationMinutes":  0,
+    "deleteHttpCode":  200,
+    "afterDeleteHttpCode":  404,
+    "checkedAt":  "2026-10-26T19:24:35.6457714+08:00"
+}

@@ -1,5 +1,5 @@
-import { endpoints } from "./config";
-import { request, saveLogin } from "./http";
+import { endpoints } from "./config.js";
+import { request, saveLogin } from "./http.js";
 
 export function getAuthOptions() { return request({ ...endpoints.auth.options, showError: false }); }
 

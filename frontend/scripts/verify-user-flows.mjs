@@ -180,4 +180,4 @@ await login.handleDevLogin(); assert.equal(authCalls, 1); assert.equal(redirects
 optionsFailure = true; await login.loadAuthOptions(); await login.handleDevLogin();
 assert.equal(authCalls, 1); assert.notEqual(login.optionsError.value, "");
 assert.equal(login.authOptions.value.devLoginEnabled, false);
-console.log("Authentication capability switches and login validation checks passed.");
+console.log("Authentication page logic checks passed (API/platform stubs; no browser).");

@@ -63,11 +63,7 @@
 - 已有任务创建、列表、删除、子任务编辑与完成、行为记录、历史记录、进度计算和最近七天统计。
 - 已有用户登录、权限隔离、Swagger 和前后端 API 封装。
 
-最近一次审查时：
-
-- 后端 `mvnw.cmd test` 执行成功，但只有一个上下文启动测试，业务测试明显不足。
-- 前端 `npm run verify` 执行成功，API 契约检查和 H5 构建均通过。
-- 当前实现更接近“AI 任务与进度管理”，还不完全等同于课程要求的“学习计划与打卡系统”。
+最初审查曾只有一个上下文测试；该结论已经过期。当前已有业务单元测试、真实 HTTP/MySQL、约束、并发和前端实际 HTTP 契约测试。最新结果以 `docs/verification/README.md` 的源码指纹与机器生成记录为准，不能把旧阶段数量当作当前数量。
 
 ## 领域模型改造建议
 
@@ -165,7 +161,10 @@
 
 - 不要覆盖用户尚未提交的修改。开始改动前先运行 `git status --short` 并检查差异。
 - 最近一次审查时已有修改：`AI_Server/ai_server.py`、`backend/src/main/java/com/lifetrack/config/RestConfig.java`、`backend/src/main/java/com/lifetrack/service/AIService.java`，以及未跟踪的 `.dbg/`。未来以实际 `git status` 为准。
-- `application-dev.yml` 当前包含明文 MySQL 密码，`application.yml` 当前包含固定 JWT secret。提交前必须改为环境变量，并提供安全的示例配置；不要把真实凭据写入 README、设计文档或提交历史。
+- 数据库密码、JWT secret、模型密钥已使用环境变量，示例不得包含真实凭据；提交前继续检查，禁止写入 README、设计文档或提交历史。
+- 总 SQL 已冻结为 Flyway 基线 1；后续结构变更只能新增 V2+，不修改已接管数据库的总脚本。Hibernate 只 validate。
+- Spring 集成测试只允许 TEST_DB_* 指向 lifetrack_test_*；禁止回退到日常 DB_*。默认使用根目录 verify-course.ps1 创建、验证和清理隔离库，原始日志不提交。
+- 区分源码声明检查、带桩逻辑测试、真实 HTTP/MySQL、真实浏览器及真实模型测试；没有运行的层级必须明确标注未验证。历史记录保留但不能当作新版本通过证据。
 - 保持前后端字段、枚举、日期格式和接口路径一致，修改接口后同步更新前端 API 封装及契约测试。
 - 核心业务规则必须放在后端；唯一性等关键约束还应由数据库兜底。
 - 统计数据必须从真实持久化记录计算，不能在前端硬编码。
@@ -178,7 +177,10 @@
 在修改后按影响范围执行验证：
 
 ```powershell
-# 后端
+# 推荐：完整隔离验收（根目录）
+.\verify-course.ps1
+
+# 单独后端：必须已准备独立 TEST_DB_*，禁止指向日常数据库
 cd backend
 .\mvnw.cmd test
 
