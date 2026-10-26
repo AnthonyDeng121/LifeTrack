@@ -63,7 +63,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<String> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
-        log.warn("HTTP 消息不可读: {}", e.getMessage());
+        log.warn("请求消息格式不可读");
         String msg = "请求参数格式错误";
         if (e.getMessage() != null && e.getMessage().contains("Required request body is missing")) {
             msg = "请求体不能为空";
@@ -76,12 +76,8 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public Result<String> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("非法参数: ", e);
-        // 如果是枚举转换失败，给出友好提示
-        if (e.getMessage().contains("No enum constant")) {
-            return Result.error("非法的分类类型");
-        }
-        return Result.error(e.getMessage());
+        log.warn("请求参数不合法");
+        return Result.error(400, "请求参数不合法，请检查输入");
     }
 
     /**
@@ -117,6 +113,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public Result<String> handleRuntimeException(RuntimeException e) {
         log.error("运行时异常: ", e);
-        return Result.error(500, e.getMessage() != null ? e.getMessage() : "系统运行异常");
+        return Result.error(500, "服务器繁忙，请稍后再试");
+    }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public Result<String> handleNotFound(org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        return Result.error(404, "请求的接口不存在");
+    }
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public Result<String> handleMissingParameter(org.springframework.web.bind.MissingServletRequestParameterException e) {
+        return Result.error(400, "缺少必填参数: " + e.getParameterName());
+    }
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public Result<String> handleWrongMethod(org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        return Result.error(405, "该接口不支持当前请求方法");
+    }
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public Result<String> handleConflict(org.springframework.dao.DataIntegrityViolationException e) {
+        log.warn("数据约束冲突");
+        return Result.error(409, "数据已存在或与当前状态冲突，请刷新后重试");
     }
 }

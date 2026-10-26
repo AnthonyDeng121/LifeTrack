@@ -12,7 +12,10 @@ async function api(method, path, data) {
 }
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const end = new Date(Date.parse(today + "T12:00:00+08:00") + 6 * 86400000).toISOString().slice(0, 10);
-token = (await api("POST", "/auth/login/wechat", { code: "matching-regression-" + Date.now() })).token;
+const loginOptions = await api("GET", "/auth/options");
+assert.equal(loginOptions.demoPhoneEnabled, true, "Enable demo phone login in the explicit dev environment to run this script");
+const testPhone = "198" + String(Date.now()).slice(-8);
+token = (await api("POST", "/auth/login/phone", { phone: testPhone, verifyCode: loginOptions.demoVerifyCode })).token;
 try {
   if (!matchingOnly) {
     const draft = await api("POST", "/tasks/deconstruct/preview", { title: "系统学习计算机网络", stepCount: 10,

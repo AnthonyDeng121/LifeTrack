@@ -14,21 +14,27 @@
       <text class="sub-slogan">让 AI 帮你看见每一次小小进步</text>
 
       <view class="form">
+        <text v-if="optionsLoading" class="sub-slogan">正在查询可用登录方式...</text>
+        <view v-if="optionsError"><text>{{ optionsError }}</text><button class="glass-button" @tap="loadAuthOptions">重新加载登录方式</button></view>
+        <text v-if="!optionsLoading && !optionsError && !authOptions.devLoginEnabled && !authOptions.demoPhoneEnabled" class="sub-slogan">当前环境未开放演示登录，请联系管理员配置正式认证。</text>
+        <template v-if="authOptions.demoPhoneEnabled">
+        <text class="sub-slogan">仅用于本地演示，不发送真实短信。</text>
         <input v-model="phone" class="glass-input input" type="number" placeholder="请输入手机号" />
         <view class="code-row glass-input">
           <input v-model="verifyCode" class="code-input" type="number" placeholder="请输入验证码" />
-          <text class="code-action" @tap="sendCode">获取验证码</text>
+          <text class="code-action" @tap="sendCode">查看演示验证码</text>
         </view>
 
-        <button class="glass-button primary-btn" :loading="loading" @tap="handlePhoneLogin">登录 / 注册</button>
+        <button class="glass-button primary-btn" :disabled="loading" :loading="loading" @tap="handlePhoneLogin">演示手机号登录 / 注册</button>
+        </template>
 
-        <view class="divider">
+        <view v-if="authOptions.devLoginEnabled && authOptions.demoPhoneEnabled" class="divider">
           <view></view>
           <text>其他登录方式</text>
           <view></view>
         </view>
 
-        <button class="glass-button dev-btn" :loading="loading" @tap="handleDevLogin">开发环境一键登录</button>
+        <button v-if="authOptions.devLoginEnabled" class="glass-button dev-btn" :disabled="loading" :loading="loading" @tap="handleDevLogin">开发环境一键登录</button>
       </view>
 
       <text class="agreement">登录即代表您已阅读并同意《用户协议》与《隐私政策》</text>
@@ -38,15 +44,29 @@
 
 <script setup>
 import { ref } from "vue";
-import { devLogin, phoneLogin } from "../../services/api";
+import { onShow } from "@dcloudio/uni-app";
+import { devLogin, phoneLogin, getAuthOptions } from "../../services/api";
 
 const phone = ref("");
 const verifyCode = ref("");
 const loading = ref(false);
+const authOptions = ref({ devLoginEnabled: false, demoPhoneEnabled: false });
+const optionsLoading = ref(false);
+const optionsError = ref("");
+async function loadAuthOptions() {
+  if (optionsLoading.value) return;
+  optionsLoading.value = true; optionsError.value = "";
+  authOptions.value = { devLoginEnabled: false, demoPhoneEnabled: false };
+  try { authOptions.value = await getAuthOptions(); }
+  catch { optionsError.value = "登录方式加载失败，请检查服务后重试"; }
+  finally { optionsLoading.value = false; }
+}
+onShow(loadAuthOptions);
 
 function sendCode() {
-  uni.showToast({ title: "演示验证码：123456", icon: "none" });
-  verifyCode.value = "123456";
+  if (!authOptions.value.demoPhoneEnabled || !authOptions.value.demoVerifyCode) return;
+  verifyCode.value = authOptions.value.demoVerifyCode;
+  uni.showToast({ title: `演示验证码：${verifyCode.value}`, icon: "none" });
 }
 
 async function loginWith(action) {
@@ -56,22 +76,23 @@ async function loginWith(action) {
     await action();
     uni.redirectTo({ url: "/pages/dashboard/dashboard" });
   } catch (error) {
-    console.warn("login failed", error);
+    if (error.code === 403) await loadAuthOptions();
   } finally {
     loading.value = false;
   }
 }
 
 function handlePhoneLogin() {
-  if (!phone.value || !verifyCode.value) {
-    uni.showToast({ title: "请填写手机号和验证码", icon: "none" });
+  if (!authOptions.value.demoPhoneEnabled) return;
+  if (!/^1[3-9]\d{9}$/.test(phone.value) || !/^\d{6}$/.test(verifyCode.value)) {
+    uni.showToast({ title: "请输入有效的11位手机号和6位数字验证码", icon: "none" });
     return;
   }
-  loginWith(() => phoneLogin(phone.value, verifyCode.value));
+  return loginWith(() => phoneLogin(phone.value, verifyCode.value));
 }
 
 function handleDevLogin() {
-  loginWith(() => devLogin());
+  if (authOptions.value.devLoginEnabled) return loginWith(() => devLogin());
 }
 </script>
 

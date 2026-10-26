@@ -174,11 +174,11 @@ public class DashboardServiceImpl implements DashboardService {
         Long userId = UserContext.getUserId();
         
         Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("任务不存在"));
+                .orElseThrow(() -> new com.lifetrack.exception.BusinessException(404, "任务不存在"));
         
         // 增加权限校验
         if (!task.getUserId().equals(userId)) {
-            throw new RuntimeException("无权查看该任务数据");
+            throw new com.lifetrack.exception.BusinessException(403, "无权查看该任务数据");
         }
         
         List<SubTask> subTasks = subTaskRepository.findByTaskIdOrderByOrderNumAsc(taskId);

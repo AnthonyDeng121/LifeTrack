@@ -87,6 +87,7 @@ if ($WithAI -and [string]::IsNullOrWhiteSpace($env:ZHIPU_API_KEY)) {
 }
 
 Assert-CommandExists 'java' 'Install JDK 17 and add it to PATH.'
+if ([string]::IsNullOrWhiteSpace($env:SPRING_PROFILES_ACTIVE)) { $env:SPRING_PROFILES_ACTIVE = 'dev' }
 Assert-CommandExists 'node' 'Install Node.js 20 or later.'
 Assert-CommandExists 'npm.cmd' 'Install npm.'
 if ($WithAI) { Assert-CommandExists 'python' 'Install Python 3.8 or later.' }

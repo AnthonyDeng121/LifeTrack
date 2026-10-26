@@ -33,6 +33,7 @@ public class User {
     private String phone;
 
     @Column(unique = true, length = 100)
+    // 仅兼容历史数据，微信登录功能已删除，不再用于认证。
     private String openid;
 
     private String avatar;

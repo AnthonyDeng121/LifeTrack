@@ -92,7 +92,7 @@ public class TaskService {
         Task task = Task.builder()
                 .userId(userId)
                 .title(request.getTitle())
-                .category(Task.Category.valueOf(request.getCategory()))
+                .category(parseCategory(request.getCategory()))
                 .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
@@ -173,11 +173,7 @@ public class TaskService {
             task.setTitle(request.getTitle().trim());
         }
         if (request.getCategory() != null) {
-            try {
-                task.setCategory(Task.Category.valueOf(request.getCategory()));
-            } catch (IllegalArgumentException ex) {
-                throw new BusinessException(400, "非法的计划分类: " + request.getCategory());
-            }
+            task.setCategory(parseCategory(request.getCategory()));
         }
 
         LocalDate nextStart = request.getStartDate() != null ? request.getStartDate() : task.getStartDate();
@@ -287,7 +283,7 @@ public class TaskService {
         Task task = Task.builder()
                 .userId(userId)
                 .title(request.getTitle())
-                .category(Task.Category.valueOf(request.getCategory()))
+                .category(parseCategory(request.getCategory()))
                 .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
@@ -518,6 +514,13 @@ public class TaskService {
         LocalDate businessToday = today();
         if (endDate.isBefore(businessToday)) return PlanStatus.EXPIRED;
         return startDate.isAfter(businessToday) ? PlanStatus.NOT_STARTED : PlanStatus.IN_PROGRESS;
+    }
+
+    private Task.Category parseCategory(String value) {
+        try {
+            if (value != null && !value.isBlank()) return Task.Category.valueOf(value);
+        } catch (IllegalArgumentException ignored) { }
+        throw new BusinessException(400, "请选择有效的计划分类");
     }
 
     private void requireEditableSteps(Task task) {

@@ -159,6 +159,10 @@
 
 ## 工程与安全注意事项
 
+- 演示认证必须同时满足唯一激活环境为 `dev` 和对应配置开关开启。基础配置不默认激活开发环境，本地启动脚本明确设置 `dev`；非开发及混合环境不能通过开关绕过限制。
+- 微信登录已删除。保留历史字段仅为数据兼容，不得重新引入 Mock 微信认证。手机号目前仅为开发演示，未接入真实短信服务。
+- 异常响应 HTTP 状态必须与业务 `code` 一致；内部异常不可直接返回给客户端。日志不输出手机号、验证码、Token 或学习记录正文。
+
 - 不要覆盖用户尚未提交的修改。开始改动前先运行 `git status --short` 并检查差异。
 - 最近一次审查时已有修改：`AI_Server/ai_server.py`、`backend/src/main/java/com/lifetrack/config/RestConfig.java`、`backend/src/main/java/com/lifetrack/service/AIService.java`，以及未跟踪的 `.dbg/`。未来以实际 `git status` 为准。
 - `application-dev.yml` 当前包含明文 MySQL 密码，`application.yml` 当前包含固定 JWT secret。提交前必须改为环境变量，并提供安全的示例配置；不要把真实凭据写入 README、设计文档或提交历史。

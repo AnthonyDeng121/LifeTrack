@@ -9,7 +9,18 @@ function Invoke-LifeTrack([string]$Method, [string]$Path, $Body = $null, [string
     if ($Token) { $headers.Authorization = "Bearer $Token" }
     $parameters = @{ Method = $Method; Uri = "$BaseUrl$Path"; Headers = $headers; ContentType = "application/json; charset=utf-8" }
     if ($null -ne $Body) { $parameters.Body = $Body | ConvertTo-Json -Depth 8 -Compress }
-    Invoke-RestMethod @parameters
+    try { Invoke-RestMethod @parameters }
+    catch {
+        if ($null -eq $_.Exception.Response) { throw }
+        $errorBody = $_.ErrorDetails.Message
+        if ([string]::IsNullOrWhiteSpace($errorBody)) {
+            $reader = [IO.StreamReader]::new($_.Exception.Response.GetResponseStream(), [Text.Encoding]::UTF8)
+            try { $errorBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
+        $parsed = $errorBody | ConvertFrom-Json
+        if ($null -eq $parsed.code) { throw }
+        return $parsed
+    }
 }
 
 $login = Invoke-LifeTrack "POST" "/auth/login/dev"

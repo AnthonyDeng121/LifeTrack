@@ -3,7 +3,9 @@ package com.lifetrack.controller;
 import com.lifetrack.common.Result;
 import com.lifetrack.dto.LoginResponse;
 import com.lifetrack.dto.PhoneLoginRequest;
-import com.lifetrack.dto.WechatLoginRequest;
+import com.lifetrack.dto.AuthOptionsResponse;
+import com.lifetrack.config.DevelopmentAuthPolicy;
+import jakarta.validation.Valid;
 import com.lifetrack.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,16 +19,17 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final DevelopmentAuthPolicy authPolicy;
 
-    @Operation(summary = "微信登录", description = "通过微信 code 获取 token，若用户不存在则自动注册")
-    @PostMapping("/login/wechat")
-    public Result<LoginResponse> loginWithWechat(@RequestBody WechatLoginRequest request) {
-        return Result.success(authService.loginWithWechat(request));
+    @Operation(summary = "查询当前环境可用的登录方式")
+    @GetMapping("/options")
+    public Result<AuthOptionsResponse> options() {
+        return Result.success(new AuthOptionsResponse(authPolicy.devLoginEnabled(), authPolicy.demoPhoneEnabled(), authPolicy.demoCode()));
     }
 
     @Operation(summary = "手机号登录", description = "通过手机号和验证码登录，若用户不存在则自动注册")
     @PostMapping("/login/phone")
-    public Result<LoginResponse> loginWithPhone(@RequestBody PhoneLoginRequest request) {
+    public Result<LoginResponse> loginWithPhone(@RequestBody @Valid PhoneLoginRequest request) {
         return Result.success(authService.loginWithPhone(request));
     }
 

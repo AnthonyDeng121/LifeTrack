@@ -2,7 +2,8 @@ package com.lifetrack.service.impl;
 
 import com.lifetrack.dto.LoginResponse;
 import com.lifetrack.dto.PhoneLoginRequest;
-import com.lifetrack.dto.WechatLoginRequest;
+import com.lifetrack.config.DevelopmentAuthPolicy;
+import com.lifetrack.exception.BusinessException;
 import com.lifetrack.entity.User;
 import com.lifetrack.repository.UserRepository;
 import com.lifetrack.service.AuthService;
@@ -21,37 +22,20 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
-
-    @Override
-    @Transactional
-    public LoginResponse loginWithWechat(WechatLoginRequest request) {
-        // 1. 调用微信接口获取 openid (这里 mock)
-        log.info("Wechat login with code: {}", request.getCode());
-        String openid = "mock_openid_" + request.getCode(); // 实际应调用微信 API
-
-        // 2. 根据 openid 查找用户
-        User user = userRepository.findByOpenid(openid)
-                .orElseGet(() -> {
-                    // 3. 如果用户不存在，则注册新用户
-                    User newUser = User.builder()
-                            .username("微信用户_" + UUID.randomUUID().toString().substring(0, 8))
-                            .password("NOPASSWORD") // 第三方登录不设密码
-                            .openid(openid)
-                            .avatar("https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=default+avatar+icon&image_size=square")
-                            .build();
-                    return userRepository.save(newUser);
-                });
-
-        return createLoginResponse(user);
-    }
+    private final DevelopmentAuthPolicy authPolicy;
 
     @Override
     @Transactional
     public LoginResponse loginWithPhone(PhoneLoginRequest request) {
-        // 1. 验证手机验证码 (这里 mock)
-        log.info("Phone login with phone: {}, code: {}", request.getPhone(), request.getVerifyCode());
-        if (!"123456".equals(request.getVerifyCode())) {
-            throw new RuntimeException("验证码错误");
+        authPolicy.requireDemoPhone();
+        if (request == null || request.getPhone() == null || !request.getPhone().matches("1[3-9][0-9]{9}")) {
+            throw new BusinessException(400, "请输入有效的11位手机号");
+        }
+        if (request.getVerifyCode() == null || !request.getVerifyCode().matches("[0-9]{6}")) {
+            throw new BusinessException(400, "验证码必须为6位数字");
+        }
+        if (!authPolicy.demoCode().equals(request.getVerifyCode())) {
+            throw new BusinessException(400, "验证码错误");
         }
 
         // 2. 根据手机号查找用户
@@ -59,7 +43,7 @@ public class AuthServiceImpl implements AuthService {
                 .orElseGet(() -> {
                     // 3. 如果用户不存在，则注册新用户
                     User newUser = User.builder()
-                            .username("手机用户_" + request.getPhone().substring(7))
+                            .username("demo_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16))
                             .password("NOPASSWORD")
                             .phone(request.getPhone())
                             .avatar("https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=default+avatar+icon&image_size=square")
@@ -73,14 +57,15 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResponse loginDev() {
-        log.info("Developer one-click login triggered");
+        authPolicy.requireDevLogin();
+        log.info("Developer login permitted in development environment");
         String devUsername = "dev_admin";
         
         User user = userRepository.findByUsername(devUsername)
                 .orElseGet(() -> {
                     User devUser = User.builder()
                             .username(devUsername)
-                            .password("dev_password")
+                            .password("DISABLED_DEVELOPMENT_PASSWORD")
                             .avatar("https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=developer+avatar&image_size=square")
                             .build();
                     return userRepository.save(devUser);

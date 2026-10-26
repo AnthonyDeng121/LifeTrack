@@ -31,6 +31,8 @@ assert.equal(resolveApiBaseUrl({ runtimeHost: "192.168.31.144" }), "http://192.1
 assert.equal(resolveApiBaseUrl({ runtimeHost: "localhost" }), API_BASE_URL);
 
 assert.deepEqual(endpoints.auth.devLogin, { method: "POST", path: "/auth/login/dev" });
+assert.deepEqual(endpoints.auth.options, { method: "GET", path: "/auth/options" });
+assert.equal(endpoints.auth.wechatLogin, undefined);
 assert.deepEqual(endpoints.auth.phoneLogin("18800001111", "123456"), {
   method: "POST",
   path: "/auth/login/phone",

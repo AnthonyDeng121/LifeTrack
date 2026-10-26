@@ -157,3 +157,27 @@ assert.equal(savedMood, 4);
 const recordSource = await readFile(new URL("../src/pages/record/record.vue", import.meta.url), "utf8");
 assert.doesNotMatch(recordSource, /anxietyLevel|loadMoreHistory|manualMinutes/);
 console.log("One-click attendance, bounded history pages and profile mood checks passed.");
+
+let authCalls = 0;
+let phoneCalls = 0;
+let redirects = 0;
+let optionsFailure = false;
+let options = { devLoginEnabled: false, demoPhoneEnabled: false, demoVerifyCode: null };
+const login = await page("login", {
+  getAuthOptions: async () => { if (optionsFailure) throw new Error("network"); return options; },
+  devLogin: async () => { authCalls++; }, phoneLogin: async () => { phoneCalls++; },
+  uni: { showToast() {}, redirectTo() { redirects++; } },
+}, "authOptions, optionsError, phone, verifyCode, loadAuthOptions, sendCode, handlePhoneLogin, handleDevLogin");
+await login.loadAuthOptions();
+await login.handleDevLogin(); login.sendCode();
+assert.equal(authCalls, 0); assert.equal(login.verifyCode.value, "");
+options = { devLoginEnabled: true, demoPhoneEnabled: true, demoVerifyCode: "654321" };
+await login.loadAuthOptions(); login.sendCode();
+assert.equal(login.verifyCode.value, "654321");
+login.phone.value = "1"; await login.handlePhoneLogin(); assert.equal(phoneCalls, 0);
+login.phone.value = "13800001234"; await login.handlePhoneLogin(); assert.equal(phoneCalls, 1);
+await login.handleDevLogin(); assert.equal(authCalls, 1); assert.equal(redirects, 2);
+optionsFailure = true; await login.loadAuthOptions(); await login.handleDevLogin();
+assert.equal(authCalls, 1); assert.notEqual(login.optionsError.value, "");
+assert.equal(login.authOptions.value.devLoginEnabled, false);
+console.log("Authentication capability switches and login validation checks passed.");

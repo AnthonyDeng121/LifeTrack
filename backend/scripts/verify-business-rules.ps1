@@ -11,7 +11,18 @@ function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
     $parameters = @{ Method = $Method; Uri = "$BaseUrl$Path"; ContentType = "application/json; charset=utf-8"; TimeoutSec = 60 }
     if ($script:token) { $parameters.Headers = @{ Authorization = "Bearer $script:token" } }
     if ($null -ne $Body) { $parameters.Body = ConvertTo-Json -InputObject $Body -Depth 8 -Compress }
-    Invoke-RestMethod @parameters
+    try { Invoke-RestMethod @parameters }
+    catch {
+        if ($null -eq $_.Exception.Response) { throw }
+        $errorBody = $_.ErrorDetails.Message
+        if ([string]::IsNullOrWhiteSpace($errorBody)) {
+            $reader = [IO.StreamReader]::new($_.Exception.Response.GetResponseStream(), [Text.Encoding]::UTF8)
+            try { $errorBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
+        $parsed = $errorBody | ConvertFrom-Json
+        if ($null -eq $parsed.code) { throw }
+        return $parsed
+    }
 }
 function New-Plan($Start, $End, $Steps = @(@{ content = "Business rules acceptance"; weight = 1 })) {
     $response = Invoke-Api "POST" "/tasks/manual" @{

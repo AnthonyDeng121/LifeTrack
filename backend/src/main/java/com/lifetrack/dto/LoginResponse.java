@@ -13,6 +13,7 @@ import lombok.NoArgsConstructor;
 @Schema(description = "登录响应")
 public class LoginResponse {
     @Schema(description = "Token")
+    @lombok.ToString.Exclude
     private String token;
     
     @Schema(description = "用户ID")

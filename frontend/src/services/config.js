@@ -17,16 +17,12 @@ export function resolveApiBaseUrl({ storedBase = "", runtimeHost = "" } = {}) {
 
 export const endpoints = {
   auth: {
+    options: { method: "GET", path: "/auth/options" },
     devLogin: { method: "POST", path: "/auth/login/dev" },
     phoneLogin: (phone, verifyCode) => ({
       method: "POST",
       path: "/auth/login/phone",
       data: { phone, verifyCode },
-    }),
-    wechatLogin: (code) => ({
-      method: "POST",
-      path: "/auth/login/wechat",
-      data: { code },
     }),
   },
   dashboard: {

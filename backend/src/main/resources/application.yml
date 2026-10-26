@@ -1,8 +1,28 @@
 spring:
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: LifeTrack
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/lifetrack?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${DDL_AUTO:validate}
+
+server:
+  port: 8081
+
+auth:
+  dev-login-enabled: ${AUTH_DEV_LOGIN_ENABLED:false}
+  demo-phone-enabled: ${AUTH_DEMO_PHONE_ENABLED:false}
+  demo-code: ${AUTH_DEMO_CODE:123456}
+
+# 不让框架调试日志输出认证请求、响应或学习记录正文。
+logging:
+  level:
+    org.springframework.web: INFO
+    org.springframework.http: INFO
 
 # SpringDoc OpenAPI 配置
 springdoc:

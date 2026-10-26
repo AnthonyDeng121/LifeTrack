@@ -57,7 +57,7 @@ public class ActionServiceImpl implements ActionService {
     private ActionSyncResponse applyRecord(ActionSyncRequest request, java.time.LocalDateTime recordedAt, Integer fixedDuration) {
         Long userId = UserContext.getUserId();
         boolean historical = fixedDuration != null;
-        log.info("User {} is syncing action: {}", userId, request.getRawInput());
+        log.info("User {} is syncing a learning record", userId);
 
         LocalDate today = recordedAt.toLocalDate();
         // 按固定顺序锁定计划，避免并发覆盖进度和重复生成打卡。

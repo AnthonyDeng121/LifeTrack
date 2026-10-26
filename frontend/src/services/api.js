@@ -1,6 +1,8 @@
 import { endpoints } from "./config";
 import { request, saveLogin } from "./http";
 
+export function getAuthOptions() { return request({ ...endpoints.auth.options, showError: false }); }
+
 export async function devLogin() {
   const data = await request({ ...endpoints.auth.devLogin });
   saveLogin(data);

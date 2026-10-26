@@ -63,6 +63,7 @@ PowerShell 示例：
 $env:DB_USERNAME = "your_mysql_username"
 $env:DB_PASSWORD = "your_mysql_password"
 $env:JWT_SECRET = "replace_with_a_random_secret_of_at_least_32_characters"
+$env:SPRING_PROFILES_ACTIVE = "dev"
 ```
 
 Bash 示例：
@@ -71,6 +72,7 @@ Bash 示例：
 export DB_USERNAME="your_mysql_username"
 export DB_PASSWORD="your_mysql_password"
 export JWT_SECRET="replace_with_a_random_secret_of_at_least_32_characters"
+export SPRING_PROFILES_ACTIVE="dev"
 ```
 
 可选变量：
@@ -201,10 +203,15 @@ AI 服务默认地址：`http://127.0.0.1:5000`。如果服务或模型接口不
 
 以下方式只用于本地课程演示环境：
 
-- 登录页“开发环境一键登录”：后端自动创建或复用开发用户。
-- 手机号登录：填写任意测试手机号，开发验证码为 `123456`。
+- 显式 `dev` 环境下，登录页“开发环境一键登录”创建或复用开发用户。
+- 演示手机号登录需有效的11位测试手机号和6位验证码；点击“查看演示验证码”获取当前开发配置，不会发送真实短信。
+- `AUTH_DEV_LOGIN_ENABLED`、`AUTH_DEMO_PHONE_ENABLED` 分别控制这两个入口。开发环境默认开启，可设为 `false` 关闭。
+- 无环境配置、`prod`、`test` 或混合环境中，两个入口始终关闭，即使误设开关为 `true` 也不能绕过。基础配置不再自动选择开发环境，本地启动脚本会显式选择 `dev`。
+- 微信登录已删除；历史用户与业务数据不作破坏性清理。
 
 请勿把开发验证码和一键登录机制直接用于生产环境。
+
+当前项目未接入真实短信服务；非开发环境不提供演示身份认证。异常响应保留 `code/message/data` 格式，并同步返回实际 HTTP 400、401、403、404、409、500 等状态。认证配置与验收说明见[异常处理与开发认证修复](docs/异常处理与开发认证修复.md)。
 
 ## 验证命令
 

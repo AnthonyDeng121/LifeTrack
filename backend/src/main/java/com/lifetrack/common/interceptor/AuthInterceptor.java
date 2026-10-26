@@ -58,7 +58,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 
                 return true;
             } catch (Exception e) {
-                log.error("Token validation failed: {}", e.getMessage());
+                log.warn("Token validation failed");
                 throw new BusinessException(401, "无效的 Token");
             }
         }

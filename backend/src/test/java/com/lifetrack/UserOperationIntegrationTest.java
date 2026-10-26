@@ -50,7 +50,9 @@ class UserOperationIntegrationTest {
                 .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(15)).method(method, publisher).build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        return mapper.readTree(response.body());
+        JsonNode result = mapper.readTree(response.body());
+        assertEquals(result.path("code").asInt(), response.statusCode(), "HTTP状态必须与业务码一致");
+        return result;
     }
     long create(LocalDate start, LocalDate end) throws Exception {
         var response = api("POST", "/tasks/manual", Map.of("title", "用户操作集成测试", "category", "学习",
@@ -141,5 +143,14 @@ class UserOperationIntegrationTest {
         assertFalse(after.has("checkInCompletionRate"));
         assertEquals(1, api("GET", "/check-ins?taskId=" + cancelled, null).path("data").size());
         assertEquals(1, api("GET", "/actions/history", null).path("data").path("total").asInt());
+    }
+
+    @Test void invalidCategoryAndDashboardAccessHaveConsistentClientErrorStatuses() throws Exception {
+        var invalid = api("POST", "/tasks/manual", Map.of("title", "非法分类测试", "category", "INVALID",
+                "startDate", today.toString(), "endDate", today.plusDays(7).toString(), "targetDays", 5,
+                "subTasks", List.of(Map.of("content", "合法步骤", "weight", 1))));
+        assertEquals(400, invalid.path("code").asInt());
+        assertEquals("请选择有效的计划分类", invalid.path("message").asText());
+        assertEquals(404, api("GET", "/dashboard/tasks/9223372036854775807/contributions", null).path("code").asInt());
     }
 }

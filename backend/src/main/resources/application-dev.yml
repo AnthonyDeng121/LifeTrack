@@ -1,6 +1,10 @@
 server:
   port: 8081
 
+auth:
+  dev-login-enabled: ${AUTH_DEV_LOGIN_ENABLED:true}
+  demo-phone-enabled: ${AUTH_DEMO_PHONE_ENABLED:true}
+
 spring:
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/lifetrack?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true}
