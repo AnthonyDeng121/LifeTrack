@@ -30,7 +30,7 @@ class FeedbackServiceImplTest {
                 .targetDays(3).totalProgress(BigDecimal.ONE).build();
         when(tasks.findByUserId(7L)).thenReturn(List.of(plan));
         when(logs.findByUserIdAndCreatedAtBetween(eq(7L), any(), any())).thenReturn(List.of());
-        when(checkIns.findByUserIdAndTaskIdOrderByCheckInDateAsc(7L, 1L)).thenReturn(List.of(CheckInRecord.builder().checkInDate(java.time.LocalDate.now()).build()));
+        when(checkIns.findByUserIdAndTaskIdIn(eq(7L), anyCollection())).thenReturn(List.of(CheckInRecord.builder().taskId(1L).checkInDate(java.time.LocalDate.now()).build()));
         when(ai.generateWeeklyReport(eq(7L), anyList(), anyList())).thenReturn(com.lifetrack.dto.FeedbackReportResponse.builder().build());
         var report = service.getFeedbackReport();
         assertTrue(report.getPlanOutcomeSummary().contains("已完成 1 / 1 项"));
@@ -53,8 +53,8 @@ class FeedbackServiceImplTest {
         when(tasks.findByUserId(7L)).thenReturn(List.of(first, second, cancelled));
         var included = ActionLog.builder().taskId(1L).build();
         when(logs.findByUserIdAndCreatedAtBetween(eq(7L), any(), any())).thenReturn(List.of(included, ActionLog.builder().taskId(3L).build()));
-        var record = CheckInRecord.builder().checkInDate(java.time.LocalDate.now()).build();
-        when(checkIns.findByUserIdAndTaskIdOrderByCheckInDateAsc(eq(7L), anyLong())).thenReturn(List.of(record));
+        var record = CheckInRecord.builder().taskId(1L).checkInDate(java.time.LocalDate.now()).build();
+        when(checkIns.findByUserIdAndTaskIdIn(eq(7L), anyCollection())).thenReturn(List.of(record));
         when(ai.generateWeeklyReport(eq(7L), anyList(), anyList())).thenReturn(com.lifetrack.dto.FeedbackReportResponse.builder().build());
         var result = service.getFeedbackReport();
         assertTrue(result.getPlanOutcomeSummary().contains("已完成 1 / 2 项"));

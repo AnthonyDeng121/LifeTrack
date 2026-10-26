@@ -32,6 +32,7 @@ class TaskBusinessRulesTest {
     SubTask step;
 
     @BeforeEach void setup() {
+        org.mockito.Mockito.lenient().when(steps.findTaskIdById(org.mockito.ArgumentMatchers.anyLong())).thenAnswer(i -> steps.findById(i.getArgument(0)).map(com.lifetrack.entity.SubTask::getTaskId));
         UserContext.setUserId(7L);
         plan = Task.builder().id(1L).userId(7L).title("课程计划").category(Task.Category.学习)
                 .status(PlanStatus.IN_PROGRESS).startDate(today.minusDays(2)).endDate(today.plusDays(7))

@@ -23,11 +23,15 @@ class DeferredLearningRecordServiceTest {
     @Mock ActionLogRepository logs;
     @Mock CheckInService checkInService;
     @Mock ActionService actions;
+    @Mock org.springframework.transaction.support.TransactionOperations recordTransactions;
     @InjectMocks DeferredLearningRecordService service;
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
     Task task;
     DeferredLearningRecord pending;
     @BeforeEach void setup() {
+        lenient().when(recordTransactions.execute(any())).thenAnswer(i -> ((org.springframework.transaction.support.TransactionCallback<?>) i.getArgument(0)).doInTransaction(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class)));
+        lenient().when(records.findById(anyLong())).thenAnswer(i -> records.findLockedById(i.getArgument(0)));
+        lenient().when(tasks.findById(anyLong())).thenAnswer(i -> tasks.findLockedById(i.getArgument(0)));
         UserContext.setUserId(7L);
         task = Task.builder().id(1L).userId(7L).title("学习计划").status(PlanStatus.IN_PROGRESS)
                 .startDate(today.minusDays(5)).endDate(today.plusDays(5)).build();
@@ -54,16 +58,16 @@ class DeferredLearningRecordServiceTest {
     }
     @Test void retryUsesOriginalDateAndCannotApplyTwice() {
         retryable();
-        when(actions.syncHistoricalAction(any(), eq(pending.getRecordedAt()), eq(30)))
+        when(actions.syncPreparedAction(any()))
                 .thenReturn(ActionSyncResponse.builder().updates(List.of(ActionSyncResponse.TaskUpdateDetail.builder().build())).build());
         service.retry(10L);
         assertEquals(DeferredLearningRecord.Status.APPLIED, pending.getStatus());
         assertThrows(BusinessException.class, () -> service.retry(10L));
-        verify(actions, times(1)).syncHistoricalAction(any(), any(), anyInt());
+        verify(actions, times(1)).syncPreparedAction(any());
     }
     @Test void retryRetainsPendingWhenAIStillUnavailable() {
         retryable();
-        when(actions.syncHistoricalAction(any(), any(), anyInt())).thenReturn(ActionSyncResponse.builder()
+        when(actions.syncPreparedAction(any())).thenReturn(ActionSyncResponse.builder()
                 .analysisUnavailable(true).updates(List.of()).aiAnalysis("暂不可用").build());
         service.retry(10L);
         assertEquals(DeferredLearningRecord.Status.PENDING, pending.getStatus());
@@ -71,7 +75,7 @@ class DeferredLearningRecordServiceTest {
     }
     @Test void unmatchedRetryRetainsRecordWithoutClaimingProgress() {
         retryable();
-        when(actions.syncHistoricalAction(any(), any(), anyInt())).thenReturn(ActionSyncResponse.builder().updates(List.of()).build());
+        when(actions.syncPreparedAction(any())).thenReturn(ActionSyncResponse.builder().updates(List.of()).build());
         service.retry(10L);
         assertEquals(DeferredLearningRecord.Status.UNMATCHED, pending.getStatus());
     }

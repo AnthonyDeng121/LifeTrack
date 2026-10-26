@@ -39,7 +39,7 @@ public class UserProfile {
     @PrePersist
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
         if (energyLevel == null) {
             energyLevel = 100;
         }

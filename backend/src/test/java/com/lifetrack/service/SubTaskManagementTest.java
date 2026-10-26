@@ -26,6 +26,7 @@ class SubTaskManagementTest {
     @InjectMocks TaskService service;
     Task task;
     @BeforeEach void setup() {
+        org.mockito.Mockito.lenient().when(steps.findTaskIdById(org.mockito.ArgumentMatchers.anyLong())).thenAnswer(i -> steps.findById(i.getArgument(0)).map(com.lifetrack.entity.SubTask::getTaskId));
         UserContext.setUserId(7L);
         java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
         task = Task.builder().id(1L).userId(7L).status(PlanStatus.IN_PROGRESS)

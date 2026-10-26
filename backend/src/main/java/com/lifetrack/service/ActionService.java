@@ -15,6 +15,8 @@ public interface ActionService {
 
     // 仅供已持久化的故障记录补分析调用，日期不能由外部请求自行指定。
     ActionSyncResponse syncHistoricalAction(ActionSyncRequest request, java.time.LocalDateTime recordedAt, int durationMinutes);
+    PreparedLearningRecord prepareHistoricalAction(ActionSyncRequest request, java.time.LocalDateTime recordedAt, int durationMinutes);
+    ActionSyncResponse syncPreparedAction(PreparedLearningRecord prepared);
     void refreshAttendance(Long taskId, java.time.LocalDate date);
 
     /**

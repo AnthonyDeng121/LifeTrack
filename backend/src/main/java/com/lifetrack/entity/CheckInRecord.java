@@ -50,6 +50,6 @@ public class CheckInRecord {
     @PrePersist
     void onCreate() {
         if (durationMinutes == null) durationMinutes = 0;
-        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
     }
 }

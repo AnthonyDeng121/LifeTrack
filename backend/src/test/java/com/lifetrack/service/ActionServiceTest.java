@@ -26,12 +26,25 @@ class ActionServiceTest {
     @Mock AIService ai;
     @Mock CheckInRecordRepository checkIns;
     @Mock DeferredLearningRecordRepository deferredRecords;
+    @Mock org.springframework.transaction.support.TransactionOperations recordTransactions;
     @InjectMocks ActionServiceImpl service;
     Task plan;
     SubTask step;
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
 
     @BeforeEach void setup() {
+        lenient().when(recordTransactions.execute(any())).thenAnswer(i -> ((org.springframework.transaction.support.TransactionCallback<?>) i.getArgument(0)).doInTransaction(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class)));
+        lenient().when(tasks.findById(anyLong())).thenAnswer(i -> tasks.findLockedById(i.getArgument(0)));
+        lenient().when(tasks.findAllById(any())).thenAnswer(i -> {
+            java.util.List<Task> result = new java.util.ArrayList<>();
+            for (Long id : (Iterable<Long>) i.getArgument(0)) tasks.findById(id).ifPresent(result::add);
+            return result;
+        });
+        lenient().when(steps.findByTaskIdInOrderByTaskIdAscOrderNumAsc(anyCollection())).thenAnswer(i -> {
+            java.util.List<SubTask> result = new java.util.ArrayList<>();
+            for (Long id : (java.util.Collection<Long>) i.getArgument(0)) result.addAll(steps.findByTaskIdOrderByOrderNumAsc(id));
+            return result;
+        });
         UserContext.setUserId(7L);
         plan = Task.builder().id(1L).userId(7L).title("编曲学习").category(Task.Category.学习)
                 .status(PlanStatus.IN_PROGRESS).startDate(today.minusDays(1)).endDate(today.plusDays(2))

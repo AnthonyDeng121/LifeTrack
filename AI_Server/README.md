@@ -7,10 +7,12 @@
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install flask requests
+pip install -r requirements.txt
 $env:ZHIPU_API_KEY = "your_zhipu_api_key"
 python ai_server.py
 ```
+
+`requirements.txt` 固定了已验证的直接和间接依赖版本；当前验证环境为 Python 3.12。本地启动脚本也按此文件安装。
 
 可选变量：
 

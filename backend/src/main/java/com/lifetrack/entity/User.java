@@ -46,12 +46,12 @@ public class User {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        createdAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+        updatedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
     }
 }

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DeferredLearningRecordService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private final org.springframework.transaction.support.TransactionOperations recordTransactions;
     private final DeferredLearningRecordRepository records;
     private final TaskRepository tasks;
     private final CheckInRecordRepository checkIns;
@@ -54,22 +55,32 @@ public class DeferredLearningRecordService {
         return entries.stream().map(r -> response(r, titles.getOrDefault(r.getTaskId(), "已删除的计划"))).toList();
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public ActionSyncResponse retry(Long id) {
         Long userId = UserContext.getUserId();
-        DeferredLearningRecord record = records.findLockedById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
+        DeferredLearningRecord record = records.findById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
         if (!record.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
         if (record.getStatus() == DeferredLearningRecord.Status.APPLIED) throw new BusinessException(409, "该记录已处理，请勿重复补进度");
-        Task task = ownedLockedTask(record.getTaskId(), userId);
+        Task task = tasks.findById(record.getTaskId()).orElseThrow(() -> new BusinessException(404, "计划不存在"));
         if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) {
             throw new BusinessException(400, "已完成或已取消计划不可补分析，计划不会重新打开");
         }
         ActionSyncRequest request = new ActionSyncRequest();
         request.setTaskId(record.getTaskId()); request.setRawInput(record.getContent());
         request.setDurationInput(record.getDurationMinutes() + "分钟");
+        PreparedLearningRecord prepared = actions.prepareHistoricalAction(request, record.getRecordedAt(), record.getDurationMinutes());
+        return recordTransactions.execute(tx -> applyRetry(id, userId, record, prepared));
+    }
+
+    private ActionSyncResponse applyRetry(Long id, Long userId, DeferredLearningRecord snapshot, PreparedLearningRecord prepared) {
+        Task parent = ownedLockedTask(snapshot.getTaskId(), userId);
+        if (parent.getStatus() == PlanStatus.COMPLETED || parent.getStatus() == PlanStatus.CANCELLED)
+            throw new BusinessException(400, "已完成或已取消计划不可补分析，计划不会重新打开");
+        DeferredLearningRecord record = records.findLockedById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
+        if (!record.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
+        if (record.getStatus() == DeferredLearningRecord.Status.APPLIED) throw new BusinessException(409, "该记录已处理，请勿重复补进度");
         // 与进度写入共用事务。先标记已处理，汇总时不再重复计算这条待分析时长。
         record.setStatus(DeferredLearningRecord.Status.APPLIED);
-        ActionSyncResponse result = actions.syncHistoricalAction(request, record.getRecordedAt(), record.getDurationMinutes());
+        ActionSyncResponse result = actions.syncPreparedAction(prepared);
         record.setStatus(result.isAnalysisUnavailable() ? DeferredLearningRecord.Status.PENDING
                 : result.getUpdates().isEmpty() ? DeferredLearningRecord.Status.UNMATCHED : DeferredLearningRecord.Status.APPLIED);
         record.setLastAnalysis(result.getAiAnalysis());

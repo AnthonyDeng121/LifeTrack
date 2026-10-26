@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ActionServiceImpl implements ActionService {
 
+    private final org.springframework.transaction.support.TransactionOperations recordTransactions;
     private final ActionLogRepository actionLogRepository;
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
@@ -43,45 +44,52 @@ public class ActionServiceImpl implements ActionService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     @Override
-    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ActionSyncResponse syncAction(ActionSyncRequest request) {
-        return applyRecord(request, java.time.LocalDateTime.now(BUSINESS_ZONE), null);
+        return syncPreparedAction(prepareRecord(request, java.time.LocalDateTime.now(BUSINESS_ZONE), null));
     }
 
     @Override
-    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ActionSyncResponse syncHistoricalAction(ActionSyncRequest request, java.time.LocalDateTime recordedAt, int durationMinutes) {
-        return applyRecord(request, recordedAt, durationMinutes);
+        return syncPreparedAction(prepareHistoricalAction(request, recordedAt, durationMinutes));
     }
 
-    private ActionSyncResponse applyRecord(ActionSyncRequest request, java.time.LocalDateTime recordedAt, Integer fixedDuration) {
+    @Override
+    public com.lifetrack.service.PreparedLearningRecord prepareHistoricalAction(ActionSyncRequest request, java.time.LocalDateTime at, int minutes) {
+        return prepareRecord(request, at, minutes);
+    }
+
+    @Override
+    public ActionSyncResponse syncPreparedAction(com.lifetrack.service.PreparedLearningRecord prepared) {
+        return recordTransactions.execute(status -> applyRecord(prepared));
+    }
+
+    private com.lifetrack.service.PreparedLearningRecord prepareRecord(ActionSyncRequest request, java.time.LocalDateTime recordedAt, Integer fixedDuration) {
         Long userId = UserContext.getUserId();
         boolean historical = fixedDuration != null;
         log.info("User {} is syncing a learning record", userId);
 
         LocalDate today = recordedAt.toLocalDate();
-        // 按固定顺序锁定计划，避免并发覆盖进度和重复生成打卡。
+        // 读取快照；AI 网络请求期间不打开写事务、不持有计划行锁。
         List<Task> activeTasks = new ArrayList<>();
         List<Long> candidates = historical && request.getTaskId() != null ? List.of(request.getTaskId())
                 : taskRepository.findIdsByUserIdAndStatus(userId, PlanStatus.IN_PROGRESS);
         if (request.getTaskId() != null && !candidates.contains(request.getTaskId())) {
             throw new BusinessException(400, "所选计划不存在、无权访问或当前不可记录");
         }
-        candidates.stream().filter(id -> request.getTaskId() == null || id.equals(request.getTaskId()))
-                .sorted().forEach(candidate -> {
-                    Task task = taskRepository.findLockedById(candidate).orElse(null);
-                    if (task != null && task.getUserId().equals(userId) && (task.getStatus() == PlanStatus.IN_PROGRESS || historical && task.getStatus() == PlanStatus.EXPIRED)
-                            && task.getStartDate() != null && task.getEndDate() != null
-                            && !today.isBefore(task.getStartDate()) && !today.isAfter(task.getEndDate())) {
-                        activeTasks.add(task);
-                    }
-                });
+        List<Long> selected = candidates.stream().filter(id -> request.getTaskId() == null || id.equals(request.getTaskId())).toList();
+        for (Task task : taskRepository.findAllById(selected)) {
+            if (task.getUserId().equals(userId) && (task.getStatus() == PlanStatus.IN_PROGRESS || historical && task.getStatus() == PlanStatus.EXPIRED)
+                    && task.getStartDate() != null && task.getEndDate() != null
+                    && !today.isBefore(task.getStartDate()) && !today.isAfter(task.getEndDate())) activeTasks.add(task);
+        }
         if (activeTasks.isEmpty()) throw new BusinessException(400, "没有处于有效周期内的进行中计划，请先创建或调整计划");
         Map<Long, Task> taskMap = activeTasks.stream().collect(Collectors.toMap(Task::getId, t -> t));
         Map<Long, SubTask> eligible = new LinkedHashMap<>();
         List<SubTask> aiCandidates = new ArrayList<>();
+        Map<Long, List<SubTask>> planSteps = subTaskRepository.findByTaskIdInOrderByTaskIdAscOrderNumAsc(taskMap.keySet()).stream()
+                .collect(Collectors.groupingBy(SubTask::getTaskId));
         for (Task task : activeTasks) {
-            for (SubTask step : subTaskRepository.findByTaskIdOrderByOrderNumAsc(task.getId())) {
+            for (SubTask step : planSteps.getOrDefault(task.getId(), List.of())) {
                 if (step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) continue;
                 eligible.put(step.getId(), step);
                 aiCandidates.add(SubTask.builder().id(step.getId()).taskId(task.getId())
@@ -90,10 +98,55 @@ public class ActionServiceImpl implements ActionService {
             }
         }
         if (eligible.isEmpty()) throw new BusinessException(400, "没有未完成的学习步骤，请先添加或拆解步骤");
+        Map<Long, String> planState = activeTasks.stream().collect(Collectors.toMap(Task::getId, com.lifetrack.service.PreparedLearningRecord::state));
+        Map<Long, String> stepState = eligible.values().stream().collect(Collectors.toMap(SubTask::getId, com.lifetrack.service.PreparedLearningRecord::state));
+        Map<Long, Long> stepPlans = eligible.values().stream().collect(Collectors.toMap(SubTask::getId, SubTask::getTaskId));
         AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationInput(), aiCandidates);
+        return new com.lifetrack.service.PreparedLearningRecord(request, recordedAt, fixedDuration, userId,
+                Map.copyOf(planState), Map.copyOf(stepState), Map.copyOf(stepPlans), aiResult);
+    }
+
+    private ActionSyncResponse applyRecord(com.lifetrack.service.PreparedLearningRecord prepared) {
+        Long userId = UserContext.getUserId();
+        if (!Objects.equals(userId, prepared.userId())) throw new BusinessException(403, "无权应用该分析结果");
+        ActionSyncRequest request = prepared.request();
+        java.time.LocalDateTime recordedAt = prepared.recordedAt();
+        Integer fixedDuration = prepared.fixedDuration();
+        boolean historical = fixedDuration != null;
+        LocalDate today = recordedAt.toLocalDate();
         if (!historical && !today.equals(LocalDate.now(BUSINESS_ZONE))) {
             throw new BusinessException(409, "日期已变化，请重新提交今日记录");
         }
+        AIMatchResult aiResult = prepared.analysis();
+        Set<Long> matchedPlanIds = new TreeSet<>();
+        if (aiResult.getMatches() != null) for (var match : aiResult.getMatches()) {
+            if (match != null && match.getIncrement() != null && match.getIncrement().signum() > 0
+                    && prepared.stepPlans().containsKey(match.getSubTaskId())) {
+                matchedPlanIds.add(prepared.stepPlans().get(match.getSubTaskId()));
+            }
+        }
+        Map<Long, Task> taskMap = new HashMap<>();
+        Map<Long, SubTask> eligible = new LinkedHashMap<>();
+        for (Long id : matchedPlanIds) {
+            Task task = taskRepository.findLockedById(id).orElseThrow(() -> new BusinessException(409, "计划已删除，请重新提交记录"));
+            if (!task.getUserId().equals(userId) || !Objects.equals(prepared.plans().get(id), com.lifetrack.service.PreparedLearningRecord.state(task))
+                    || !(task.getStatus() == PlanStatus.IN_PROGRESS || historical && task.getStatus() == PlanStatus.EXPIRED)
+                    || today.isBefore(task.getStartDate()) || today.isAfter(task.getEndDate())) {
+                throw new BusinessException(409, "AI分析期间计划已变化，请重新提交记录");
+            }
+            taskMap.put(id, task);
+            for (SubTask step : subTaskRepository.findByTaskIdOrderByOrderNumAsc(id)) {
+                if (prepared.steps().containsKey(step.getId())) {
+                    if (!Objects.equals(prepared.steps().get(step.getId()), com.lifetrack.service.PreparedLearningRecord.state(step)))
+                        throw new BusinessException(409, "AI分析期间学习步骤已变化，请重新提交记录");
+                    eligible.put(step.getId(), step);
+                }
+            }
+        }
+        if (aiResult.getMatches() != null && aiResult.getMatches().stream().filter(Objects::nonNull)
+                .anyMatch(m -> prepared.steps().containsKey(m.getSubTaskId()) && !eligible.containsKey(m.getSubTaskId())
+                    && m.getIncrement() != null && m.getIncrement().signum() > 0))
+            throw new BusinessException(409, "AI分析期间学习步骤已删除，请重新提交记录");
         List<ActionSyncResponse.TaskUpdateDetail> updates = new ArrayList<>();
         int savedDuration = 0;
         Set<Long> matchedSteps = new HashSet<>();

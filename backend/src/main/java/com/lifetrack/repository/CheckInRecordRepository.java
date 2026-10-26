@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface CheckInRecordRepository extends JpaRepository<CheckInRecord, Long> {
+    List<CheckInRecord> findByUserIdAndTaskIdIn(Long userId, java.util.Collection<Long> taskIds);
     java.util.Optional<CheckInRecord> findByUserIdAndTaskIdAndCheckInDate(Long userId, Long taskId, LocalDate date);
     boolean existsByUserIdAndTaskIdAndCheckInDate(Long userId, Long taskId, LocalDate checkInDate);
 

@@ -40,6 +40,10 @@ public class FeedbackServiceImpl implements FeedbackService {
                 .filter(log -> planIds.contains(log.getTaskId())).toList();
         java.util.Set<java.time.LocalDate> attendedDates = new java.util.HashSet<>();
 
+        java.util.Map<Long, java.util.Set<java.time.LocalDate>> planDates = planIds.isEmpty() ? java.util.Map.of()
+                : checkInRecordRepository.findByUserIdAndTaskIdIn(userId, planIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(com.lifetrack.entity.CheckInRecord::getTaskId,
+                        java.util.stream.Collectors.mapping(com.lifetrack.entity.CheckInRecord::getCheckInDate, java.util.stream.Collectors.toSet())));
         // 调用 AI 生成报告
         List<java.util.Map<String, Object>> outcomes = plans.stream()
                 .map(t -> {
@@ -48,9 +52,7 @@ public class FeedbackServiceImpl implements FeedbackService {
                     row.put("status", t.getStatus());
                     row.put("learning_progress", t.getTotalProgress());
                     row.put("target_days", t.getTargetDays());
-                    java.util.Set<java.time.LocalDate> dates = checkInRecordRepository.findByUserIdAndTaskIdOrderByCheckInDateAsc(userId, t.getId()).stream()
-                            .map(com.lifetrack.entity.CheckInRecord::getCheckInDate).filter(java.util.Objects::nonNull)
-                            .collect(java.util.stream.Collectors.toSet());
+                    java.util.Set<java.time.LocalDate> dates = planDates.getOrDefault(t.getId(), java.util.Set.of());
                     attendedDates.addAll(dates);
                     row.put("actual_check_in_days", dates.size());
                     return row;

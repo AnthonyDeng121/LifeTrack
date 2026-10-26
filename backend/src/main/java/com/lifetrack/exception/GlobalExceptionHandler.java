@@ -20,6 +20,11 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+            org.springframework.dao.PessimisticLockingFailureException.class})
+    public Result<?> handleConcurrentUpdate(Exception e) {
+        return Result.error(409, "数据正在被其他操作修改，请刷新后重试");
+    }
 
     /**
      * 处理请求参数校验异常 (Validation)

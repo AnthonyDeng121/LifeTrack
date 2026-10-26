@@ -42,6 +42,7 @@ class TaskServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(subTaskRepository.findTaskIdById(org.mockito.ArgumentMatchers.anyLong())).thenAnswer(i -> subTaskRepository.findById(i.getArgument(0)).map(com.lifetrack.entity.SubTask::getTaskId));
         UserContext.setUserId(7L);
     }
 
@@ -191,8 +192,10 @@ class TaskServiceTest {
 
     @Test
     void taskListReturnsRealSubtaskCountForDashboard() {
-        when(taskRepository.findByUserId(7L)).thenReturn(List.of(planOwnedByCurrentUser()));
-        when(subTaskRepository.countByTaskId(1L)).thenReturn(8L);
+        when(taskRepository.findFiltered(org.mockito.ArgumentMatchers.eq(7L), any(), any(), any(), any(), any(), any(), any())).thenReturn(List.of(planOwnedByCurrentUser()));
+        var count = org.mockito.Mockito.mock(SubTaskRepository.PlanCount.class);
+        when(count.getTaskId()).thenReturn(1L); when(count.getStepCount()).thenReturn(8L);
+        when(subTaskRepository.countByPlans(List.of(1L))).thenReturn(List.of(count));
         var result = taskService.getTaskList(null, null, null);
         assertEquals(8, result.get(0).getSubtaskCount());
     }

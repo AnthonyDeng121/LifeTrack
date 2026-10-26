@@ -20,6 +20,9 @@ import java.time.LocalDate;
 @Table(name = "tasks")
 @Schema(description = "任务实体类")
 public class Task {
+    @Version
+    @Column(nullable = false)
+    private Long version;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Schema(description = "任务ID", example = "1")
@@ -79,8 +82,8 @@ public class Task {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        createdAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+        updatedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
         if (totalProgress == null) {
             totalProgress = BigDecimal.ZERO;
         }
@@ -91,6 +94,6 @@ public class Task {
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
     }
 }

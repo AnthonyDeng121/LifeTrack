@@ -51,7 +51,7 @@ LifeTrack/
 - JDK 17
 - MySQL 8.x
 - Node.js 20+ 与 npm
-- Python 3.8+（仅使用 AI 功能时需要）
+- Python 3.12（已验证版本，仅使用 AI 功能时需要）
 
 ## 配置环境变量
 
@@ -94,14 +94,18 @@ export SPRING_PROFILES_ACTIVE="dev"
 
 ## 数据库初始化
 
-1. 创建数据库：
+1. 安装并启动 MySQL 8.0.16 或更高版本，在 MySQL 客户端执行完整总脚本（无需预先创建数据库）：
 
 ```sql
-CREATE DATABASE lifetrack CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+SOURCE D:/0Desktop2/项目/LifeTrack/backend/sql/init_db.sql;
 ```
 
-2. 可执行 `backend/sql/init_db.sql` 初始化已有结构。开发环境同时启用了 JPA `ddl-auto: update`，会补齐当前实体对应的字段和表。
-3. 设置 `DB_USERNAME`、`DB_PASSWORD`；数据库不在本机时同时设置 `DB_URL`。
+2. 脚本创建 `lifetrack` 及全部业务表、索引、外键和 CHECK 约束，不含删除表操作。旧库首次接管前先备份，再执行同一脚本对齐结构；若旧数据违反约束，停止并人工核实，不能删除数据绕过。Flyway 接管后不再执行总脚本。
+3. 设置 `DB_USERNAME`、`DB_PASSWORD`；数据库不在本机时同时设置 `DB_URL`。脚本中的数据库名应与连接地址一致。
+4. 完成总脚本后，**仅首次启动**设置 `$env:FLYWAY_ADOPT_BASELINE="true"`。应用检查基线所需约束后登记版本 1；启动成功后执行 `Remove-Item Env:FLYWAY_ADOPT_BASELINE`。不要将它长期写入 `.env`。
+5. 本次所有 DDL 都在总脚本内，没有 V1 增量迁移。此后新增 `backend/src/main/resources/db/migration/V2__描述.sql` 等版本脚本，启动自动校验和执行。所有环境的 Hibernate 均只 `validate`，不再自动改表；Flyway `clean` 禁用。
+
+数据库与并发实现、验收记录见[数据库、并发与工程质量修复](docs/数据库并发与工程质量修复.md)。
 
 ## 启动顺序
 
@@ -193,7 +197,7 @@ $env:ZHIPU_API_KEY = "your_zhipu_api_key"
 cd AI_Server
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install flask requests
+pip install -r requirements.txt
 python ai_server.py
 ```
 
@@ -204,6 +208,8 @@ AI 服务默认地址：`http://127.0.0.1:5000`。如果服务或模型接口不
 以下方式只用于本地课程演示环境：
 
 - 显式 `dev` 环境下，登录页“开发环境一键登录”创建或复用开发用户。
+- `dev` 是整台后端服务的运行环境，适用于连接它的所有开发/演示用户，不需要逐用户启用。根目录 `.env` 填写 `SPRING_PROFILES_ACTIVE=dev`，本地脚本会读取；未填写时脚本也会显式选择 `dev`。手动启动可在 `backend` 执行 `$env:SPRING_PROFILES_ACTIVE="dev"`，再执行 `.\mvnw.cmd spring-boot:run`；IDE 的 Active profiles 只填 `dev`。已有进程须重启才生效。
+- 不同演示用户使用不同测试手机号即可保留各自的数据；一键登录复用的是同一个开发账号。
 - 演示手机号登录需有效的11位测试手机号和6位验证码；点击“查看演示验证码”获取当前开发配置，不会发送真实短信。
 - `AUTH_DEV_LOGIN_ENABLED`、`AUTH_DEMO_PHONE_ENABLED` 分别控制这两个入口。开发环境默认开启，可设为 `false` 关闭。
 - 无环境配置、`prod`、`test` 或混合环境中，两个入口始终关闭，即使误设开关为 `true` 也不能绕过。基础配置不再自动选择开发环境，本地启动脚本会显式选择 `dev`。
@@ -271,4 +277,4 @@ AI普通投入估算最多推进至子计划95%，达到上限仍可继续保存
 
 - 不要提交 `.env`、`.env.local`、真实数据库密码、JWT secret 或模型 API Key。
 - 如果真实凭据曾经进入 Git 历史，仅修改当前文件并不能让旧凭据失效，应立即在对应平台轮换凭据。
-- 生产环境应关闭开发登录和固定验证码，并使用数据库迁移工具替代 `ddl-auto: update`。
+- 开发和演示服务显式选择 `dev`；数据库已统一由总脚本初始化、Flyway 接管后续迁移，Hibernate 仅校验结构。

@@ -38,7 +38,7 @@ public class SubTask {
     @Schema(description = "子任务权重 (0.00-1.00)", example = "0.20")
     private BigDecimal weight;
 
-    @Column(name = "current_progress")
+    @Column(name = "current_progress", precision = 7, scale = 4)
     @Schema(description = "当前进度 (0.00-1.00)", example = "0.00")
     private BigDecimal currentProgress;
 

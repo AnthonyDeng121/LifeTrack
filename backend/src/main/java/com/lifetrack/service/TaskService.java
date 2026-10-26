@@ -35,6 +35,7 @@ public class TaskService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
+    private final org.springframework.transaction.support.TransactionOperations recordTransactions;
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
     private final ActionLogRepository actionLogRepository;
@@ -42,7 +43,7 @@ public class TaskService {
     private final CheckInRecordRepository checkInRecordRepository;
     private final com.lifetrack.repository.DeferredLearningRecordRepository deferredRecords;
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void addSubTask(Long taskId, com.lifetrack.dto.SubTaskCreateRequest request) {
         Task task = taskRepository.findLockedById(taskId)
                 .orElseThrow(() -> new BusinessException(404, "计划不存在"));
@@ -82,7 +83,7 @@ public class TaskService {
     /**
      * 手动创建任务
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public TaskDeconstructResponse createManualTask(com.lifetrack.dto.ManualTaskCreateRequest request) {
         Long userId = UserContext.getUserId();
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
@@ -117,7 +118,7 @@ public class TaskService {
     /**
      * 获取当前用户所有进行中的任务列表
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public List<TaskListResponse> getTaskList(String statusValue, LocalDate startDate, LocalDate endDate) {
         // 1. 从上下文获取当前登录用户 ID
         Long userId = UserContext.getUserId();
@@ -126,9 +127,12 @@ public class TaskService {
             throw new BusinessException(400, "筛选开始日期不能晚于结束日期");
         }
         PlanStatus requestedStatus = PlanStatus.fromValue(statusValue);
-        List<Task> tasks = taskRepository.findByUserId(userId);
+        List<Task> tasks = taskRepository.findFiltered(userId, requestedStatus, startDate, endDate,
+                today(), PlanStatus.IN_PROGRESS, PlanStatus.NOT_STARTED, PlanStatus.EXPIRED);
         tasks.forEach(this::normalizeLegacyPlan);
-        taskRepository.saveAll(tasks);
+        java.util.Map<Long, Long> counts = tasks.isEmpty() ? java.util.Map.of() : subTaskRepository
+                .countByPlans(tasks.stream().map(Task::getId).toList()).stream()
+                .collect(Collectors.toMap(SubTaskRepository.PlanCount::getTaskId, SubTaskRepository.PlanCount::getStepCount));
 
         // 3. 转换为 DTO 并处理进度数值 (乘以 100)
         return tasks.stream()
@@ -137,7 +141,7 @@ public class TaskService {
                 .filter(task -> endDate == null || !task.getStartDate().isAfter(endDate))
                 .map(task -> TaskListResponse.builder()
                         .id(task.getId())
-                        .subtaskCount(Math.toIntExact(subTaskRepository.countByTaskId(task.getId())))
+                        .subtaskCount(Math.toIntExact(counts.getOrDefault(task.getId(), 0L)))
                         .updatedAt(task.getUpdatedAt())
                         .title(task.getTitle())
                         .category(task.getCategory().name())
@@ -151,15 +155,14 @@ public class TaskService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public TaskDetailResponse getTaskDetail(Long taskId) {
         Task task = getOwnedTask(taskId);
         normalizeLegacyPlan(task);
-        taskRepository.save(task);
         return toDetailResponse(task);
     }
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public TaskDetailResponse updateTask(Long taskId, TaskUpdateRequest request) {
         Task task = taskRepository.findLockedById(taskId)
                 .orElseThrow(() -> new BusinessException(404, "学习计划不存在"));
@@ -260,7 +263,6 @@ public class TaskService {
                 .build();
     }
 
-    @Transactional
     public TaskDeconstructResponse deconstructTask(TaskDeconstructRequest request) {
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         // 1. 调用 AI 服务获取拆解结果
@@ -278,6 +280,7 @@ public class TaskService {
         String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
         String aiSuggestion = aiService.generateSuggestion(0, 0, username);
 
+        return recordTransactions.execute(tx -> {
         // 2. 创建并保存主任务
         Long userId = UserContext.getUserId();
         Task task = Task.builder()
@@ -307,26 +310,29 @@ public class TaskService {
                 .subTasks(responseDTOs)
                 .aiSuggestion(aiSuggestion)
                 .build();
+        });
     }
 
     /**
      * 删除子任务并按比例重新分配权重
      * @param subTaskId 子任务ID
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void deleteSubTask(Long subTaskId) {
         // 1. 查找子任务
-        SubTask targetSubTask = subTaskRepository.findById(subTaskId)
+        Long parentId = subTaskRepository.findTaskIdById(subTaskId)
                 .orElseThrow(() -> new BusinessException(404, "子任务不存在"));
 
         // 2. 权限校验
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findLockedById(targetSubTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(parentId)
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
         requireEditableSteps(parentTask);
+        SubTask targetSubTask = subTaskRepository.findById(subTaskId)
+                .orElseThrow(() -> new BusinessException(404, "子任务已删除"));
 
         // 3. 获取同属于该主任务的其他子任务
         List<SubTask> remainingSubTasks = subTaskRepository.findByTaskIdOrderByOrderNumAsc(parentTask.getId())
@@ -349,19 +355,21 @@ public class TaskService {
      * 手动完成子任务
      * @param subTaskId 子任务ID
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void completeSubTask(Long subTaskId) {
         // 1. 查找并校验权限
-        SubTask subTask = subTaskRepository.findById(subTaskId)
+        Long parentId = subTaskRepository.findTaskIdById(subTaskId)
                 .orElseThrow(() -> new BusinessException(404, "子任务不存在"));
         
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findLockedById(subTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(parentId)
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
         requireEditableSteps(parentTask);
+        SubTask subTask = subTaskRepository.findById(subTaskId)
+                .orElseThrow(() -> new BusinessException(404, "子任务已删除"));
         if (parentTask.getStatus() != PlanStatus.IN_PROGRESS) {
             throw new BusinessException(400, "只有进行中的计划可以完成子计划");
         }
@@ -379,19 +387,21 @@ public class TaskService {
      * 更新子任务内容或权重
      * 如果更新了权重，其他子任务的权重将自动按比例缩放以保持总和为 1.0
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void updateSubTask(Long subTaskId, SubTaskUpdateRequest request) {
         // 1. 查找并校验权限
-        SubTask subTask = subTaskRepository.findById(subTaskId)
+        Long parentId = subTaskRepository.findTaskIdById(subTaskId)
                 .orElseThrow(() -> new BusinessException(404, "子任务不存在"));
         
         Long userId = UserContext.getUserId();
-        Task parentTask = taskRepository.findLockedById(subTask.getTaskId())
+        Task parentTask = taskRepository.findLockedById(parentId)
                 .orElseThrow(() -> new BusinessException(404, "关联主任务不存在"));
         if (!parentTask.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权操作该任务");
         }
         requireEditableSteps(parentTask);
+        SubTask subTask = subTaskRepository.findById(subTaskId)
+                .orElseThrow(() -> new BusinessException(404, "子任务已删除"));
 
         // 2. 更新内容
         if (request.getContent() != null) {
@@ -450,11 +460,11 @@ public class TaskService {
      * 删除任务及其关联的子任务和行为日志
      * @param taskId 任务ID
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void deleteTask(Long taskId) {
         // 1. 校验任务是否存在且属于当前用户
         Long userId = UserContext.getUserId();
-        Task task = taskRepository.findById(taskId)
+        Task task = taskRepository.findLockedById(taskId)
                 .orElseThrow(() -> new BusinessException(404, "任务不存在"));
 
         if (!task.getUserId().equals(userId)) {
@@ -462,10 +472,8 @@ public class TaskService {
         }
 
         // 2. 级联删除子任务
-        subTaskRepository.deleteByTaskId(taskId);
-
-        // 3. 级联删除关联的行为日志
         actionLogRepository.deleteByTaskId(taskId);
+        subTaskRepository.deleteByTaskId(taskId);
 
         // 4. 删除正式打卡记录
         checkInRecordRepository.deleteByTaskId(taskId);
@@ -475,13 +483,13 @@ public class TaskService {
         taskRepository.delete(task);
     }
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void deleteTasks(List<Long> taskIds) {
         if (taskIds == null || taskIds.isEmpty() || taskIds.size() > 100
                 || taskIds.stream().anyMatch(id -> id == null || id <= 0)) {
             throw new BusinessException(400, "请选择1到100个有效任务");
         }
-        List<Long> ids = taskIds.stream().distinct().toList();
+        List<Long> ids = taskIds.stream().distinct().sorted().toList();
         // 全部校验通过后才删除，任一越权或不存在均不删除任何任务。
         ids.forEach(this::getOwnedTask);
         ids.forEach(this::deleteTask);

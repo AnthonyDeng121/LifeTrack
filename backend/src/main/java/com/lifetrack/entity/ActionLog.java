@@ -38,6 +38,7 @@ public class ActionLog {
     @Column(name = "raw_input", columnDefinition = "TEXT", nullable = false)
     private String rawInput;
 
+    @Column(precision = 7, scale = 4)
     private BigDecimal contribution;
 
     @Column(name = "ai_analysis")

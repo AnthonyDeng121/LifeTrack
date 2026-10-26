@@ -90,7 +90,7 @@ Assert-CommandExists 'java' 'Install JDK 17 and add it to PATH.'
 if ([string]::IsNullOrWhiteSpace($env:SPRING_PROFILES_ACTIVE)) { $env:SPRING_PROFILES_ACTIVE = 'dev' }
 Assert-CommandExists 'node' 'Install Node.js 20 or later.'
 Assert-CommandExists 'npm.cmd' 'Install npm.'
-if ($WithAI) { Assert-CommandExists 'python' 'Install Python 3.8 or later.' }
+if ($WithAI) { Assert-CommandExists 'python' 'Install Python 3.12 (the verified runtime).' }
 Assert-PortAvailable 8081 'Backend'
 Assert-PortAvailable 5173 'Frontend'
 if ($WithAI) { Assert-PortAvailable 5000 'AI service' }
@@ -113,7 +113,7 @@ try {
 
     if ($WithAI) {
         Write-Host 'Starting optional AI service...'
-        $aiCommand = "if (-not (Test-Path -LiteralPath '.\venv\Scripts\python.exe')) { & python -m venv venv; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & '.\venv\Scripts\python.exe' -c 'import flask, requests'; if (`$LASTEXITCODE -ne 0) { & '.\venv\Scripts\python.exe' -m pip install flask requests; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & '.\venv\Scripts\python.exe' ai_server.py; exit `$LASTEXITCODE"
+        $aiCommand = "if (-not (Test-Path -LiteralPath '.\venv\Scripts\python.exe')) { & python -m venv venv; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE } }; & '.\venv\Scripts\python.exe' -m pip install -r requirements.txt; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; & '.\venv\Scripts\python.exe' ai_server.py; exit `$LASTEXITCODE"
         $ai = Start-LocalProcess 'ai' (Join-Path $projectRoot 'AI_Server') $aiCommand
         $started += $ai
         $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
