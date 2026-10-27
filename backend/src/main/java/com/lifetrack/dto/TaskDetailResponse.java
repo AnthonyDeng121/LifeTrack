@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class TaskDetailResponse {
     private Long id;
+    private Long version;
+    private long learningDurationMinutes;
     private String title;
     private String category;
     private LocalDate startDate;

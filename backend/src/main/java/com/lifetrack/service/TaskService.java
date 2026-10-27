@@ -71,13 +71,18 @@ public class TaskService {
         if (steps.isEmpty()) return;
         BigDecimal original = steps.stream().map(SubTask::getWeight).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal assigned = BigDecimal.ZERO;
+        List<BigDecimal> weights = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             BigDecimal next = i == steps.size() - 1 ? total.subtract(assigned)
                     : (original.signum() > 0 ? steps.get(i).getWeight().multiply(total).divide(original, 4, RoundingMode.DOWN)
                     : total.divide(BigDecimal.valueOf(steps.size()), 4, RoundingMode.DOWN));
-            steps.get(i).setWeight(next);
+            if (next.compareTo(new BigDecimal("0.01")) < 0 || next.compareTo(BigDecimal.ONE) > 0)
+                throw new BusinessException(400, "调整后每个子计划的权重都必须至少为1%，请降低所选权重或减少步骤");
+            weights.add(next);
             assigned = assigned.add(next);
         }
+        // 全部检查通过后才修改实体，避免部分更新。
+        for (int i = 0; i < steps.size(); i++) steps.get(i).setWeight(weights.get(i));
     }
 
     /**
@@ -86,13 +91,14 @@ public class TaskService {
     @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public TaskDeconstructResponse createManualTask(com.lifetrack.dto.ManualTaskCreateRequest request) {
         Long userId = UserContext.getUserId();
+        validateTitle(request.getTitle());
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         List<SubTask> subTaskList = prepareManualSteps(request.getSubTasks());
         
         // 1. 创建主任务
         Task task = Task.builder()
                 .userId(userId)
-                .title(request.getTitle())
+                .title(request.getTitle().trim())
                 .category(parseCategory(request.getCategory()))
                 .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
@@ -167,12 +173,14 @@ public class TaskService {
         Task task = taskRepository.findLockedById(taskId)
                 .orElseThrow(() -> new BusinessException(404, "学习计划不存在"));
         if (!task.getUserId().equals(UserContext.getUserId())) throw new BusinessException(403, "无权访问该学习计划");
+        if (request.getVersion() == null)
+            throw new BusinessException(400, "缺少计划版本，请刷新后重试");
+        if (!java.util.Objects.equals(request.getVersion(), task.getVersion()))
+            throw new BusinessException(409, "计划已被其他操作修改，请刷新后重新编辑");
         normalizeLegacyPlan(task);
 
         if (request.getTitle() != null) {
-            if (request.getTitle().isBlank()) {
-                throw new BusinessException(400, "计划标题不能为空");
-            }
+            validateTitle(request.getTitle());
             task.setTitle(request.getTitle().trim());
         }
         if (request.getCategory() != null) {
@@ -226,7 +234,9 @@ public class TaskService {
         task.setStatus(closed ? task.getStatus() : targetStatus == PlanStatus.COMPLETED || targetStatus == PlanStatus.CANCELLED
                 ? targetStatus : datedStatus);
 
-        return toDetailResponse(taskRepository.save(task));
+        Task saved = taskRepository.save(task);
+        taskRepository.flush(); // 让响应携带这次写入后的版本，而不是刷新前的旧版本。
+        return toDetailResponse(saved);
     }
 
     /**
@@ -264,6 +274,7 @@ public class TaskService {
     }
 
     public TaskDeconstructResponse deconstructTask(TaskDeconstructRequest request) {
+        validateTitle(request.getTitle());
         validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         // 1. 调用 AI 服务获取拆解结果
         TaskDeconstructResponse.SubTaskDTO[] subTaskDTOs = aiService.deconstructTask(request.getTitle());
@@ -285,7 +296,7 @@ public class TaskService {
         Long userId = UserContext.getUserId();
         Task task = Task.builder()
                 .userId(userId)
-                .title(request.getTitle())
+                .title(request.getTitle().trim())
                 .category(parseCategory(request.getCategory()))
                 .status(statusByDate(request.getStartDate(), request.getEndDate()))
                 .startDate(request.getStartDate())
@@ -518,6 +529,11 @@ public class TaskService {
         }
     }
 
+    private void validateTitle(String title) {
+        if (title == null || title.isBlank()) throw new BusinessException(400, "计划标题不能为空");
+        if (title.length() > 100) throw new BusinessException(400, "计划标题不能超过100个字符");
+    }
+
     private PlanStatus statusByDate(LocalDate startDate, LocalDate endDate) {
         LocalDate businessToday = today();
         if (endDate.isBefore(businessToday)) return PlanStatus.EXPIRED;
@@ -599,6 +615,8 @@ public class TaskService {
     private TaskDetailResponse toDetailResponse(Task task) {
         return TaskDetailResponse.builder()
                 .id(task.getId())
+                .version(task.getVersion())
+                .learningDurationMinutes(actionLogRepository.sumLearningMinutes(task.getUserId(), task.getId()))
                 .title(task.getTitle())
                 .category(task.getCategory().name())
                 .startDate(task.getStartDate())

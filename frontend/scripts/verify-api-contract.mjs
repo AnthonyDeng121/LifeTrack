@@ -65,10 +65,10 @@ assert.deepEqual(endpoints.checkIns.history({ taskId: 101, startDate: "2026-10-0
 assert.deepEqual(endpoints.checkIns.stats(101), {
   method: "GET", path: "/check-ins/tasks/101/stats",
 });
-assert.deepEqual(endpoints.actions.sync("今天写了两个 Controller 接口"), {
+assert.deepEqual(endpoints.actions.sync("今天写了两个 Controller 接口", 30, 101), {
   method: "POST",
   path: "/actions/sync",
-  data: { rawInput: "今天写了两个 Controller 接口" },
+  data: { rawInput: "今天写了两个 Controller 接口", durationMinutes: 30, taskId: 101 },
 });
 assert.deepEqual(endpoints.actions.history(), {
   method: "GET",

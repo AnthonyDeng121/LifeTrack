@@ -65,7 +65,7 @@ class ActionServiceTest {
     }
     ActionSyncRequest request() {
         ActionSyncRequest request = new ActionSyncRequest();
-        request.setRawInput("练习编曲软件并编写节奏，同时完成英语听力练习30分钟"); request.setDurationInput("30分钟");
+        request.setRawInput("练习编曲软件并编写节奏，同时完成英语听力练习30分钟"); request.setDurationMinutes(30);
         return request;
     }
     AIMatchResult.MatchDetail match(long id, String increment) {

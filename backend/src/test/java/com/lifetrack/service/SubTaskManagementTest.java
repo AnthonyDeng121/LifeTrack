@@ -74,6 +74,36 @@ class SubTaskManagementTest {
         assertThrows(BusinessException.class, () -> service.deleteSubTask(11L));
         verify(steps, never()).delete(any());
     }
+
+    @Test void addingFullWeightCannotZeroExistingStep() {
+        var original = step(11, "1", "0");
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(task));
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(original));
+        var input = request(); input.setWeight(BigDecimal.ONE);
+        assertEquals(400, assertThrows(BusinessException.class, () -> service.addSubTask(1L, input)).getCode());
+        assertEquals(BigDecimal.ONE, original.getWeight());
+        verify(steps, never()).save(any()); verify(steps, never()).saveAll(any());
+    }
+
+    @Test void editingFullWeightCannotZeroOtherSteps() {
+        var original = step(11, "0.5", "0"); var other = step(12, "0.5", "0");
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(task));
+        when(steps.findById(11L)).thenReturn(Optional.of(original));
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(original, other));
+        var input = new com.lifetrack.dto.SubTaskUpdateRequest(); input.setWeight(BigDecimal.ONE);
+        assertThrows(BusinessException.class, () -> service.updateSubTask(11L, input));
+        assertEquals(new BigDecimal("0.5"), other.getWeight());
+        verify(steps, never()).save(any()); verify(steps, never()).saveAll(any());
+    }
+
+    @Test void tinyRedistributedWeightIsRejectedBeforeAnyMutation() {
+        var first = step(11, "0.99", "0"); var second = step(12, "0.01", "0");
+        when(tasks.findLockedById(1L)).thenReturn(Optional.of(task));
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(first, second));
+        assertThrows(BusinessException.class, () -> service.addSubTask(1L, request()));
+        assertEquals(new BigDecimal("0.99"), first.getWeight());
+        assertEquals(new BigDecimal("0.01"), second.getWeight());
+    }
     @Test void deletionRedistributesEvenWhenRemainingWeightsWereZero() {
         var existing = new ArrayList<>(List.of(step(11, "1", "0"), step(12, "0", "0"), step(13, "0", "0")));
         when(steps.findById(11L)).thenReturn(Optional.of(existing.get(0)));

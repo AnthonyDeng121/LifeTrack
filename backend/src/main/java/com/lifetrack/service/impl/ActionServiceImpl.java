@@ -40,7 +40,6 @@ public class ActionServiceImpl implements ActionService {
     private final TaskService taskService;
     private final AIService aiService;
     private final CheckInRecordRepository checkInRecordRepository;
-    private final com.lifetrack.repository.DeferredLearningRecordRepository deferredRecords;
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     @Override
@@ -64,6 +63,8 @@ public class ActionServiceImpl implements ActionService {
     }
 
     private com.lifetrack.service.PreparedLearningRecord prepareRecord(ActionSyncRequest request, java.time.LocalDateTime recordedAt, Integer fixedDuration) {
+        if (request.getDurationMinutes() == null || request.getDurationMinutes() < 1 || request.getDurationMinutes() > 1440)
+            throw new BusinessException(400, "学习时长必须为1到1440整数分钟");
         Long userId = UserContext.getUserId();
         boolean historical = fixedDuration != null;
         log.info("User {} is syncing a learning record", userId);
@@ -101,7 +102,7 @@ public class ActionServiceImpl implements ActionService {
         Map<Long, String> planState = activeTasks.stream().collect(Collectors.toMap(Task::getId, com.lifetrack.service.PreparedLearningRecord::state));
         Map<Long, String> stepState = eligible.values().stream().collect(Collectors.toMap(SubTask::getId, com.lifetrack.service.PreparedLearningRecord::state));
         Map<Long, Long> stepPlans = eligible.values().stream().collect(Collectors.toMap(SubTask::getId, SubTask::getTaskId));
-        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationInput(), aiCandidates);
+        AIMatchResult aiResult = aiService.analyzeAction(request.getRawInput(), request.getDurationMinutes() + "分钟", aiCandidates);
         return new com.lifetrack.service.PreparedLearningRecord(request, recordedAt, fixedDuration, userId,
                 Map.copyOf(planState), Map.copyOf(stepState), Map.copyOf(stepPlans), aiResult);
     }
@@ -151,7 +152,8 @@ public class ActionServiceImpl implements ActionService {
         int savedDuration = 0;
         Set<Long> matchedSteps = new HashSet<>();
         Set<Long> processedPlans = new HashSet<>();
-        int duration = fixedDuration != null ? fixedDuration : Math.max(0, aiResult.getDurationMinutes() == null ? 0 : aiResult.getDurationMinutes());
+        // 模型只判断学习进度，时长始终采用用户明确填写的分钟数。
+        int duration = fixedDuration != null ? fixedDuration : request.getDurationMinutes();
         List<AIMatchResult.MatchDetail> rawMatches = aiResult.getMatches() == null ? Collections.emptyList() : aiResult.getMatches();
         // 每个被推进的步骤必须有各自独立的学习事实，不能把同一句笼统记录分摊给整门课程。
         Map<Long, AIMatchResult.MatchDetail> uniqueMatches = new LinkedHashMap<>();
@@ -233,6 +235,7 @@ public class ActionServiceImpl implements ActionService {
         List<ActionHistoryResponse> list = page.getContent().stream()
                 .map(log -> ActionHistoryResponse.builder()
                         .id(log.getId())
+                        .durationMinutes(log.getDurationMinutes())
                         .rawInput(log.getRawInput())
                         .contribution(log.getContribution().multiply(new BigDecimal("100")))
                         .aiAnalysis(log.getAiAnalysis())
@@ -321,21 +324,17 @@ public class ActionServiceImpl implements ActionService {
     }
 
     private void refreshAutomaticAttendance(Long userId, Long taskId, LocalDate date) {
-        List<com.lifetrack.entity.DeferredLearningRecord> deferred = deferredRecords.findByUserIdAndTaskId(userId, taskId).stream()
-                .filter(r -> r.getRecordedAt().toLocalDate().equals(date)).toList();
         checkInRecordRepository.findByUserIdAndTaskIdAndCheckInDate(userId, taskId, date)
-                .filter(r -> Boolean.TRUE.equals(r.getAutomatic()) || !deferred.isEmpty()).ifPresent(record -> {
+                .ifPresent(record -> {
                     List<ActionLog> remaining = actionLogRepository.findByTaskId(taskId).stream()
                             .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)).toList();
-                    List<com.lifetrack.entity.DeferredLearningRecord> awaiting = deferred.stream()
-                            .filter(r -> r.getStatus() != com.lifetrack.entity.DeferredLearningRecord.Status.APPLIED).toList();
-                    if (remaining.isEmpty() && deferred.isEmpty() && Boolean.TRUE.equals(record.getAutomatic())) {
+                    if (remaining.isEmpty() && Boolean.TRUE.equals(record.getAutomatic())) {
                         checkInRecordRepository.delete(record);
-                    } else {
-                        record.setDurationMinutes(remaining.stream().mapToInt(a -> a.getDurationMinutes() == null ? 0 : a.getDurationMinutes()).sum()
-                                + awaiting.stream().mapToInt(com.lifetrack.entity.DeferredLearningRecord::getDurationMinutes).sum());
-                        if (!remaining.isEmpty()) record.setContent(remaining.get(0).getRawInput());
-                        else if (!deferred.isEmpty()) record.setContent(deferred.get(0).getContent());
+                    } else if (!remaining.isEmpty() || record.getContent() == null || record.getContent().isBlank()) {
+                        // 只汇总已成功落库的学习日志；手动打卡原备注不再被覆盖。
+                        // 无日志的旧手动记录保留原值，新手动打卡初始为0。
+                        record.setDurationMinutes(remaining.stream().mapToInt(a -> a.getDurationMinutes() == null ? 0 : a.getDurationMinutes()).sum());
+                        if (Boolean.TRUE.equals(record.getAutomatic()) && !remaining.isEmpty()) record.setContent(remaining.get(0).getRawInput());
                         checkInRecordRepository.save(record);
                     }
                 });

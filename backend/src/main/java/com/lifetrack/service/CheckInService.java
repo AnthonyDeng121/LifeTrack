@@ -47,9 +47,9 @@ public class CheckInService {
                 .userId(userId)
                 .taskId(task.getId())
                 .checkInDate(checkInDate)
-                .content(request.getContent() == null ? "" : request.getContent().trim())
-                .durationMinutes(request.getDurationMinutes() == null ? 0 : request.getDurationMinutes())
-                .mood(request.getMood() == null ? null : request.getMood().trim())
+                .content("")
+                .durationMinutes(0)
+                .automatic(false)
                 .build();
         try {
             return toResponse(checkInRecordRepository.saveAndFlush(record), task.getTitle());

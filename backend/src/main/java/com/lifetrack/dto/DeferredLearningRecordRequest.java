@@ -8,5 +8,5 @@ public class DeferredLearningRecordRequest {
     @NotNull @Positive private Long taskId;
     @NotBlank(message = "学习内容不能为空")
     @Size(max = 500, message = "学习内容不能超过500字") private String content;
-    @NotNull @Min(0) @Max(1440) private Integer durationMinutes;
+    @NotNull @Min(1) @Max(1440) private Integer durationMinutes;
 }

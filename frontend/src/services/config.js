@@ -75,10 +75,10 @@ export const endpoints = {
     deferred: { method: "GET", path: "/actions/deferred" },
     retryDeferred: (id) => ({ method: "POST", path: `/actions/deferred/${id}/retry` }),
     importDeferred: { method: "POST", path: "/actions/deferred/import-legacy" },
-    sync: (rawInput, durationInput, taskId) => ({
+    sync: (rawInput, durationMinutes, taskId) => ({
       method: "POST",
       path: "/actions/sync",
-      data: { rawInput, ...(durationInput !== undefined ? { durationInput } : {}), ...(taskId != null ? { taskId } : {}) },
+      data: { rawInput, durationMinutes, taskId },
     }),
     history: (page = 0, size = 10) => ({
       method: "GET",

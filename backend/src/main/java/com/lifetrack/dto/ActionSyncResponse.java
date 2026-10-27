@@ -14,6 +14,8 @@ import java.util.List;
 @AllArgsConstructor
 @Schema(description = "行为同步响应")
 public class ActionSyncResponse {
+    @Schema(description = "已保存的原始学习记录ID，失败后使用此ID重新分析")
+    private Long recordId;
     private boolean analysisUnavailable;
     private boolean matchingAmbiguous;
     @Schema(description = "本次持久化的步骤学习记录数，同一次输入可能对应多个步骤")

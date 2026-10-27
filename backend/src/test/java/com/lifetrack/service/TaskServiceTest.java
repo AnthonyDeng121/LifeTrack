@@ -98,7 +98,7 @@ class TaskServiceTest {
         Task task = planOwnedByCurrentUser();
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
-        TaskUpdateRequest request = new TaskUpdateRequest();
+        TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStartDate(LocalDate.of(2026, 10, 1));
         request.setEndDate(LocalDate.of(2026, 10, 5));
         request.setTargetDays(6);
@@ -114,7 +114,7 @@ class TaskServiceTest {
         task.setStatus(PlanStatus.COMPLETED);
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
-        TaskUpdateRequest request = new TaskUpdateRequest();
+        TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStatus("IN_PROGRESS");
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -128,7 +128,7 @@ class TaskServiceTest {
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
         when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TaskUpdateRequest request = new TaskUpdateRequest();
+        TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setTitle("Java 学习计划");
         request.setEndDate(LocalDate.now().plusDays(19));
         request.setTargetDays(15);
@@ -144,7 +144,7 @@ class TaskServiceTest {
         task.setUserId(99L);
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
 
-        TaskUpdateRequest request = new TaskUpdateRequest();
+        TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setTitle("不能修改的计划");
         BusinessException error = assertThrows(BusinessException.class,
                 () -> taskService.updateTask(1L, request));
@@ -159,7 +159,7 @@ class TaskServiceTest {
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
         when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TaskUpdateRequest request = new TaskUpdateRequest();
+        TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStatus("COMPLETED");
 
         assertEquals("COMPLETED", taskService.updateTask(1L, request).getStatus());
@@ -201,7 +201,7 @@ class TaskServiceTest {
     }
 
     private Task planOwnedByCurrentUser() {
-        return Task.builder()
+        return Task.builder().version(0L)
                 .id(1L)
                 .userId(7L)
                 .title("原计划")

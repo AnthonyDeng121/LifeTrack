@@ -32,6 +32,7 @@
         <view class="plan-info">
           <text>周期：{{ task.startDate }} 至 {{ task.endDate }}</text>
           <text>目标打卡：{{ task.targetDays }} 天</text>
+          <text>累计学习：{{ Math.floor((task.learningDurationMinutes || 0) / 60) }} 小时 {{ (task.learningDurationMinutes || 0) % 60 }} 分钟（仅计入分析成功的记录）</text>
           <text class="pill status-badge" :class="'status-' + task.status">{{ task.statusDescription }}</text>
         </view>
         <button class="glass-button plan-edit-btn" @tap="openPlanEdit">编辑计划</button>
@@ -86,7 +87,7 @@
       <view v-if="checkInHistory.length" class="checkin-history">
         <view v-for="record in checkInHistory" :key="record.id" class="glass-card history-item">
           <view class="history-head"><text>{{ record.checkInDate }}</text><text v-if="record.durationMinutes > 0" class="pill">{{ record.durationMinutes }} 分钟</text><text v-else class="pill">已打卡</text></view>
-          <text class="history-content">{{ record.automatic ? "关联学习片段" : "打卡备注" }}：{{ record.content || "未填写备注" }}</text>
+          <text v-if="record.content" class="history-content">{{ record.automatic ? "关联学习片段" : "历史打卡备注" }}：{{ record.content }}</text>
           <text v-if="record.mood" class="text-muted small">心情：{{ record.mood }}</text>
         </view>
       </view>
@@ -105,6 +106,8 @@
           <view class="form-block"><text class="field-label">状态</text><view v-if="planClosed" class="glass-input date-picker">{{ currentStatusLabel }}</view><picker v-else :disabled="savingPlan" :range="statusLabels" :value="statusIndex" @change="planForm.status = statusOptions[$event.detail.value].value"><view class="glass-input date-picker">{{ currentStatusLabel }}</view></picker></view>
           <text class="text-muted small">{{ planClosed ? "已完成或已取消计划不可重新打开，仅可修改名称和分类。" : "未开始、进行中和已过期状态由计划周期决定。" }}</text>
           <button class="glass-button save-btn" :disabled="savingPlan" :loading="savingPlan" @tap="savePlan">保存计划</button>
+          <text v-if="planConflict" class="text-muted">计划已有新修改，本次未保存。请先复制需要保留的输入，再载入最新计划重新编辑。</text>
+          <button v-if="planConflict" class="glass-button" :disabled="savingPlan" @tap="openPlanEdit">载入最新计划重新编辑</button>
         </view>
       </view>
 
@@ -217,6 +220,7 @@ const task = ref({
 const detailLoading = ref(false);
 const detailError = ref("");
 const planClosed = computed(() => ["COMPLETED", "CANCELLED"].includes(task.value.status));
+const planConflict = ref(false);
 const stepsEditable = computed(() => ["NOT_STARTED", "IN_PROGRESS"].includes(task.value.status));
 const categories = TASK_CATEGORIES;
 const statusOptions = [
@@ -365,7 +369,9 @@ async function loadCheckInStats() {
 function loadCheckIns() { return Promise.all([loadFilteredHistory(), loadCheckInStats()]); }
 
 function openPlanEdit() {
+  planConflict.value = false;
   planForm.value = {
+    version: task.value.version,
     title: task.value.title,
     category: task.value.category,
     startDate: task.value.startDate,
@@ -410,6 +416,10 @@ async function savePlan() {
     await loadCheckIns();
   } catch (error) {
     console.warn("update task failed", error);
+    if (error.code === 409) {
+      planConflict.value = true;
+      await loadTask();
+    }
   } finally { savingPlan.value = false; }
 }
 

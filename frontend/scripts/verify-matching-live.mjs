@@ -29,7 +29,7 @@ try {
   const plan = (await api("POST", "/tasks/manual", { title: "复习数据库", category: "学习", startDate: today, endDate: end,
     targetDays: 3, subTasks: steps.map(content => ({ content, weight: 0.125 })) })).taskId;
   ids.push(plan);
-  const record = rawInput => api("POST", "/actions/sync", { taskId: plan, rawInput, durationInput: "30分钟" });
+  const record = rawInput => api("POST", "/actions/sync", { taskId: plan, rawInput, durationMinutes: 30 });
   const ambiguous = await record("整理了关系型数据库的笔记");
   assert.ok(ambiguous.updates.length <= 1, JSON.stringify(ambiguous));
   let persisted = await api("GET", `/tasks/${plan}/subtasks`);

@@ -85,8 +85,8 @@ export function getCheckInStats(taskId) {
   return request({ ...endpoints.checkIns.stats(taskId) });
 }
 
-export function syncAction(rawInput, durationInput, taskId) {
-  return request({ ...endpoints.actions.sync(rawInput, durationInput, taskId) });
+export function syncAction(rawInput, durationMinutes, taskId) {
+  return request({ ...endpoints.actions.sync(rawInput, durationMinutes, taskId), timeout: 50000 });
 }
 
 export function addSubtask(taskId, data) { return request(endpoints.tasks.addSubtask(taskId, data)); }

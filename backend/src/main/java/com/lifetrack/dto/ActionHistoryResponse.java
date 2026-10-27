@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 public class ActionHistoryResponse {
     @Schema(description = "记录ID")
     private Long id;
+    private Integer durationMinutes;
 
     @Schema(description = "原始输入")
     private String rawInput;

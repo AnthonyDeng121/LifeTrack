@@ -34,7 +34,7 @@ class TaskBusinessRulesTest {
     @BeforeEach void setup() {
         org.mockito.Mockito.lenient().when(steps.findTaskIdById(org.mockito.ArgumentMatchers.anyLong())).thenAnswer(i -> steps.findById(i.getArgument(0)).map(com.lifetrack.entity.SubTask::getTaskId));
         UserContext.setUserId(7L);
-        plan = Task.builder().id(1L).userId(7L).title("课程计划").category(Task.Category.学习)
+        plan = Task.builder().version(0L).id(1L).userId(7L).title("课程计划").category(Task.Category.学习)
                 .status(PlanStatus.IN_PROGRESS).startDate(today.minusDays(2)).endDate(today.plusDays(7))
                 .targetDays(5).totalProgress(BigDecimal.ZERO).build();
         step = SubTask.builder().id(11L).taskId(1L).content("练习").weight(BigDecimal.ONE)
@@ -43,7 +43,7 @@ class TaskBusinessRulesTest {
     @AfterEach void cleanup() { UserContext.clear(); }
     void locked() { when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan)); }
     TaskUpdateRequest shrink() {
-        var request = new TaskUpdateRequest(); request.setStartDate(today); return request;
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setStartDate(today); return request;
     }
     CheckInRecord attendance(long id, LocalDate date) {
         return CheckInRecord.builder().id(id).userId(7L).taskId(1L).checkInDate(date).build();
@@ -110,12 +110,13 @@ class TaskBusinessRulesTest {
         var request = shrink(); request.setDiscardOutsideCheckIns(true); request.setConfirmedDiscardCheckInIds(List.of(21L));
         var result = service.updateTask(1L, request);
         assertEquals(today, result.getStartDate()); assertEquals(new BigDecimal("40.0"), result.getTotalProgress());
-        verify(checkIns).deleteAll(List.of(outside)); verifyNoInteractions(logs, deferred);
+        verify(checkIns).deleteAll(List.of(outside)); verifyNoInteractions(deferred);
+        verify(logs).sumLearningMinutes(7L, 1L);
     }
 
     @Test void expandedPeriodNeedsNoDestructiveConfirmation() {
         locked(); when(tasks.save(any())).thenAnswer(i -> i.getArgument(0));
-        var request = new TaskUpdateRequest(); request.setEndDate(today.plusDays(9));
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setEndDate(today.plusDays(9));
         assertEquals(today.plusDays(9), service.updateTask(1L, request).getEndDate());
     }
 
@@ -126,7 +127,7 @@ class TaskBusinessRulesTest {
     }
 
     @Test void futurePeriodCannotBeSavedAsInProgress() {
-        locked(); var request = new TaskUpdateRequest();
+        locked(); var request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStartDate(today.plusDays(1)); request.setStatus("IN_PROGRESS");
         assertThrows(BusinessException.class, () -> service.updateTask(1L, request));
         verifyNoInteractions(checkIns);
@@ -134,7 +135,7 @@ class TaskBusinessRulesTest {
 
     @Test void changingPeriodWithoutExplicitStatusDerivesStableDateStatus() {
         locked(); when(tasks.save(any())).thenAnswer(i -> i.getArgument(0));
-        var request = new TaskUpdateRequest(); request.setStartDate(today.plusDays(1));
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setStartDate(today.plusDays(1));
         assertEquals("NOT_STARTED", service.updateTask(1L, request).getStatus());
         when(tasks.findById(1L)).thenReturn(Optional.of(plan));
         assertEquals("NOT_STARTED", service.getTaskDetail(1L).getStatus());
@@ -142,21 +143,21 @@ class TaskBusinessRulesTest {
 
     @Test void expiredPlanCannotBeReopenedByChangingDates() {
         locked(); plan.setStatus(PlanStatus.EXPIRED); plan.setEndDate(today.minusDays(1)); plan.setTargetDays(1);
-        var request = new TaskUpdateRequest(); request.setEndDate(today.plusDays(7));
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setEndDate(today.plusDays(7));
         assertThrows(BusinessException.class, () -> service.updateTask(1L, request));
     }
 
     @Test void completedPlanCannotChangePeriodOrTarget() {
         locked(); plan.setStatus(PlanStatus.COMPLETED);
         assertThrows(BusinessException.class, () -> service.updateTask(1L, shrink()));
-        var request = new TaskUpdateRequest(); request.setTargetDays(4);
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setTargetDays(4);
         assertThrows(BusinessException.class, () -> service.updateTask(1L, request));
         verifyNoInteractions(checkIns);
     }
 
     @Test void completedPlanMayRenameWithoutChangingFrozenBusinessData() {
         locked(); plan.setStatus(PlanStatus.COMPLETED); when(tasks.save(any())).thenAnswer(i -> i.getArgument(0));
-        var request = new TaskUpdateRequest(); request.setTitle("修正标题"); request.setStatus("COMPLETED");
+        var request = new TaskUpdateRequest(); request.setVersion(0L); request.setTitle("修正标题"); request.setStatus("COMPLETED");
         var result = service.updateTask(1L, request);
         assertEquals("修正标题", result.getTitle()); assertEquals("COMPLETED", result.getStatus());
     }

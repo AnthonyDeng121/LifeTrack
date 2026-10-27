@@ -22,11 +22,12 @@ import org.springframework.web.bind.annotation.*;
 public class ActionController {
 
     private final ActionService actionService;
+    private final com.lifetrack.service.DeferredLearningRecordService learningRecords;
 
-    @Operation(summary = "同步行为记录", description = "用户输入自然语言描述，由 AI 判定贡献度并同步更新进度")
+    @Operation(summary = "保存并分析学习记录", description = "先保存所属计划、原文和整数分钟，分析成功后才累计时长、更新进度并自动打卡；失败保留记录供重新分析")
     @PostMapping("/sync")
     public Result<ActionSyncResponse> sync(@RequestBody @Validated ActionSyncRequest request) {
-        return Result.success(actionService.syncAction(request));
+        return Result.success(learningRecords.submit(request));
     }
 
     @Operation(summary = "获取行为日志列表", description = "分页获取用户过往输入的自然语言记录及 AI 给出的贡献度评价")

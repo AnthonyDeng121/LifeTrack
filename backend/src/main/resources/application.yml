@@ -11,6 +11,8 @@ spring:
       ddl-auto: validate
     open-in-view: false
   jackson:
+    deserialization:
+      accept-float-as-int: false
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
   flyway:

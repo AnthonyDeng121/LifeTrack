@@ -38,7 +38,7 @@ const record = await page("record", {
     return { list: historyRows.slice(page * size, (page + 1) * size), total: historyRows.length };
   },
   deleteAction: async id => { historyRows = historyRows.filter(row => row.id !== id); },
-}, `plans, manualTaskId, manualContent, manualSaving, manualAlreadyChecked, manualMessage, submitDailyCheckIn, loadManualAttendance,
+}, `plans, manualTaskId, manualSaving, manualAlreadyChecked, manualMessage, submitDailyCheckIn, loadManualAttendance,
   history, historyPage, historyTotal, historyPageCount, historyError, historyLoading, loadHistory, loadData, nextHistoryPage, previousHistoryPage, retryHistory,
   syncResult, syncSummary, removeHistory`);
 record.plans.value = [active];
@@ -52,7 +52,7 @@ await record.submitDailyCheckIn();
 assert.equal(checkIns.length, 1);
 releaseCheckIn(); await saving; heldCheckIn = null;
 assert.equal(aiCalls, 0);
-assert.deepEqual(checkIns[0], { taskId: 101, content: "" });
+assert.deepEqual(checkIns[0], { taskId: 101 });
 assert.equal(record.manualAlreadyChecked.value, true);
 await record.submitDailyCheckIn();
 assert.equal(checkIns.length, 1);

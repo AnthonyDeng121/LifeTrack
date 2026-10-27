@@ -37,7 +37,7 @@ try {
   assert.equal((await api.getTaskDetail(id)).status,'IN_PROGRESS');
   assert.equal((await api.getTasks({status:'IN_PROGRESS',startDate:today,endDate:today})).some(p=>p.id===id),true);
   assert.equal((await api.getSubtasks(id)).length,1);
-  await api.updateTask(id,{title:'Frontend live contract edited'});
+  await api.updateTask(id,{title:'Frontend live contract edited',version:(await api.getTaskDetail(id)).version});
   assert.equal((await api.getTaskDetail(id)).title,'Frontend live contract edited');
   await api.createCheckIn({taskId:id,content:''});
   await assert.rejects(()=>api.createCheckIn({taskId:id,content:''}),e=>e.code===409);

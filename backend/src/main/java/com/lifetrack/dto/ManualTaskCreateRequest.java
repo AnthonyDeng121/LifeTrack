@@ -14,6 +14,7 @@ import jakarta.validation.constraints.NotNull;
 @Schema(description = "手动创建任务请求")
 public class ManualTaskCreateRequest {
     @NotBlank(message = "任务标题不能为空")
+    @jakarta.validation.constraints.Size(max = 100, message = "计划标题不能超过100个字符")
     @Schema(description = "主任务标题", example = "手动完成数据库课设")
     private String title;
 

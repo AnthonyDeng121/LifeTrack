@@ -9,6 +9,10 @@ function Assert-Equal($Expected, $Actual, [string]$Label) {
 }
 Import-Module (Join-Path $PSScriptRoot "AcceptanceHttp.psm1") -Force
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
+    if ($Method -eq "PUT" -and $Path -match '^/tasks/\d+$' -and $null -ne $Body -and -not $Body.ContainsKey('version')) {
+        $current = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path $Path -Token $script:token
+        $Body.version = $current.data.version
+    }
     Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $script:token
 }
 function New-Plan($Start, $End, $Steps = @(@{ content = "Business rules acceptance"; weight = 1 })) {

@@ -41,7 +41,6 @@ class DeferredLearningRecordServiceTest {
     @AfterEach void clear() { UserContext.clear(); }
     @Test void fallbackPersistsOriginalContentWithoutDuplicateCheckIn() {
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(task));
-        when(checkIns.existsByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(true);
         when(records.save(any())).thenAnswer(i -> i.getArgument(0));
         var request = new DeferredLearningRecordRequest();
         request.setTaskId(1L); request.setContent("学习编曲"); request.setDurationMinutes(30);
@@ -49,8 +48,7 @@ class DeferredLearningRecordServiceTest {
         assertEquals(DeferredLearningRecord.Status.PENDING, response.status());
         assertEquals("学习编曲", response.content());
         assertEquals(today, response.recordedAt().toLocalDate());
-        verifyNoInteractions(checkInService);
-        verify(actions).refreshAttendance(1L, today);
+        verifyNoInteractions(checkInService, checkIns, actions);
     }
     void retryable() {
         when(records.findLockedById(10L)).thenReturn(Optional.of(pending));

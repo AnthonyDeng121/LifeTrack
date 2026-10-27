@@ -9,6 +9,9 @@ import java.util.List;
 
 @Data
 public class TaskUpdateRequest {
+    @jakarta.validation.constraints.NotNull(message = "缺少计划版本，请刷新后重试")
+    @jakarta.validation.constraints.Min(0)
+    private Long version;
     @Size(min = 1, max = 100, message = "计划标题长度必须在1到100个字符之间")
     private String title;
     private String category;

@@ -16,6 +16,9 @@ public interface ActionLogRepository extends JpaRepository<ActionLog, Long> {
     List<ActionLog> findByTaskId(Long taskId);
     Page<ActionLog> findByUserId(Long userId, Pageable pageable);
 
+    @Query("select coalesce(sum(a.durationMinutes), 0) from ActionLog a where a.userId = ?1 and a.taskId = ?2")
+    long sumLearningMinutes(Long userId, Long taskId);
+
     @Modifying
     @Query("delete from ActionLog a where a.taskId = ?1")
     void deleteByTaskId(Long taskId);

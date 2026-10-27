@@ -77,7 +77,8 @@ class UserOperationIntegrationTest {
         assertEquals(409, duplicate.path("code").asInt());
         var history = api("GET", "/check-ins?taskId=" + id + "&startDate=" + today + "&endDate=" + today, null);
         assertEquals(1, history.path("data").size());
-        assertEquals(30, history.path("data").get(0).path("durationMinutes").asInt());
+        assertEquals(0, history.path("data").get(0).path("durationMinutes").asInt());
+        assertEquals("", history.path("data").get(0).path("content").asText());
         assertEquals(2, api("GET", "/check-ins/tasks/" + id + "/stats", null).path("data").path("checkedInDays").asInt());
         assertEquals(0, api("GET", "/actions/history", null).path("data").path("total").asInt(), "正式打卡不会伪造AI学习记录");
         var plans = api("GET", "/tasks?status=IN_PROGRESS&startDate=" + today + "&endDate=" + today, null).path("data");
@@ -93,20 +94,46 @@ class UserOperationIntegrationTest {
         var preview=api("POST","/tasks/deconstruct/preview",Map.of("title","学习数据库事务","stepCount",3));
         assertEquals(503,preview.path("code").asInt());
         assertEquals(1,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
-        var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationInput","30分钟"));
+        var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationMinutes",30));
         assertEquals(200,failed.path("code").asInt());
         assertTrue(failed.path("data").path("analysisUnavailable").asBoolean());
         assertEquals(0,database.queryForObject("select count(*) from action_logs where task_id=?",Integer.class,id));
         assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
-        var saved=api("POST","/actions/deferred",Map.of("taskId",id,"content","整理了数据库事务的学习笔记","durationMinutes",30));
-        assertEquals(200,saved.path("code").asInt());
-        long record=saved.path("data").path("id").asLong();
+        long record=failed.path("data").path("recordId").asLong();
+        assertTrue(record > 0);
         assertEquals("PENDING",database.queryForObject("select status from deferred_learning_records where id=?",String.class,record));
-        assertEquals(1,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
         assertTrue(api("POST","/actions/deferred/"+record+"/retry",Map.of()).path("data").path("analysisUnavailable").asBoolean());
         assertEquals("PENDING",database.queryForObject("select status from deferred_learning_records where id=?",String.class,record));
         assertEquals(0,database.queryForObject("select total_progress from tasks where id=?",BigDecimal.class,id).signum());
-        assertEquals(30,database.queryForObject("select sum(duration_minutes) from check_in_records where task_id=?",Integer.class,id));
+        assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        assertEquals(30,database.queryForObject("select duration_minutes from deferred_learning_records where id=?",Integer.class,record));
+    }
+
+    @Test void staleFormCannotOverwriteNewerPlanAndMissingVersionIsRejected() throws Exception {
+        long id = create(today, today.plusDays(7));
+        long version = api("GET", "/tasks/" + id, null).path("data").path("version").asLong();
+        var first = api("PUT", "/tasks/" + id, Map.of("title", "新窗口修改", "version", version));
+        assertEquals(200, first.path("code").asInt());
+        assertTrue(first.path("data").path("version").asLong() > version);
+        assertEquals(409, api("PUT", "/tasks/" + id, Map.of("title", "旧窗口覆盖", "version", version)).path("code").asInt());
+        assertEquals(400, api("PUT", "/tasks/" + id, Map.of("title", "无版本覆盖")).path("code").asInt());
+        assertEquals("新窗口修改", api("GET", "/tasks/" + id, null).path("data").path("title").asText());
+    }
+
+    @Test void longTitleAndNonIntegerDurationAreClearBadRequestsWithoutWrites() throws Exception {
+        var invalid = api("POST", "/tasks/manual", Map.of("title", "测".repeat(101), "category", "学习",
+                "startDate", today.toString(), "endDate", today.plusDays(7).toString(), "targetDays", 5,
+                "subTasks", List.of(Map.of("content", "学习数据库", "weight", 1))));
+        assertEquals(400, invalid.path("code").asInt());
+        assertTrue(invalid.path("message").asText().contains("100"));
+        assertEquals(0, database.queryForObject("select count(*) from tasks where user_id=?", Integer.class, user.getId()));
+        long id = create(today, today.plusDays(7));
+        for (Object duration : List.of(-1, 0, 1441, 1.5, "半小时")) {
+            assertEquals(400, api("POST", "/actions/sync", Map.of("taskId", id, "rawInput", "学习数据库", "durationMinutes", duration)).path("code").asInt());
+        }
+        assertEquals(400, api("POST", "/actions/sync", Map.of("taskId", id, "rawInput", "学习数据库", "durationInput", "30分钟")).path("code").asInt());
+        assertEquals(0, database.queryForObject("select count(*) from deferred_learning_records where task_id=?", Integer.class, id));
     }
 
     @Test void foreignUserCannotReadEditDeleteCheckInOrRevokeAndDatabaseRemainsUnchanged() throws Exception {
@@ -120,7 +147,7 @@ class UserOperationIntegrationTest {
             token=jwt.generateToken(foreign.getId(),foreign.getUsername());
             assertEquals(0,api("GET","/tasks",null).path("data").size());
             assertEquals(403,api("GET","/tasks/"+id,null).path("code").asInt());
-            assertEquals(403,api("PUT","/tasks/"+id,Map.of("title","非法修改")).path("code").asInt());
+            assertEquals(403,api("PUT","/tasks/"+id,Map.of("title","非法修改","version",0)).path("code").asInt());
             assertEquals(403,api("DELETE","/tasks/"+id,null).path("code").asInt());
             assertEquals(403,api("POST","/check-ins",Map.of("taskId",id)).path("code").asInt());
             assertEquals(403,api("GET","/check-ins?taskId="+id,null).path("code").asInt());
@@ -196,7 +223,7 @@ class UserOperationIntegrationTest {
             assertEquals(0, response.path("data").path("durationMinutes").asInt());
         }
         assertEquals(409, api("POST", "/check-ins", Map.of("taskId", active)).path("code").asInt());
-        assertEquals(200, api("PUT", "/tasks/" + completed, Map.of("status", "COMPLETED")).path("code").asInt());
+        assertEquals(200, api("PUT", "/tasks/" + completed, Map.of("status", "COMPLETED", "version", 0)).path("code").asInt());
         assertEquals(200, api("POST", "/check-ins", Map.of("taskId", cancelled, "checkInDate", today.minusDays(1).toString(),
                 "content", "取消前打卡", "durationMinutes", 15)).path("code").asInt());
         logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(cancelled).rawInput("取消前学习记录")
@@ -205,7 +232,7 @@ class UserOperationIntegrationTest {
         var before = api("GET", "/dashboard/stats", null).path("data");
         assertEquals(2, before.path("checkedInDays").asInt(), "同日两个计划只增加一个自然日");
         assertEquals(77, before.path("timeDistribution").get(0).path("minutes").asInt());
-        assertEquals(200, api("PUT", "/tasks/" + cancelled, Map.of("status", "CANCELLED")).path("code").asInt());
+        assertEquals(200, api("PUT", "/tasks/" + cancelled, Map.of("status", "CANCELLED", "version", 0)).path("code").asInt());
         var after = api("GET", "/dashboard/stats", null).path("data");
         assertEquals(50, after.path("learningPlanCompletionRate").asInt());
         assertEquals(2, after.path("totalPlanCount").asInt()); assertEquals(1, after.path("cancelledPlanCount").asInt());

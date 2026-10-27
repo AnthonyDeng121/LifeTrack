@@ -55,8 +55,8 @@ assert.match(detailPage, /打卡数据加载失败/);
 assert.match(recordPage, /暂无行为记录/);
 assert.doesNotMatch(detailPage, /submitCheckIn|createCheckIn|v-model="checkInContent"/);
 assert.doesNotMatch(dashboardPage, /goRecord|record-btn/);
-assert.deepEqual(endpoints.actions.sync("学习编曲", "30分钟", 101), {
-  method: "POST", path: "/actions/sync", data: { rawInput: "学习编曲", durationInput: "30分钟", taskId: 101 },
+assert.deepEqual(endpoints.actions.sync("学习编曲", 30, 101), {
+  method: "POST", path: "/actions/sync", data: { rawInput: "学习编曲", durationMinutes: 30, taskId: 101 },
 });
 assert.match(profilePage, /基础计划与打卡功能仍可正常使用/);
 for (const source of [dashboardPage, tasksPage, detailPage, recordPage, profilePage]) {
@@ -155,7 +155,7 @@ assert.deepEqual(endpoints.tasks.preview({ title: "网络", guidance: "重点抓
   method: "POST", path: "/tasks/deconstruct/preview", data: { title: "网络", guidance: "重点抓包" },
 });
 
-// 执行记录页提交逻辑：无匹配保留输入，成功才清空，时长和可选计划必须传到 API。
+// 执行记录页提交逻辑：明确时长，先保存原文，失败记录可重试且不重复提交。
 let syncResponse = { updates: [], aiAnalysis: "没有匹配" };
 let syncArguments;
 let manualPayload;
@@ -163,37 +163,41 @@ let deferredData = [];
 let retriedId;
 const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
 const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript}
-  return { rawInput, duration, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, submitManualCheckIn, retryRecord, loadDeferredRecords };
+  return { rawInput, durationHours, durationMinutes, readDurationMinutes, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, retryRecord, loadDeferredRecords };
 `)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
   syncArguments = args;
   return syncResponse;
-}, async () => ({}), async () => ({ list: [] }), async () => [], async payload => { manualPayload = payload; }, async () => deferredData,
+}, async () => ({}), async () => ({ list: [] }), async () => [{ id: 101 }], async payload => { manualPayload = payload; }, async () => deferredData,
 async id => { retriedId = id; deferredData = [{ id, status: "APPLIED" }]; return { updates: [{ taskId: 101, subTaskId: 1 }] }; }, getBusinessDate);
 recording.rawInput.value = "学习编曲";
-recording.duration.value = "30分钟";
+recording.durationMinutes.value = "30";
 recording.selectedTaskId.value = 101;
 await recording.submitRecord();
-assert.deepEqual(syncArguments, ["学习编曲", "30分钟", 101]);
-assert.equal(recording.rawInput.value, "学习编曲", "无匹配保留输入，方便修改或选择计划后重试");
+assert.deepEqual(syncArguments, ["学习编曲", 30, 101]);
+assert.equal(recording.rawInput.value, "", "服务器已保存原文，重新分析使用记录ID");
 assert.equal(recording.syncing.value, false);
 syncResponse = { updates: [], matchingAmbiguous: true, aiAnalysis: "请补充具体知识点" };
-await recording.submitRecord();
-assert.equal(recording.rawInput.value, "学习编曲", "匹配范围不明确时保留输入");
-syncResponse = { updates: [{ taskId: 101, subTaskId: 1, checkedInNow: true }] };
+recording.rawInput.value = "学习编曲"; recording.durationMinutes.value = "30";
 await recording.submitRecord();
 assert.equal(recording.rawInput.value, "");
-assert.equal(recording.duration.value, "");
+syncResponse = { updates: [{ taskId: 101, subTaskId: 1, checkedInNow: true }] };
+recording.rawInput.value = "学习编曲"; recording.durationMinutes.value = "30";
+await recording.submitRecord();
+assert.equal(recording.rawInput.value, "");
+assert.equal(recording.durationMinutes.value, "");
 syncResponse = { updates: [], analysisUnavailable: true, aiAnalysis: "AI 分析记录失败，请稍后重试" };
 recording.rawInput.value = "学习编曲软件";
-recording.duration.value = "1.5小时";
+recording.durationHours.value = "1"; recording.durationMinutes.value = "30";
 recording.selectedTaskId.value = 101;
 await recording.submitRecord();
 assert.equal(recording.syncResult.value.analysisUnavailable, true);
-assert.equal(recording.rawInput.value, "学习编曲软件");
-await recording.submitManualCheckIn();
-assert.deepEqual(manualPayload, { taskId: 101, content: "学习编曲软件", durationMinutes: 90 });
+assert.deepEqual(syncArguments, ["学习编曲软件", 90, 101]);
 assert.equal(recording.rawInput.value, "");
 assert.equal(recording.syncing.value, false);
+for (const [h, m, expected] of [["", "", null], ["0", "0", null], ["1.5", "0", null], ["1", "60", null], ["-1", "5", null], ["24", "1", null], ["24", "0", 1440], ["", "1", 1]]) {
+  recording.durationHours.value = h; recording.durationMinutes.value = m;
+  assert.equal(recording.readDurationMinutes(), expected);
+}
 deferredData = [{ id: 33, status: "PENDING" }];
 await recording.loadDeferredRecords();
 assert.equal(recording.pendingRecords.value.length, 1);
@@ -207,7 +211,6 @@ assert.deepEqual(endpoints.tasks.addSubtask(101, { content: "练习", weight: 0.
   method: "POST", path: "/tasks/101/subtasks", data: { content: "练习", weight: 0.3 },
 });
 assert.deepEqual(endpoints.actions.retryDeferred(33), { method: "POST", path: "/actions/deferred/33/retry" });
-assert.deepEqual(endpoints.actions.saveDeferred(manualPayload), { method: "POST", path: "/actions/deferred", data: manualPayload });
 
 // 实际执行详情页的新增与编辑分支，确认共用弹窗不会把新增误发为更新。
 let addedStep;
@@ -262,7 +265,7 @@ async () => ({}), async (id, payload) => {
   editPayloads.push({ id, payload });
   return { ...editing.task.value, ...payload };
 });
-editing.task.value = { id: 101, title: "学习", category: "学习", startDate: "2026-10-23", endDate: "2026-10-31", targetDays: 5, status: "IN_PROGRESS" };
+editing.task.value = { id: 101, version: 7, title: "学习", category: "学习", startDate: "2026-10-23", endDate: "2026-10-31", targetDays: 5, status: "IN_PROGRESS" };
 editing.openPlanEdit();
 editing.planForm.value.startDate = "2026-10-25";
 await editing.savePlan();
@@ -273,6 +276,7 @@ assert.match(modalCopy, /未在新计划周期内的打卡记录将清零，是�
 assert.match(modalCopy, /1 条/);
 allowPrune = true;
 await editing.savePlan();
+assert.equal(editPayloads[0].payload.version, 7, "保存必须携带打开编辑表单时读取到的版本");
 assert.equal(editPayloads.length, 1);
 assert.equal(editPayloads[0].payload.discardOutsideCheckIns, true);
 assert.deepEqual(editPayloads[0].payload.confirmedDiscardCheckInIds, [21]);

@@ -21,8 +21,17 @@ public class DeferredLearningRecordService {
     private final TaskRepository tasks;
     private final CheckInRecordRepository checkIns;
     private final ActionLogRepository logs;
-    private final CheckInService checkInService;
     private final ActionService actions;
+
+    /** 原文先提交到数据库；外部AI失败不会回滚原文，也不会产生学习时长或打卡。 */
+    public ActionSyncResponse submit(ActionSyncRequest request) {
+        var input = new DeferredLearningRecordRequest();
+        input.setTaskId(request.getTaskId());
+        input.setContent(request.getRawInput());
+        input.setDurationMinutes(request.getDurationMinutes());
+        DeferredLearningRecordResponse saved = recordTransactions.execute(tx -> save(input));
+        return retry(saved.id());
+    }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public DeferredLearningRecordResponse save(DeferredLearningRecordRequest request) {
@@ -33,16 +42,11 @@ public class DeferredLearningRecordService {
         if (task.getStatus() != PlanStatus.IN_PROGRESS || today.isBefore(task.getStartDate()) || today.isAfter(task.getEndDate())) {
             throw new BusinessException(400, "仅有效周期内的进行中计划可以保存学习记录");
         }
-        if (!checkIns.existsByUserIdAndTaskIdAndCheckInDate(userId, task.getId(), today)) {
-            CheckInCreateRequest checkIn = new CheckInCreateRequest();
-            checkIn.setTaskId(task.getId()); checkIn.setContent(request.getContent());
-            checkIn.setDurationMinutes(request.getDurationMinutes());
-            checkInService.create(checkIn);
-        }
+        if (request.getDurationMinutes() == null || request.getDurationMinutes() < 1 || request.getDurationMinutes() > 1440)
+            throw new BusinessException(400, "学习时长必须为1到1440整数分钟");
         DeferredLearningRecord record = records.save(DeferredLearningRecord.builder().userId(userId).taskId(task.getId())
                 .content(request.getContent().trim()).durationMinutes(request.getDurationMinutes()).recordedAt(now)
-                .status(DeferredLearningRecord.Status.PENDING).lastAnalysis("已保存，等待AI恢复后补分析").build());
-        actions.refreshAttendance(task.getId(), today);
+                .status(DeferredLearningRecord.Status.PENDING).lastAnalysis("记录已保存，尚未分析成功，时长未计入").build());
         return response(record, task.getTitle());
     }
 
@@ -66,7 +70,7 @@ public class DeferredLearningRecordService {
         }
         ActionSyncRequest request = new ActionSyncRequest();
         request.setTaskId(record.getTaskId()); request.setRawInput(record.getContent());
-        request.setDurationInput(record.getDurationMinutes() + "分钟");
+        request.setDurationMinutes(record.getDurationMinutes());
         PreparedLearningRecord prepared = actions.prepareHistoricalAction(request, record.getRecordedAt(), record.getDurationMinutes());
         return recordTransactions.execute(tx -> applyRetry(id, userId, record, prepared));
     }
@@ -86,6 +90,7 @@ public class DeferredLearningRecordService {
         record.setLastAnalysis(result.getAiAnalysis());
         records.save(record);
         actions.refreshAttendance(record.getTaskId(), record.getRecordedAt().toLocalDate());
+        result.setRecordId(id);
         return result;
     }
 

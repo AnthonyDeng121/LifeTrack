@@ -46,7 +46,7 @@ try {
   const initial = (await api("GET", "/tasks")).find(t => t.id === plan).updatedAt;
   await new Promise(r => setTimeout(r, 1100));
   assert.equal((await api("GET", "/tasks")).find(t => t.id === plan).updatedAt, initial, "只读刷新不能改变更新时间");
-  const record = text => api("POST", "/actions/sync", { taskId: plan, rawInput: text, durationInput: "30分钟" });
+  const record = text => api("POST", "/actions/sync", { taskId: plan, rawInput: text, durationMinutes: 30 });
   const irrelevant = await record("今天吃了香蕉，没有学习Spring Boot，也没有写代码");
   assert.equal(irrelevant.updates.length, 0);
   const partial = await record("今天刚开始用Maven创建Spring Boot项目，正在学习启动配置，还没完成hello接口，也没有运行测试");

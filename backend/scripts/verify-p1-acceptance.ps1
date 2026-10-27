@@ -6,6 +6,10 @@ function Assert-Equal($Expected, $Actual, [string]$Label) {
 }
 Import-Module (Join-Path $PSScriptRoot "AcceptanceHttp.psm1") -Force
 function Invoke-LifeTrack([string]$Method, [string]$Path, $Body = $null, [string]$Token = "") {
+    if ($Method -eq "PUT" -and $Path -match '^/tasks/\d+$' -and $null -ne $Body -and -not $Body.ContainsKey('version')) {
+        $current = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path $Path -Token $Token
+        $Body.version = $current.data.version
+    }
     Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $Token
 }
 

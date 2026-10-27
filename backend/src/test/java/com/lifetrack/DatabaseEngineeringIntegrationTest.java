@@ -63,7 +63,7 @@ class DatabaseEngineeringIntegrationTest {
         finally { UserContext.clear(); }
     }
     ActionSyncRequest request() {
-        var r = new ActionSyncRequest(); r.setTaskId(planId); r.setRawInput("整理了数据库事务与锁的知识笔记"); r.setDurationInput("30分钟"); return r;
+        var r = new ActionSyncRequest(); r.setTaskId(planId); r.setRawInput("整理了数据库事务与锁的知识笔记"); r.setDurationMinutes(30); return r;
     }
     AIMatchResult analysis() {
         Long step = steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId();
@@ -88,11 +88,59 @@ class DatabaseEngineeringIntegrationTest {
         } finally { pool.shutdownNow(); }
     }
 
+    @Test void failedLearningRecordDoesNotCountUntilRetryAndNeverOverwritesManualNote() {
+        var manual = new CheckInCreateRequest(); manual.setTaskId(planId);
+        attendance.create(manual);
+        // 模拟已有的历史手动备注，确认新规则不会覆盖历史正文。
+        jdbc.update("update check_in_records set content=? where task_id=?", "历史备注保留", planId);
+        when(ai.analyzeAction(anyString(), anyString(), anyList())).thenReturn(
+                AIMatchResult.builder().unavailable(true).matches(List.of()).aiAnalysis("暂不可用").build());
+        var failed = deferred.submit(request());
+        assertNotNull(failed.getRecordId());
+        assertEquals(0, plans.getTaskDetail(planId).getLearningDurationMinutes());
+        assertEquals(0, jdbc.queryForObject("select count(*) from action_logs where task_id=?", Integer.class, planId));
+        assertEquals(0, jdbc.queryForObject("select duration_minutes from check_in_records where task_id=?", Integer.class, planId));
+        var success = analysis(); success.setDurationMinutes(999); // 故意让模型报错时长，后端仍使用用户的30分钟。
+        when(ai.analyzeAction(anyString(), anyString(), anyList())).thenReturn(success);
+        assertEquals(30, deferred.retry(failed.getRecordId()).getDurationMinutes());
+        assertEquals(30, plans.getTaskDetail(planId).getLearningDurationMinutes());
+        assertEquals(30, jdbc.queryForObject("select sum(duration_minutes) from action_logs where task_id=?", Integer.class, planId));
+        assertEquals(30, jdbc.queryForObject("select duration_minutes from check_in_records where task_id=?", Integer.class, planId));
+        assertEquals("历史备注保留", jdbc.queryForObject("select content from check_in_records where task_id=?", String.class, planId));
+        assertEquals(409, assertThrows(BusinessException.class, () -> deferred.retry(failed.getRecordId())).getCode());
+        assertEquals(30, jdbc.queryForObject("select sum(duration_minutes) from action_logs where task_id=?", Integer.class, planId));
+    }
+
+    @Test void concurrentRetriesCountOriginalDurationExactlyOnce() throws Exception {
+        var input = new DeferredLearningRecordRequest(); input.setTaskId(planId);
+        input.setContent(request().getRawInput()); input.setDurationMinutes(75);
+        long record = deferred.save(input).id();
+        assertFalse(checkIns.existsByUserIdAndTaskIdAndCheckInDate(user.getId(), planId, today));
+        var response = analysis();
+        var bothInAi = new CountDownLatch(2);
+        when(ai.analyzeAction(anyString(), anyString(), anyList())).thenAnswer(i -> {
+            bothInAi.countDown(); assertTrue(bothInAi.await(10, TimeUnit.SECONDS)); return response;
+        });
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Callable<Integer> retry = () -> {
+            UserContext.setUserId(user.getId());
+            try { deferred.retry(record); return 200; }
+            catch (BusinessException e) { return e.getCode(); }
+            finally { UserContext.clear(); }
+        };
+        try {
+            var a = pool.submit(retry); var b = pool.submit(retry);
+            assertEquals(List.of(200, 409), java.util.stream.Stream.of(a.get(15, TimeUnit.SECONDS), b.get(15, TimeUnit.SECONDS)).sorted().toList());
+            assertEquals(75, jdbc.queryForObject("select sum(duration_minutes) from action_logs where task_id=?", Integer.class, planId));
+            assertEquals(1, jdbc.queryForObject("select count(*) from check_in_records where task_id=?", Integer.class, planId));
+        } finally { pool.shutdownNow(); }
+    }
+
     @Test void aiRunsWithoutTransactionAndChangedPlanRejectsStaleResult() {
         var response = analysis();
         when(ai.analyzeAction(anyString(),anyString(),anyList())).thenAnswer(invocation -> {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
-            var change = new TaskUpdateRequest(); change.setTitle("AI分析过程中修改标题"); plans.updateTask(planId,change);
+            var change = new TaskUpdateRequest(); change.setVersion(plans.getTaskDetail(planId).getVersion()); change.setTitle("AI分析过程中修改标题"); plans.updateTask(planId,change);
             return response;
         });
         var ex = assertThrows(BusinessException.class, () -> actions.syncAction(request()));

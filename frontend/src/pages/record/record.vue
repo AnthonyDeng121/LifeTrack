@@ -21,8 +21,7 @@
           <text v-else-if="!plans.length" class="hint">暂无进行中的计划，请先创建或开始学习计划。</text>
         </view>
         <text class="hint">日期：{{ businessToday }}</text>
-        <view class="input-group"><text class="input-label">打卡备注（可选）</text><input v-model="manualContent" :disabled="manualSaving" class="glass-input duration-input" maxlength="500" placeholder="可以直接打卡，不必填写每日总结" /></view>
-        <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!retryingId || importing" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
+        <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!retryingId" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
         <text v-if="manualMessage" class="hint" role="status">{{ manualMessage }}</text>
         <button v-if="manualResultTaskId" class="glass-button" @tap="viewManualHistory">查看该计划打卡历史</button>
       </view>
@@ -30,7 +29,7 @@
       <view class="glass-card input-card">
         <text class="section-title">AI 学习记录</text>
         <view class="input-group">
-          <text class="input-label">匹配范围</text>
+          <text class="input-label">所属学习计划</text>
           <picker :range="planLabels" :value="selectedPlanIndex" @change="selectPlan">
             <view class="glass-input">{{ planLabels[selectedPlanIndex] }}</view>
           </picker>
@@ -47,16 +46,15 @@
         </view>
 
         <view class="input-group">
-          <text class="input-label">所用时长 (支持自然语言)</text>
-          <input
-            v-model="duration"
-            type="text"
-            class="glass-input duration-input"
-            placeholder="例如：30分钟、1.5小时、一小会儿"
-          />
+          <text class="input-label">实际学习时长</text>
+          <view class="duration-fields">
+            <input v-model="durationHours" type="number" class="glass-input duration-input" placeholder="0" :disabled="syncing" /><text>小时</text>
+            <input v-model="durationMinutes" type="number" class="glass-input duration-input" placeholder="0" :disabled="syncing" /><text>分钟</text>
+          </view>
+          <text class="hint">小时和分钟均填整数，分钟为0～59；总时长1分钟～24小时。仅分析成功的记录计入学习时长。</text>
         </view>
 
-        <button class="glass-button sync-btn" :disabled="syncing || manualSaving || !!retryingId || importing" :loading="syncing" @tap="submitRecord">
+        <button class="glass-button sync-btn" :disabled="syncing || manualSaving || !!retryingId" :loading="syncing" @tap="submitRecord">
           分析并保存记录
         </button>
         <text class="hint">
@@ -68,11 +66,7 @@
         <text class="result-title">AI 同步结果</text>
         <text v-if="syncResult.updates?.length" class="result-copy">{{ syncSummary }}</text>
         <text class="result-copy">{{ syncResult.aiAnalysis }}</text>
-        <template v-if="syncResult.analysisUnavailable && !resultIsRetry">
-          <text class="hint">AI 暂不可用，选择计划后可先保存记录并打卡。原始内容和日期会保留，恢复后点击“补分析”恢复对应进度。</text>
-          <button class="glass-button" :disabled="!selectedTaskId || syncing" :loading="syncing" @tap="submitManualCheckIn">保存记录并打卡（待补分析）</button>
-        </template>
-        <text v-if="!syncResult.updates?.length" class="hint">{{ resultIsRetry ? "原始记录仍保留，本次未增加进度，也未重复打卡。" : syncResult.matchingAmbiguous ? "匹配范围不明确；输入已保留，请补充具体学习内容后重试。" : "未产生有效进度，未保存学习记录，也未新增打卡。请补充学习内容，或选择计划后重试。" }}</text>
+        <text v-if="!syncResult.updates?.length" class="hint">原始记录和填写时长已保留，本次未累计时长或新增打卡。可在下方对该条记录重新分析。</text>
         <view class="update-list">
           <view v-for="item in syncResult.updates" :key="item.subTaskId" class="update-row">
             <view>
@@ -85,19 +79,18 @@
       </view>
 
       <view class="section-head">
-        <text class="section-title">待补分析</text>
-        <button class="glass-button import-deferred-btn" :disabled="syncing || manualSaving || retryingId || importing" @tap="importLegacyRecords">导入手动打卡待分析</button>
+        <text class="section-title">尚未分析成功的记录</text>
       </view>
       <view v-if="deferredLoading" class="glass-card empty-card"><text>正在加载待分析记录...</text></view>
       <view v-else-if="deferredError" class="glass-card empty-card state-card"><text>{{ deferredError }}</text><button class="glass-button" @tap="loadDeferredRecords">重新加载</button></view>
-      <view v-else-if="pendingRecords.length === 0" class="glass-card empty-card"><text>没有待补分析的记录</text></view>
+      <view v-else-if="pendingRecords.length === 0" class="glass-card empty-card"><text>没有待重新分析的记录</text></view>
       <view v-else class="history-list">
         <view v-for="item in pendingRecords" :key="item.id" class="glass-card deferred-card">
           <text class="history-title">{{ item.taskTitle }}</text>
-          <text class="text-muted">{{ item.recordedAt }} · {{ item.durationMinutes }} 分钟 · {{ item.status === "UNMATCHED" ? "暂未匹配" : "待分析" }}</text>
+          <text class="text-muted">{{ item.recordedAt }} · 填写 {{ item.durationMinutes }} 分钟（未计入）· {{ item.status === "UNMATCHED" ? "暂未匹配" : "尚未分析成功" }}</text>
           <text class="raw">{{ item.content }}</text>
           <text class="text-muted">{{ item.lastAnalysis }}</text>
-          <button class="glass-button retry-analysis-btn" :disabled="syncing || !!retryingId || importing" :loading="retryingId === item.id" @tap="retryRecord(item)">补分析</button>
+          <button class="glass-button retry-analysis-btn" :disabled="syncing || !!retryingId" :loading="retryingId === item.id" @tap="retryRecord(item)">重新分析</button>
         </view>
       </view>
 
@@ -120,6 +113,7 @@
               <text class="pill">+{{ formatProgress(item.contribution) }}%</text>
             </view>
             <text class="raw">{{ item.rawInput }}</text>
+            <text class="text-muted">已计入时长：{{ item.durationMinutes || 0 }} 分钟</text>
             <text class="text-muted analysis">{{ item.aiAnalysis }}</text>
             <text class="text-muted time">{{ item.createdAt }}</text>
           </view>
@@ -144,7 +138,7 @@
 import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, saveDeferredLearningRecord, getDeferredLearningRecords, retryDeferredLearningRecord, importDeferredLearningRecords } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, getDeferredLearningRecords, retryDeferredLearningRecord } from "../../services/api";
 import { getBusinessDate } from "../../services/businessTime";
 
 const plans = ref([]);
@@ -152,7 +146,6 @@ const selectedTaskId = ref(null);
 const plansError = ref("");
 const businessToday = ref(getBusinessDate());
 const manualTaskId = ref(null);
-const manualContent = ref("");
 const manualSaving = ref(false);
 const manualAlreadyChecked = ref(false);
 const manualChecking = ref(false);
@@ -191,14 +184,14 @@ function viewManualHistory() {
   if (manualResultTaskId.value) uni.navigateTo({ url: `/pages/task-detail/task-detail?id=${manualResultTaskId.value}` });
 }
 async function submitDailyCheckIn() {
-  if (manualSaving.value || manualChecking.value || manualAlreadyChecked.value || syncing.value || retryingId.value || importing.value) return;
+  if (manualSaving.value || manualChecking.value || manualAlreadyChecked.value || syncing.value || retryingId.value) return;
   const plan = plans.value.find(item => item.id === manualTaskId.value);
   if (!plan) return uni.showToast({ title: "请选择进行中的学习计划", icon: "none" });
   const date = getBusinessDate();
   if (plan.status !== "IN_PROGRESS" || date < plan.startDate || date > plan.endDate) {
     return uni.showToast({ title: "仅有效周期内的进行中计划可以打卡", icon: "none" });
   }
-  const payload = { taskId: plan.id, content: manualContent.value.trim() };
+  const payload = { taskId: plan.id };
   manualSaving.value = true;
   manualMessage.value = "";
   manualResultTaskId.value = null;
@@ -213,7 +206,7 @@ async function submitDailyCheckIn() {
     if (error.code === 409) { manualResultTaskId.value = payload.taskId; manualAlreadyChecked.value = true; }
   } finally { manualSaving.value = false; }
 }
-const planLabels = computed(() => ["自动匹配全部进行中的计划", ...plans.value.map(p => p.title)]);
+const planLabels = computed(() => ["请选择学习计划", ...plans.value.map(p => p.title)]);
 const selectedPlanIndex = computed(() => Math.max(0, plans.value.findIndex(p => p.id === selectedTaskId.value) + 1));
 function selectPlan(event) {
   selectedTaskId.value = plans.value[Number(event.detail.value) - 1]?.id ?? null;
@@ -231,7 +224,8 @@ async function loadPlans() {
 }
 onShow(loadPlans);
 const rawInput = ref("");
-const duration = ref("");
+const durationHours = ref("");
+const durationMinutes = ref("");
 const syncing = ref(false);
 const syncResult = ref(null);
 const resultIsRetry = ref(false);
@@ -239,7 +233,6 @@ const deferredRecords = ref([]);
 const deferredLoading = ref(false);
 const deferredError = ref("");
 const retryingId = ref(null);
-const importing = ref(false);
 const pendingRecords = computed(() => deferredRecords.value.filter(r => r.status !== "APPLIED"));
 async function loadDeferredRecords() {
   deferredLoading.value = true;
@@ -248,25 +241,15 @@ async function loadDeferredRecords() {
   finally { deferredLoading.value = false; }
 }
 async function retryRecord(item) {
-  if (syncing.value || manualSaving.value || retryingId.value || importing.value) return;
+  if (syncing.value || manualSaving.value || retryingId.value) return;
   retryingId.value = item.id;
   try {
     syncResult.value = await retryDeferredLearningRecord(item.id);
     resultIsRetry.value = true;
     await Promise.all([loadDeferredRecords(), loadData(), loadPlans()]);
-    uni.showToast({ title: syncResult.value.updates?.length ? "补分析完成，进度已恢复" : "本次未更新进度，原记录保留", icon: "none" });
+    uni.showToast({ title: syncResult.value.updates?.length ? "分析成功，时长已计入" : "分析未成功，时长未计入", icon: "none" });
   } catch (error) { console.warn("retry learning record failed", error); }
   finally { retryingId.value = null; }
-}
-async function importLegacyRecords() {
-  if (syncing.value || manualSaving.value || retryingId.value || importing.value) return;
-  importing.value = true;
-  try {
-    const count = await importDeferredLearningRecords();
-    await loadDeferredRecords();
-    uni.showToast({ title: `已导入${count}条待分析记录`, icon: "none" });
-  } catch (error) { console.warn("import legacy records failed", error); }
-  finally { importing.value = false; }
 }
 onShow(loadDeferredRecords);
 const history = ref([]);
@@ -294,64 +277,47 @@ function formatProgress(value) {
 }
 
 async function submitRecord() {
-  if (syncing.value || manualSaving.value || retryingId.value || importing.value) return;
+  if (syncing.value || manualSaving.value || retryingId.value) return;
   resultIsRetry.value = false;
   const value = rawInput.value.trim();
-  const mins = duration.value.trim();
+  const mins = readDurationMinutes();
 
   if (!value) {
     uni.showToast({ title: "先写一点今天的行为", icon: "none" });
     return;
   }
-  if (!mins) {
-    uni.showToast({ title: "请输入大概的时长", icon: "none" });
+  if (!selectedTaskId.value) {
+    uni.showToast({ title: "请选择学习计划", icon: "none" });
+    return;
+  }
+  if (mins === null) {
+    uni.showToast({ title: "请填写整数小时和0～59分钟，总时长1～1440分钟", icon: "none" });
     return;
   }
 
   syncing.value = true;
   try {
     syncResult.value = await syncAction(value, mins, selectedTaskId.value);
-    if (!syncResult.value?.updates?.length) {
-      uni.showToast({ title: "未更新进度，请查看分析结果", icon: "none" });
-      return;
-    }
     rawInput.value = "";
-    duration.value = "";
+    durationHours.value = "";
+    durationMinutes.value = "";
     await Promise.all([loadData(), loadPlans(), loadDeferredRecords()]);
-    uni.showToast({ title: "学习记录已保存", icon: "none" });
+    uni.showToast({ title: syncResult.value?.updates?.length ? "分析成功，时长已计入" : "原记录已保存，时长未计入", icon: "none" });
   } catch (error) {
     console.warn("sync action failed", error);
+    await loadDeferredRecords();
   } finally {
     syncing.value = false;
   }
 }
 
-async function submitManualCheckIn() {
-  if (syncing.value || manualSaving.value || retryingId.value || importing.value || !selectedTaskId.value) return;
-  const content = rawInput.value.trim();
-  const match = duration.value.trim().match(/^(\d+(?:\.\d+)?)\s*(分钟|小时)?$/);
-  if (!content || !match) {
-    uni.showToast({ title: "请填写学习内容和明确时长，如30分钟", icon: "none" });
-    return;
-  }
-  const minutes = Number(match[1]) * (match[2] === "小时" ? 60 : 1);
-  if (!Number.isSafeInteger(minutes) || minutes < 0) {
-    uni.showToast({ title: "学习时长应为非负整数分钟", icon: "none" });
-    return;
-  }
-  syncing.value = true;
-  try {
-    await saveDeferredLearningRecord({ taskId: selectedTaskId.value, content, durationMinutes: minutes });
-    rawInput.value = "";
-    duration.value = "";
-    syncResult.value = null;
-    await Promise.all([loadData(), loadPlans(), loadDeferredRecords()]);
-    uni.showToast({ title: "记录已保存并打卡，恢复后可补分析", icon: "none" });
-  } catch (error) {
-    console.warn("manual check-in failed", error);
-  } finally {
-    syncing.value = false;
-  }
+function readDurationMinutes() {
+  const hours = String(durationHours.value).trim();
+  const minutes = String(durationMinutes.value).trim();
+  if ((!hours && !minutes) || !/^\d*$/.test(hours) || !/^\d*$/.test(minutes)) return null;
+  const h = Number(hours || 0), m = Number(minutes || 0);
+  const total = h * 60 + m;
+  return Number.isSafeInteger(h) && Number.isSafeInteger(m) && m <= 59 && total >= 1 && total <= 1440 ? total : null;
 }
 
 async function loadHistory(requestedPage = 0) {
@@ -397,6 +363,8 @@ onShow(() => { businessToday.value = getBusinessDate(); loadData(); });
 </script>
 
 <style scoped>
+.duration-fields { display: flex; align-items: center; gap: 12rpx; }
+.duration-fields input { flex: 1; min-width: 0; width: 0; }
 .history-footer { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 16px; }
 .history-pages { display: flex; gap: 12px; }
 .history-pages button { margin: 0; padding: 8px 18px; line-height: 1.5; font-size: 14px; }
