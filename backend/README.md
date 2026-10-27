@@ -5,8 +5,10 @@ Spring Boot 4 + Spring Data JPA 后端，负责认证、学习计划、正式打
 ## 启动要求
 
 - JDK 17
-- MySQL 8.x
-- 已创建 `lifetrack` 数据库
+- MySQL 8.0.16+，最近实际验证为 8.0.45
+- 已执行 `sql/init_db.sql` 创建数据库、表和约束；只有空库名而没有结构仍不能启动
+
+首次接管在完成总脚本后临时设置 `FLYWAY_ADOPT_BASELINE=true`，启动成功移除，登记版本 1 基线。日常启动不再设置该开关，不重放总脚本。以后变更新增 V2+；Hibernate 只 validate。完整新机器流程见 [提交清单与使用说明](../docs/delivery/提交清单与使用说明.md)。
 
 启动前必须设置：
 
@@ -24,17 +26,22 @@ $env:SPRING_PROFILES_ACTIVE = "dev"
 
 ## 验证
 
-设置数据库环境变量后执行：
+推荐回到根目录，由脚本创建并清理隔离库后运行完整验收：
 
 ```powershell
-.\mvnw.cmd test
+cd ..
+.\verify-course.ps1
 ```
 
-启动后端后，可执行真实数据库验收：
+单独执行后端 `mvnw.cmd test` 时必须设置 `TEST_DB_URL`、`TEST_DB_USERNAME` 和 `TEST_DB_PASSWORD`，数据库名只能以 `lifetrack_test_` 开头，且已执行总脚本。测试不会回退到日常 DB_*。
+
+在 backend 目录、后端已经启动时，可执行现场 HTTP 验收：
 
 ```powershell
 .\scripts\verify-p1-acceptance.ps1
 ```
+
+该脚本默认使用共享开发账号，只清理本次临时计划；直接 SQL 和并发证据由隔离集成测试提供。开发设计、数据结构、事务和完整交付入口见 [课程材料索引](../docs/交付材料索引.md)。
 
 AI 服务不是计划和打卡功能的必需依赖。AI 服务关闭时，手动计划、打卡、历史和统计接口仍可正常运行。
 
