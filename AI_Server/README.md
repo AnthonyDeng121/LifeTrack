@@ -31,4 +31,5 @@ python ai_server.py
 - `POST /ai/progress-judge`
 - `POST /ai/motivation`
 - `POST /ai/report`
-- `POST /ai/mood-quote`
+
+AI情绪寄语接口已移除；首页真实统计不调用模型，周反馈单独加载。

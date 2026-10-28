@@ -59,9 +59,11 @@ public class FeedbackServiceImpl implements FeedbackService {
                 }).toList();
         FeedbackReportResponse report = aiService.generateWeeklyReport(userId, logs, outcomes);
         long completed = outcomes.stream().filter(row -> row.get("status") == com.lifetrack.entity.PlanStatus.COMPLETED).count();
+        long ended = outcomes.stream().filter(row -> row.get("status") == com.lifetrack.entity.PlanStatus.ENDED).count();
         report.setPlanOutcomeSummary("当前学习计划：已完成 " + completed + " / " + outcomes.size()
-                + " 项。未取消计划累计打卡 " + attendedDates.size()
-                + " 天（同日去重）；已取消计划的历史保留但不计入看板分析。学习成果按实际完成计划评价。");
+                + " 项，人工结束 " + ended + " 项（不计学习完成）"
+                + "。未取消计划累计打卡 " + attendedDates.size()
+                + " 天（同日去重）；已取消计划的历史保留但不计入看板分析。学习成果和打卡目标独立评价。");
         return report;
     }
 

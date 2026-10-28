@@ -97,7 +97,7 @@
       <view class="section-head">
         <text class="section-title">历史记录</text>
       </view>
-      <text class="hint">学习记录可在同一天多次追加，正式打卡每天只有一条。已完成或已取消计划的记录不能撤销。</text>
+      <text class="hint">学习记录可在同一天多次追加，正式打卡每天只有一条。已完成、人工结束或已取消计划的记录不能撤销。</text>
       <view v-if="historyLoading && history.length === 0" class="glass-card empty-card">
         <text>正在读取历史...</text>
       </view>

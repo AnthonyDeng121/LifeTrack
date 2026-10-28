@@ -20,6 +20,7 @@
           <text class="pill">学习计划完成率</text>
           <text class="hero-number">{{ formatProgress(stats.learningPlanCompletionRate) }}%</text>
           <text class="hero-desc">已完成 {{ stats.completedPlanCount || 0 }} / {{ stats.totalPlanCount || 0 }} 个未取消计划；已取消 {{ stats.cancelledPlanCount || 0 }} 个，不计入看板统计</text>
+          <text class="text-muted small">仅全部学习步骤完成计入完成数；人工结束不算学习完成，打卡达标单独统计。</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>
@@ -87,7 +88,8 @@
       <view class="section-head">
         <text class="section-title">AI 反馈</text>
       </view>
-      <view v-if="report" class="glass-card feedback-card">
+      <view v-if="reportLoading" class="glass-card page-state"><text>正在生成 AI 反馈，其他统计已可使用...</text></view>
+      <view v-else-if="report" class="glass-card feedback-card">
         <text class="feedback-title">{{ report.title }}</text>
         <text v-if="report.planOutcomeSummary" class="feedback-summary outcome-summary">{{ report.planOutcomeSummary }}</text>
         <text class="feedback-summary">{{ report.aiSummary }}</text>
@@ -104,7 +106,8 @@
         <text class="section-title">重点任务</text>
 
       </view>
-      <view v-if="featuredTasks.length === 0" class="glass-card page-state"><text>暂无进行中的学习计划</text></view>
+      <view v-if="tasksError" class="glass-card page-state"><text>{{ tasksError }}</text></view>
+      <view v-else-if="featuredTasks.length === 0" class="glass-card page-state"><text>暂无进行中的学习计划</text></view>
       <view v-else class="task-list">
         <view
           v-for="task in featuredTasks"
@@ -156,6 +159,9 @@ const user = ref(getUser());
 const loading = ref(false);
 const pageError = ref("");
 const reportError = ref("");
+const reportLoading = ref(false);
+const tasksError = ref("");
+let loadVersion = 0;
 
 const username = computed(() => user.value.username || "同学");
 const now = ref(new Date());
@@ -193,25 +199,37 @@ function openTask(task) {
 }
 
 async function loadPage() {
+  const version = ++loadVersion;
   loading.value = true;
   pageError.value = "";
-  reportError.value = "";
-  const [statsResult, reportResult, tasksResult] = await Promise.allSettled([
+  tasksError.value = "";
+  loadReport(version);
+  const [statsResult, tasksResult] = await Promise.allSettled([
       getDashboardStats(),
-      getFeedbackReport(false),
       getTasks({ status: "IN_PROGRESS" }),
   ]);
+  if (version !== loadVersion) return;
   if (statsResult.status === "fulfilled") stats.value = statsResult.value || stats.value;
   if (tasksResult.status === "fulfilled") tasks.value = Array.isArray(tasksResult.value) ? tasksResult.value : [];
-  if (statsResult.status === "rejected" || tasksResult.status === "rejected") {
+  if (statsResult.status === "rejected") {
     pageError.value = "真实统计加载失败，请稍后重试";
   }
-  if (reportResult.status === "fulfilled") report.value = reportResult.value;
-  else {
+  if (tasksResult.status === "rejected") tasksError.value = "计划列表暂不可用，统计数据不受影响";
+  loading.value = false;
+}
+
+async function loadReport(version) {
+  reportLoading.value = true;
+  reportError.value = "";
+  report.value = null;
+  try {
+    const result = await getFeedbackReport(false);
+    if (version === loadVersion) report.value = result;
+  } catch {
+    if (version !== loadVersion) return;
     report.value = null;
     reportError.value = "AI 服务暂不可用";
-  }
-  loading.value = false;
+  } finally { if (version === loadVersion) reportLoading.value = false; }
 }
 
 onShow(() => { startClock(); loadPage(); });

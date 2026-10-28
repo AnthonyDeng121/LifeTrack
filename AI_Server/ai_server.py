@@ -216,7 +216,7 @@ REPORT_PROMPT = """
 【输入数据】
 用户行为日志：{{logs}}
 计划成果与真实出勤：{{plan_outcomes}}
-评价规则：学习成果和坚持目标分别评价。COMPLETED表示学习计划已完成，即使实际打卡天数少于原定目标也不能判为学习未达标；可肯定提前完成，不要求补造打卡或凑天数。打卡不足只能客观描述为原定坚持目标未满，不能据此否定成果。没有实际证据时不要宣称掌握知识。计划成果是当前快照，不能把所有历史已完成计划都说成本周完成。
+评价规则：学习成果和坚持目标分别评价。ENDED表示人工结束执行，不等于学习完成，不能夸大为掌握或完成全部学习成果。COMPLETED表示全部学习步骤已完成，即使实际打卡天数少于原定目标也不能判为学习未达标；可肯定提前完成，不要求补造打卡或凑天数。打卡不足只能客观描述为原定坚持目标未满，不能据此否定成果。没有实际证据时不要宣称掌握知识。计划成果是当前快照，不能把所有历史已完成计划都说成本周完成。
 【输出格式】
 只输出纯JSON，严禁输出任何Python代码、解释、markdown、```
 {
@@ -414,25 +414,6 @@ def ai_adjust_strategy():
     # 这里可以根据焦虑等级调整全局参数或返回建议，目前先做记录
     print(f"User {user_id} mood adjusted to {anxiety_level}")
     return jsonify({"code": 200, "msg": "AI策略已根据情绪调整"})
-
-# 接口7：获取情绪寄语
-@app.route("/ai/mood-quote", methods=["POST"])
-def ai_mood_quote():
-    req_data = request.get_json()
-    anxiety_level = req_data.get("anxiety_level", 5)
-    username = req_data.get("username", "同学")
-    
-    prompt = f"""
-    你是一个温暖的成长陪伴教练。用户【{username}】现在的焦虑等级是【{anxiety_level}/10】。
-    请根据这个焦虑等级，给用户写一句极其简短（15字以内）、个性化、有温度的鼓励或建议。
-    要求：
-    1. 严禁使用空洞的鸡汤。
-    2. 如果焦虑值高(>7)，语气要极其温柔且建议休息。
-    3. 如果焦虑值低(<4)，语气要活泼且鼓励进取。
-    4. 只输出这句寄语，不要任何其他字符。
-    """
-    raw_res = call_llm(prompt)
-    return jsonify({"code": 200, "msg": "success", "data": raw_res.strip()})
 
 if __name__ == "__main__":
     # 本地运行，端口5000

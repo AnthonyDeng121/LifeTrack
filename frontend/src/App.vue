@@ -256,5 +256,6 @@ button::after {
 .status-COMPLETED { color: #6d28d9; background: #ede4ff; }
 .status-CANCELLED { color: #526174; background: #e8edf2; }
 .status-EXPIRED { color: #b54708; background: #fff0d5; }
+.status-ENDED { color: #795548; background: #efebe9; }
 
 </style>

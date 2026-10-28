@@ -21,6 +21,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class DashboardServiceImplTest {
@@ -59,7 +60,6 @@ class DashboardServiceImplTest {
                 eq(7L), any(LocalDate.class), any(LocalDate.class))).thenReturn(records);
         when(actionLogRepository.findByUserIdAndCreatedAtBetween(eq(7L), any(), any())).thenReturn(List.of());
         when(userProfileRepository.findByUserId(7L)).thenReturn(Optional.empty());
-        when(aiService.generateMoodQuote(anyInt(), anyString())).thenReturn("保持节奏");
 
         var stats = dashboardService.getStats();
         assertEquals(2, stats.getCheckedInDays());
@@ -69,6 +69,18 @@ class DashboardServiceImplTest {
         assertEquals(7, stats.getCheckInTrend().size());
         assertEquals(1, stats.getCheckInTrend().get(6).getCheckInCount());
         assertEquals(60, stats.getCheckInTrend().get(6).getDurationMinutes());
+        verifyNoInteractions(aiService);
+    }
+
+    @Test void manualEndRemainsInDenominatorButIsNotLearningCompletion() {
+        when(taskRepository.findByUserId(7L)).thenReturn(List.of(
+                Task.builder().id(1L).status(PlanStatus.ENDED).build(),
+                Task.builder().id(2L).status(PlanStatus.COMPLETED).build()));
+        var stats = dashboardService.getStats();
+        assertEquals(1, stats.getCompletedPlanCount());
+        assertEquals(2, stats.getTotalPlanCount());
+        assertEquals(0, stats.getLearningPlanCompletionRate().compareTo(new java.math.BigDecimal("50")));
+        verifyNoInteractions(aiService);
     }
 
     private CheckInRecord record(LocalDate date, int duration) {

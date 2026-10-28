@@ -4,7 +4,7 @@ export const API_BASE_STORAGE_KEY = "lifetrack_api_base_url";
 export const TOKEN_KEY = "lifetrack_token";
 export const USER_KEY = "lifetrack_user";
 export const TASK_CATEGORIES = ["学习", "娱乐", "休息", "运动", "琐事"];
-export const PLAN_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED"];
+export const PLAN_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED", "ENDED"];
 
 export function resolveApiBaseUrl({ storedBase = "", runtimeHost = "" } = {}) {
   if (storedBase) return storedBase;

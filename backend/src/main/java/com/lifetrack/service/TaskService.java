@@ -193,26 +193,32 @@ public class TaskService {
         validatePlanPeriod(nextStart, nextEnd, nextTargetDays);
         PlanStatus targetStatus = PlanStatus.fromValue(request.getStatus());
         boolean periodChanged = !nextStart.equals(task.getStartDate()) || !nextEnd.equals(task.getEndDate());
-        boolean closed = task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED;
+        boolean closed = task.getStatus().isClosed();
         if (closed && (periodChanged || !nextTargetDays.equals(task.getTargetDays()))) {
-            throw new BusinessException(400, "已完成或已取消计划不可修改周期和打卡目标，请新建计划");
+            throw new BusinessException(400, "已关闭计划不可修改周期和打卡目标，请新建计划");
         }
         PlanStatus datedStatus = statusByDate(nextStart, nextEnd);
         if (task.getStatus() == PlanStatus.EXPIRED && datedStatus != PlanStatus.EXPIRED) {
             throw new BusinessException(400, "已过期计划不可重新开始，请新建计划");
         }
         // 日期状态随周期派生；完成和取消为业务终态，不能通过改日期或显式状态绕过。
-        if (targetStatus != null && (closed || targetStatus == PlanStatus.COMPLETED || targetStatus == PlanStatus.CANCELLED)
+        if (targetStatus != null && (closed || targetStatus.isClosed())
                 && !task.getStatus().canTransitionTo(targetStatus)) {
             throw new BusinessException(400, "计划状态不能从" + task.getStatus().getDescription()
                     + "变更为" + targetStatus.getDescription());
         }
         if (!closed && targetStatus != null && targetStatus != PlanStatus.COMPLETED
-                && targetStatus != PlanStatus.CANCELLED && targetStatus != datedStatus) {
+                && targetStatus != PlanStatus.CANCELLED && targetStatus != PlanStatus.ENDED && targetStatus != datedStatus) {
             throw new BusinessException(400, "计划状态与周期不一致，当前周期对应" + datedStatus.getDescription());
         }
         if (targetStatus == PlanStatus.COMPLETED && !closed && datedStatus != PlanStatus.IN_PROGRESS) {
             throw new BusinessException(400, "只有有效周期内的进行中计划可以完成");
+        }
+        if (targetStatus == PlanStatus.COMPLETED && !closed) {
+            List<SubTask> steps = subTaskRepository.findByTaskIdOrderByOrderNumAsc(taskId);
+            if (steps.isEmpty() || steps.stream().anyMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) < 0))
+                throw new BusinessException(400, "学习步骤尚未全部完成；如需停止执行，请选择人工结束");
+            task.setTotalProgress(BigDecimal.ONE);
         }
         if (periodChanged) {
             List<com.lifetrack.entity.CheckInRecord> outside = checkInRecordRepository
@@ -231,7 +237,7 @@ public class TaskService {
         task.setStartDate(nextStart);
         task.setEndDate(nextEnd);
         task.setTargetDays(nextTargetDays);
-        task.setStatus(closed ? task.getStatus() : targetStatus == PlanStatus.COMPLETED || targetStatus == PlanStatus.CANCELLED
+        task.setStatus(closed ? task.getStatus() : targetStatus != null && targetStatus.isClosed()
                 ? targetStatus : datedStatus);
 
         Task saved = taskRepository.save(task);
@@ -454,11 +460,12 @@ public class TaskService {
         Task task = taskRepository.findById(taskId).orElse(null);
         if (task != null) {
             // 完成计划为冻结快照，所有进度入口都不得隐式重新打开。
-            if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED) return;
+            if (task.getStatus().isClosed()) return;
             refreshStatusByDate(task);
             task.setTotalProgress(totalProgress);
             // 如果进度达到 1.0，自动标记主任务为已完成 (可选逻辑，按需添加)
-            if (task.getStatus() == PlanStatus.IN_PROGRESS && totalProgress.compareTo(BigDecimal.ONE) >= 0) {
+            if (task.getStatus() == PlanStatus.IN_PROGRESS && !subTasks.isEmpty()
+                    && subTasks.stream().allMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0)) {
                 task.setStatus(PlanStatus.COMPLETED);
             } else {
                 refreshStatusByDate(task);
@@ -604,7 +611,7 @@ public class TaskService {
     }
 
     private void refreshStatusByDate(Task task) {
-        if (task.getStatus() == PlanStatus.COMPLETED || task.getStatus() == PlanStatus.CANCELLED || task.getStatus() == PlanStatus.EXPIRED) return;
+        if (task.getStatus().isClosed() || task.getStatus() == PlanStatus.EXPIRED) return;
         task.setStatus(statusByDate(task.getStartDate(), task.getEndDate()));
     }
 

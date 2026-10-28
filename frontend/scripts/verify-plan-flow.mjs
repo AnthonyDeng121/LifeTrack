@@ -241,8 +241,12 @@ detail.checkInStats.value.checkedInDays = 20;
 assert.match(detail.targetFeedback.value, /已达成打卡目标/);
 detail.task.value.status = "COMPLETED";
 detail.checkInStats.value.checkedInDays = 1;
-assert.match(detail.targetFeedback.value, /学习目标已提前完成/);
-assert.doesNotMatch(detail.targetFeedback.value, /还差|尚差/);
+assert.match(detail.targetFeedback.value, /学习步骤全部完成/);
+assert.match(detail.targetFeedback.value, /打卡目标未达成/);
+detail.task.value.status = "ENDED";
+assert.match(detail.targetFeedback.value, /未计为学习完成/);
+detail.checkInStats.value.checkedInDays = 20;
+assert.match(detail.targetFeedback.value, /打卡目标已达成/);
 
 // 执行真实的周期编辑流程：取消不写入、确认精确记录ID、请求失败和重复点击均不误保存。
 let allowPrune = false;

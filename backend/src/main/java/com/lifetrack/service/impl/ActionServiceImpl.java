@@ -278,8 +278,8 @@ public class ActionServiceImpl implements ActionService {
             Task parent = taskRepository.findLockedById(actionLog.getTaskId())
                     .orElseThrow(() -> new BusinessException(404, "关联计划不存在"));
             if (!parent.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该计划");
-            if (parent.getStatus() == PlanStatus.COMPLETED || parent.getStatus() == PlanStatus.CANCELLED) {
-                throw new BusinessException(400, "已完成或已取消计划不可撤销学习记录，计划不会重新打开");
+            if (parent.getStatus().isClosed()) {
+                throw new BusinessException(400, "已关闭计划不可撤销学习记录，计划不会重新打开");
             }
         }
         if (!actionLogRepository.existsById(actionId)) {

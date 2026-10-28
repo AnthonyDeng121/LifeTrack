@@ -273,17 +273,4 @@ public class AIService {
         }
     }
 
-    public String generateMoodQuote(Integer anxietyLevel, String username) {
-        try {
-            String url = PYTHON_HOST + "/mood-quote";
-            Map<String, Object> req = Map.of(
-                "anxiety_level", anxietyLevel,
-                "username", username
-            );
-            Map<String, Object> resp = restTemplate.postForObject(url, req, Map.class);
-            return resp.get("data").toString();
-        } catch (Exception e) {
-            return "愿你今天拥有好心情。";
-        }
-    }
 }

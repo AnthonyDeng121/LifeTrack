@@ -262,6 +262,7 @@ const statusOptions = [
   { value: "NOT_STARTED", label: "未开始" },
   { value: "IN_PROGRESS", label: "进行中" },
   { value: "COMPLETED", label: "已完成" },
+  { value: "ENDED", label: "人工结束" },
   { value: "CANCELLED", label: "已取消" },
   { value: "EXPIRED", label: "已过期" },
 ];
@@ -320,7 +321,7 @@ async function generatePreview() {
 }
 const manualSubtasks = ref([{ content: "", weight: "" }]);
 
-const statusOrder = { IN_PROGRESS: 0, NOT_STARTED: 1, COMPLETED: 2, CANCELLED: 3, EXPIRED: 4 };
+const statusOrder = { IN_PROGRESS: 0, NOT_STARTED: 1, COMPLETED: 2, ENDED: 3, CANCELLED: 4, EXPIRED: 5 };
 const batchMode = ref(false);
 const selectedIds = ref([]);
 const deleting = ref(false);

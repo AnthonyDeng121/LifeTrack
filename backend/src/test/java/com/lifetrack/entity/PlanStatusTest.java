@@ -14,6 +14,10 @@ class PlanStatusTest {
         assertFalse(PlanStatus.COMPLETED.canTransitionTo(PlanStatus.IN_PROGRESS));
         assertFalse(PlanStatus.CANCELLED.canTransitionTo(PlanStatus.IN_PROGRESS));
         assertFalse(PlanStatus.EXPIRED.canTransitionTo(PlanStatus.IN_PROGRESS));
+        assertTrue(PlanStatus.IN_PROGRESS.canTransitionTo(PlanStatus.ENDED));
+        assertFalse(PlanStatus.ENDED.canTransitionTo(PlanStatus.COMPLETED));
+        assertFalse(PlanStatus.ENDED.canTransitionTo(PlanStatus.IN_PROGRESS));
+        assertTrue(PlanStatus.ENDED.isClosed());
     }
 
     @Test

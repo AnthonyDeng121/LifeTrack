@@ -15,7 +15,8 @@ public enum PlanStatus {
     COMPLETED(1, "已完成"),
     NOT_STARTED(2, "未开始"),
     CANCELLED(3, "已取消"),
-    EXPIRED(4, "已过期");
+    EXPIRED(4, "已过期"),
+    ENDED(5, "已结束（人工）");
 
     private final int code;
     private final String description;
@@ -26,10 +27,14 @@ public enum PlanStatus {
         }
         Set<PlanStatus> allowed = switch (this) {
             case NOT_STARTED -> EnumSet.of(IN_PROGRESS, CANCELLED, EXPIRED);
-            case IN_PROGRESS -> EnumSet.of(COMPLETED, CANCELLED, EXPIRED);
-            case COMPLETED, CANCELLED, EXPIRED -> EnumSet.noneOf(PlanStatus.class);
+            case IN_PROGRESS -> EnumSet.of(COMPLETED, CANCELLED, EXPIRED, ENDED);
+            case COMPLETED, CANCELLED, EXPIRED, ENDED -> EnumSet.noneOf(PlanStatus.class);
         };
         return allowed.contains(target);
+    }
+
+    public boolean isClosed() {
+        return this == COMPLETED || this == CANCELLED || this == ENDED;
     }
 
     public static PlanStatus fromCode(Integer code) {

@@ -45,7 +45,7 @@
         <view class="glass-card metric-card"><text>{{ checkInStats.checkedInDays }}</text><text>已打卡天数</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.currentStreak }}</text><text>当前连续</text></view>
         <view class="glass-card metric-card"><text>{{ checkInStats.longestStreak }}</text><text>最长连续</text></view>
-        <view class="glass-card metric-card"><text>{{ task.status === 'COMPLETED' ? '已完成' : formatProgress(checkInStats.completionRate) + '%' }}</text><text>{{ task.status === 'COMPLETED' ? '学习目标' : '坚持目标达成率' }}</text></view>
+        <view class="glass-card metric-card"><text>{{ formatProgress(checkInStats.completionRate) }}%</text><text>打卡目标达成率</text></view>
       </view>
       <view v-if="!checkInLoading && !checkInError" class="target-feedback">
         <text>坚持记录：已打卡 {{ checkInStats.checkedInDays }} 天 · 原定 {{ checkInStats.targetDays || task.targetDays }} 天（{{ formatProgress(checkInStats.completionRate) }}%）</text>
@@ -104,7 +104,7 @@
           <view class="form-block"><text class="field-label">结束日期</text><view v-if="planClosed" class="glass-input date-picker">{{ planForm.endDate }}</view><picker v-else mode="date" :disabled="savingPlan" :value="planForm.endDate" @change="planForm.endDate = $event.detail.value"><view class="glass-input date-picker">{{ planForm.endDate }}</view></picker></view>
           <view class="form-block"><text class="field-label">目标打卡天数</text><input v-model="planForm.targetDays" :disabled="planClosed || savingPlan" type="number" class="glass-input edit-input" /></view>
           <view class="form-block"><text class="field-label">状态</text><view v-if="planClosed" class="glass-input date-picker">{{ currentStatusLabel }}</view><picker v-else :disabled="savingPlan" :range="statusLabels" :value="statusIndex" @change="planForm.status = statusOptions[$event.detail.value].value"><view class="glass-input date-picker">{{ currentStatusLabel }}</view></picker></view>
-          <text class="text-muted small">{{ planClosed ? "已完成或已取消计划不可重新打开，仅可修改名称和分类。" : "未开始、进行中和已过期状态由计划周期决定。" }}</text>
+          <text class="text-muted small">{{ planClosed ? "已关闭计划不可重新打开，仅可修改名称和分类。" : "人工结束只停止执行，不计为学习完成；全部学习步骤完成才算学习成果完成，打卡达标单独计算。" }}</text>
           <button class="glass-button save-btn" :disabled="savingPlan" :loading="savingPlan" @tap="savePlan">保存计划</button>
           <text v-if="planConflict" class="text-muted">计划已有新修改，本次未保存。请先复制需要保留的输入，再载入最新计划重新编辑。</text>
           <button v-if="planConflict" class="glass-button" :disabled="savingPlan" @tap="openPlanEdit">载入最新计划重新编辑</button>
@@ -219,13 +219,14 @@ const task = ref({
 });
 const detailLoading = ref(false);
 const detailError = ref("");
-const planClosed = computed(() => ["COMPLETED", "CANCELLED"].includes(task.value.status));
+const planClosed = computed(() => ["COMPLETED", "CANCELLED", "ENDED"].includes(task.value.status));
 const planConflict = ref(false);
 const stepsEditable = computed(() => ["NOT_STARTED", "IN_PROGRESS"].includes(task.value.status));
 const categories = TASK_CATEGORIES;
 const statusOptions = [
   { value: "NOT_STARTED", label: "未开始" }, { value: "IN_PROGRESS", label: "进行中" },
-  { value: "COMPLETED", label: "已完成" }, { value: "CANCELLED", label: "已取消" },
+  { value: "COMPLETED", label: "学习成果完成（需全部步骤完成）" }, { value: "CANCELLED", label: "已取消" },
+  { value: "ENDED", label: "人工结束（不计学习完成）" },
   { value: "EXPIRED", label: "已过期" },
 ];
 const statusLabels = statusOptions.map(item => item.label);
@@ -237,7 +238,7 @@ const statusIndex = computed(() => Math.max(0, statusOptions.findIndex(item => i
 const currentStatusLabel = computed(() => statusOptions[statusIndex.value].label);
 // 改周期时同步日期状态，避免提交旧状态。完成和取消仍由用户明确选择。
 watch(() => [planForm.value.startDate, planForm.value.endDate], () => {
-  if (planClosed.value || ["COMPLETED", "CANCELLED"].includes(planForm.value.status)) return;
+  if (planClosed.value || ["COMPLETED", "CANCELLED", "ENDED"].includes(planForm.value.status)) return;
   const today = getBusinessDate();
   planForm.value.status = planForm.value.endDate < today ? "EXPIRED"
     : planForm.value.startDate > today ? "NOT_STARTED" : "IN_PROGRESS";
@@ -283,11 +284,16 @@ const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0,
 const targetFeedback = computed(() => {
   const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
   if (task.value.status === "COMPLETED") return remaining === 0
-    ? "学习计划和打卡目标均已完成，已保留真实记录"
-    : "学习目标已提前完成；坚持记录作为独立参考，不降低学习成果评价";
-  if (remaining === 0) return "已达成打卡目标；学习进度单独计算，请继续完成剩余子计划";
-  if (task.value.status === "EXPIRED") return `本期已结束，距打卡目标还差 ${remaining} 天`;
+    ? "学习步骤全部完成，打卡目标也已达成"
+    : `学习步骤全部完成；打卡目标未达成，还差 ${remaining} 天。两项独立评价，无需补造打卡`;
+  if (task.value.status === "ENDED") return remaining === 0
+    ? "计划已人工结束，未计为学习完成；打卡目标已达成，记录保留"
+    : `计划已人工结束，未计为学习完成；打卡目标未达成，还差 ${remaining} 天，记录保留`;
   if (task.value.status === "CANCELLED") return "计划已取消，已保留本期打卡记录";
+  if (task.value.status === "EXPIRED") return remaining === 0
+    ? "本期已结束，已达成打卡目标；学习成果仍未完成"
+    : `本期已结束，距打卡目标还差 ${remaining} 天`;
+  if (remaining === 0) return "已达成打卡目标；学习进度单独计算，请继续完成剩余子计划";
   return `还差 ${remaining} 个打卡日达成目标`;
 });
 const subtasks = ref([]);

@@ -121,6 +121,27 @@ class UserOperationIntegrationTest {
         assertEquals("新窗口修改", api("GET", "/tasks/" + id, null).path("data").path("title").asText());
     }
 
+    @Test void manualEndLearningCompletionAndAttendanceAreIndependent() throws Exception {
+        long id = create(today, today.plusDays(7));
+        assertEquals(400, api("PUT", "/tasks/" + id, Map.of("status", "COMPLETED", "version", 0)).path("code").asInt());
+        // 用真实打卡达到目标，不允许因此伪造学习完成。
+        database.update("update tasks set target_days=1 where id=?", id);
+        assertEquals(200, api("POST", "/check-ins", Map.of("taskId", id)).path("code").asInt());
+        assertEquals(100, api("GET", "/check-ins/tasks/" + id + "/stats", null).path("data").path("completionRate").asInt());
+        assertEquals("IN_PROGRESS", api("GET", "/tasks/" + id, null).path("data").path("status").asText());
+        assertEquals(200, api("PUT", "/tasks/" + id, Map.of("status", "ENDED", "version", 0)).path("code").asInt());
+        var detail = api("GET", "/tasks/" + id, null).path("data");
+        assertEquals(0, detail.path("totalProgress").asInt());
+        assertEquals(0, api("GET", "/dashboard/stats", null).path("data").path("completedPlanCount").asInt());
+        assertEquals(1, api("GET", "/tasks?status=ENDED", null).path("data").size());
+        assertEquals(400, api("PUT", "/tasks/" + id, Map.of("status", "IN_PROGRESS", "version", detail.path("version").asLong())).path("code").asInt());
+        assertEquals(400, api("POST", "/check-ins", Map.of("taskId", id)).path("code").asInt());
+        long step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
+        assertEquals(400, api("PUT", "/tasks/subtasks/" + step + "/complete", null).path("code").asInt());
+        assertEquals(1, api("GET", "/check-ins?taskId=" + id, null).path("data").size());
+        assertFalse(api("GET", "/dashboard/stats", null).path("data").has("moodQuote"));
+    }
+
     @Test void longTitleAndNonIntegerDurationAreClearBadRequestsWithoutWrites() throws Exception {
         var invalid = api("POST", "/tasks/manual", Map.of("title", "测".repeat(101), "category", "学习",
                 "startDate", today.toString(), "endDate", today.plusDays(7).toString(), "targetDays", 5,
@@ -223,7 +244,8 @@ class UserOperationIntegrationTest {
             assertEquals(0, response.path("data").path("durationMinutes").asInt());
         }
         assertEquals(409, api("POST", "/check-ins", Map.of("taskId", active)).path("code").asInt());
-        assertEquals(200, api("PUT", "/tasks/" + completed, Map.of("status", "COMPLETED", "version", 0)).path("code").asInt());
+        long completedStep = api("GET", "/tasks/" + completed + "/subtasks", null).path("data").get(0).path("id").asLong();
+        assertEquals(200, api("PUT", "/tasks/subtasks/" + completedStep + "/complete", null).path("code").asInt());
         assertEquals(200, api("POST", "/check-ins", Map.of("taskId", cancelled, "checkInDate", today.minusDays(1).toString(),
                 "content", "取消前打卡", "durationMinutes", 15)).path("code").asInt());
         logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(cancelled).rawInput("取消前学习记录")

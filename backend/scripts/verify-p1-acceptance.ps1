@@ -65,8 +65,10 @@ try {
     $eligibleIds = @((Invoke-LifeTrack "GET" "/tasks" $null $token).data | Where-Object { $_.status -ne "CANCELLED" } | ForEach-Object { $_.id })
     $expectedDays = @((Invoke-LifeTrack "GET" "/check-ins" $null $token).data | Where-Object { $_.taskId -in $eligibleIds } | Select-Object -ExpandProperty checkInDate -Unique).Count
     Assert-Equal $expectedDays ([int]$dashboardAfter.data.checkedInDays) "dashboard natural days"
-    $completed = Invoke-LifeTrack "PUT" "/tasks/$taskId" @{ status = "COMPLETED" } $token
-    Assert-Equal "COMPLETED" $completed.data.status "status transition"
+    $planSteps = Invoke-LifeTrack "GET" "/tasks/$taskId/subtasks" $null $token
+    foreach ($step in $planSteps.data) { $null = Invoke-LifeTrack "PUT" "/tasks/subtasks/$($step.id)/complete" $null $token }
+    $completed = Invoke-LifeTrack "GET" "/tasks/$taskId" $null $token
+    Assert-Equal "COMPLETED" $completed.data.status "status transition after all steps"
     $blockedByStatus = Invoke-LifeTrack "POST" "/check-ins" @{ taskId = $taskId; checkInDate = $todayText; content = "completed"; durationMinutes = 10 } $token
     Assert-Equal 400 $blockedByStatus.code "status rejection"
 

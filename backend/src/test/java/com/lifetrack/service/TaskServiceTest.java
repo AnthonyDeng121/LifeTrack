@@ -5,6 +5,7 @@ import com.lifetrack.dto.TaskUpdateRequest;
 import com.lifetrack.dto.ManualTaskCreateRequest;
 import com.lifetrack.entity.PlanStatus;
 import com.lifetrack.entity.Task;
+import com.lifetrack.entity.SubTask;
 import com.lifetrack.exception.BusinessException;
 import com.lifetrack.repository.ActionLogRepository;
 import com.lifetrack.repository.SubTaskRepository;
@@ -158,6 +159,8 @@ class TaskServiceTest {
         Task task = planOwnedByCurrentUser();
         when(taskRepository.findLockedById(1L)).thenReturn(Optional.of(task));
         when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(subTaskRepository.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(
+                SubTask.builder().currentProgress(BigDecimal.ONE).build()));
 
         TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStatus("COMPLETED");

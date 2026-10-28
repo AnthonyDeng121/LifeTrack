@@ -43,9 +43,6 @@ public class DashboardStatsResponse {
     @Schema(description = "每日寄语", example = "你已经完成了67%的计划，晚上放心休息吧。")
     private String dailyQuote;
 
-    @Schema(description = "情绪寄语", example = "别太焦虑，慢慢来，一切都会好起来的。")
-    private String moodQuote;
-
     @Data
     @Builder
     public static class TimeDistribution {

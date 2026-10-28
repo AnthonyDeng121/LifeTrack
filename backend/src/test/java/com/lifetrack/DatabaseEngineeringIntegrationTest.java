@@ -88,6 +88,22 @@ class DatabaseEngineeringIntegrationTest {
         } finally { pool.shutdownNow(); }
     }
 
+    @Test void migrationPreservesLegacyHistoryAndSeparatesFalseCompletedPlans() throws Exception {
+        Long genuinelyComplete = create();
+        jdbc.update("update tasks set status=1 where id in (?,?)", planId, genuinelyComplete);
+        jdbc.update("update sub_tasks set current_progress=1,is_completed=1 where task_id=?", genuinelyComplete);
+        jdbc.update("update tasks set total_progress=1 where id=?", genuinelyComplete);
+        // 历史数据夹具：直接写入已有打卡，不绕过实际打卡接口规则去新增终态打卡。
+        jdbc.update("insert into check_in_records (user_id,task_id,check_in_date,content,duration_minutes,automatic,created_at) values (?,?,?,?,0,false,now())",
+                user.getId(), planId, today, "保留旧备注");
+        var sql = new org.springframework.core.io.ClassPathResource("db/migration/V2__separate_manual_end_from_completion.sql");
+        new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(sql).execute(dataSource);
+        assertEquals(5, jdbc.queryForObject("select status from tasks where id=?", Integer.class, planId));
+        assertEquals(1, jdbc.queryForObject("select status from tasks where id=?", Integer.class, genuinelyComplete));
+        assertEquals("保留旧备注", jdbc.queryForObject("select content from check_in_records where task_id=?", String.class, planId));
+        assertEquals(1, jdbc.queryForObject("select count(*) from sub_tasks where task_id=?", Integer.class, planId));
+    }
+
     @Test void failedLearningRecordDoesNotCountUntilRetryAndNeverOverwritesManualNote() {
         var manual = new CheckInCreateRequest(); manual.setTaskId(planId);
         attendance.create(manual);

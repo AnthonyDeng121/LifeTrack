@@ -44,14 +44,12 @@ public class DashboardServiceImpl implements DashboardService {
     private final TaskRepository taskRepository;
     private final SubTaskRepository subTaskRepository;
     private final UserProfileRepository userProfileRepository;
-    private final com.lifetrack.service.AIService aiService;
     private final CheckInRecordRepository checkInRecordRepository;
 
     @Override
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DashboardStatsResponse getStats() {
         Long userId = UserContext.getUserId();
-        String username = UserContext.getUsername() != null ? UserContext.getUsername() : "同学";
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
         List<Task> allPlans = taskRepository.findByUserId(userId);
@@ -160,13 +158,7 @@ public class DashboardServiceImpl implements DashboardService {
                 .checkInTrend(checkInTrend)
                 .currentAnxietyLevel(anxietyLevel)
                 .dailyQuote(generateQuote(todayProgress))
-                .moodQuote(aiService.generateMoodQuote(anxietyLevel, username))
                 .build();
-    }
-
-    private String generateMoodQuote(Integer anxietyLevel) {
-        // 原有的静态方法保留作为 DTO 引用，但逻辑已被 AI 接管
-        return "AI 生成中...";
     }
 
     @Override

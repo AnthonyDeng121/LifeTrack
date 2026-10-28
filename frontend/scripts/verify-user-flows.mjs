@@ -6,7 +6,7 @@ import { validateCheckInForm, validatePlanPeriod } from "../src/services/planRul
 async function page(name, dependencies, exposed) {
   const source = await readFile(new URL(`../src/pages/${name}/${name}.vue`, import.meta.url), "utf8");
   const script = source.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-  const bindings = { ref, computed, watch, onShow() {}, onLoad() {}, onMounted() {},
+  const bindings = { ref, computed, watch, onShow() {}, onLoad() {}, onMounted() {}, onHide() {}, onUnload() {},
     uni: { showToast() {}, navigateTo() {} }, TASK_CATEGORIES: ["学习"],
     getBusinessDate: () => "2026-10-25", validateCheckInForm, validatePlanPeriod, ...dependencies };
   return new Function(...Object.keys(bindings), `${script}\nreturn { ${exposed} };`)(...Object.values(bindings));
@@ -157,6 +157,31 @@ assert.equal(savedMood, 4);
 const recordSource = await readFile(new URL("../src/pages/record/record.vue", import.meta.url), "utf8");
 assert.doesNotMatch(recordSource, /anxietyLevel|loadMoreHistory|manualMinutes/);
 console.log("One-click attendance, bounded history pages and profile mood checks passed.");
+
+// AI反馈一直未返回时，真实统计必须先显示；旧请求不得覆盖更新的页面。
+let finishReport;
+let reportPromise = new Promise(resolve => { finishReport = resolve; });
+let failTasks = false;
+const dashboard = await page("dashboard", {
+  getUser: () => ({ username: "Test" }),
+  getDashboardStats: async () => ({ checkedInDays: 3, checkInTrend: [] }),
+  getTasks: async () => { if (failTasks) throw new Error("task list unavailable"); return [active]; },
+  getFeedbackReport: () => reportPromise,
+}, "stats, loading, reportLoading, report, tasksError, pageError, loadPage");
+await dashboard.loadPage();
+assert.equal(dashboard.loading.value, false);
+assert.equal(dashboard.stats.value.checkedInDays, 3);
+assert.equal(dashboard.reportLoading.value, true);
+const staleReport = finishReport;
+reportPromise = Promise.resolve({ title: "new report" });
+failTasks = true;
+await dashboard.loadPage();
+assert.equal(dashboard.pageError.value, "");
+assert.notEqual(dashboard.tasksError.value, "");
+staleReport({ title: "old report" });
+await Promise.resolve();
+assert.equal(dashboard.report.value.title, "new report");
+console.log("Dashboard core data does not wait for AI; stale feedback and task failures are isolated.");
 
 let authCalls = 0;
 let phoneCalls = 0;

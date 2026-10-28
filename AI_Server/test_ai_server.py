@@ -11,6 +11,11 @@ def example(steps):
 
 
 class DecompositionTests(unittest.TestCase):
+    @patch("ai_server.call_llm")
+    def test_removed_mood_quote_never_calls_model(self, llm):
+        self.assertEqual(404, app.test_client().post("/ai/mood-quote", json={}).status_code)
+        llm.assert_not_called()
+
     def setUp(self):
         self.client = app.test_client()
         self.valid = example(["绘制TCP/IP分层图并说明各层协议职责", "综合分析网页访问抓包并通过分层协议与子网计算测验"])

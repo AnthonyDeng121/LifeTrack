@@ -60,7 +60,7 @@ class TaskBusinessRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = PlanStatus.class, names = {"COMPLETED", "CANCELLED", "EXPIRED", "NOT_STARTED"})
+    @EnumSource(value = PlanStatus.class, names = {"COMPLETED", "CANCELLED", "EXPIRED", "NOT_STARTED", "ENDED"})
     void cannotCompleteStepOutsideActivePlan(PlanStatus status) {
         plan.setStatus(status);
         if (status == PlanStatus.NOT_STARTED) { plan.setStartDate(today.plusDays(1)); }
@@ -72,7 +72,7 @@ class TaskBusinessRulesTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = PlanStatus.class, names = {"COMPLETED", "CANCELLED", "EXPIRED"})
+    @EnumSource(value = PlanStatus.class, names = {"COMPLETED", "CANCELLED", "EXPIRED", "ENDED"})
     void terminalPlansRejectAllStepEdits(PlanStatus status) {
         plan.setStatus(status); locked(); when(steps.findById(11L)).thenReturn(Optional.of(step));
         var add = new SubTaskCreateRequest(); add.setContent("新步骤"); add.setWeight(new BigDecimal("0.3"));
@@ -160,6 +160,35 @@ class TaskBusinessRulesTest {
         var request = new TaskUpdateRequest(); request.setVersion(0L); request.setTitle("修正标题"); request.setStatus("COMPLETED");
         var result = service.updateTask(1L, request);
         assertEquals("修正标题", result.getTitle()); assertEquals("COMPLETED", result.getStatus());
+    }
+
+    @Test void manualEndPreservesProgressAndCannotBeReopenedOrReclassified() {
+        locked(); when(tasks.save(any())).thenAnswer(i -> i.getArgument(0));
+        plan.setTotalProgress(new BigDecimal("0.25"));
+        var input = new TaskUpdateRequest(); input.setVersion(0L); input.setStatus("ENDED");
+        assertEquals("ENDED", service.updateTask(1L, input).getStatus());
+        assertEquals(new BigDecimal("0.25"), plan.getTotalProgress());
+        input.setStatus("COMPLETED");
+        assertThrows(BusinessException.class, () -> service.updateTask(1L, input));
+        input.setStatus("IN_PROGRESS");
+        assertThrows(BusinessException.class, () -> service.updateTask(1L, input));
+    }
+
+    @Test void zeroProgressCannotBeClaimedAsLearningCompleted() {
+        locked(); when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step));
+        var input = new TaskUpdateRequest(); input.setVersion(0L); input.setStatus("COMPLETED");
+        assertEquals(400, assertThrows(BusinessException.class, () -> service.updateTask(1L, input)).getCode());
+        assertEquals(PlanStatus.IN_PROGRESS, plan.getStatus());
+        verify(tasks, never()).save(any());
+    }
+
+    @Test void weightedHundredPercentCannotHideIncompleteZeroWeightLegacyStep() {
+        when(tasks.findById(1L)).thenReturn(Optional.of(plan));
+        step.setWeight(BigDecimal.ZERO);
+        var done = SubTask.builder().weight(BigDecimal.ONE).currentProgress(BigDecimal.ONE).build();
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step, done));
+        service.updateTaskProgress(1L);
+        assertEquals(PlanStatus.IN_PROGRESS, plan.getStatus());
     }
 
     @Test void directProgressRecalculationCannotReopenOrCompleteTerminalPlan() {

@@ -93,7 +93,8 @@ try {
     $stepId = $steps.data[0].id
     $pending = Invoke-Api "POST" "/actions/deferred" @{ taskId = $taskId; content = "Persisted before completion"; durationMinutes = 20 }
     Assert-Equal 200 $pending.code "pending learning before completion"
-    $completed = Invoke-Api "PUT" "/tasks/$taskId" @{ status = "COMPLETED" }
+    foreach ($step in $steps.data) { $null = Invoke-Api "PUT" "/tasks/subtasks/$($step.id)/complete" }
+    $completed = Invoke-Api "GET" "/tasks/$taskId"
     Assert-Equal 200 $completed.code "complete active plan"
     $requests = @(
         @{ method = "POST"; path = "/tasks/$taskId/subtasks"; body = @{ content = "New step"; weight = 0.2 } },
