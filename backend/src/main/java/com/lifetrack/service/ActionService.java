@@ -23,6 +23,7 @@ public interface ActionService {
      * 获取行为日志列表
      */
     PageResponse<ActionHistoryResponse> getHistory(Pageable pageable);
+    PageResponse<ActionHistoryResponse> getHistory(Pageable pageable, Long taskId);
 
     /**
      * 删除/撤销行为记录

@@ -9,11 +9,22 @@ function Assert-Equal($Expected, $Actual, [string]$Label) {
 }
 Import-Module (Join-Path $PSScriptRoot "AcceptanceHttp.psm1") -Force
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null) {
+    if ($Method -eq "POST" -and $Path -eq "/actions/deferred" -and -not $Body.ContainsKey('requestId')) { $Body.requestId = [guid]::NewGuid().ToString() }
     if ($Method -eq "PUT" -and $Path -match '^/tasks/\d+$' -and $null -ne $Body -and -not $Body.ContainsKey('version')) {
         $current = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path $Path -Token $script:token
         $Body.version = $current.data.version
     }
-    Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $script:token
+    $response = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $script:token
+    if ($Method -eq "GET" -and $Path -match '^/check-ins(?:\?|$)' -and $response.code -eq 200) {
+        $all = @($response.data.list); $total = $response.data.total; $page = 1
+        while ($all.Count -lt $total) {
+            $separator = if ($Path.Contains('?')) { '&' } else { '?' }
+            $next = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path "$Path${separator}page=$page" -Token $script:token
+            if (-not $next.data.list.Count) { break }; $all += @($next.data.list); $page++
+        }
+        $response.data = $all
+    }
+    return $response
 }
 function New-Plan($Start, $End, $Steps = @(@{ content = "Business rules acceptance"; weight = 1 })) {
     $response = Invoke-Api "POST" "/tasks/manual" @{

@@ -16,7 +16,9 @@ public class DeferredLearningRecordController {
     @PostMapping public Result<DeferredLearningRecordResponse> save(@RequestBody @Valid DeferredLearningRecordRequest request) {
         return Result.success(service.save(request));
     }
-    @GetMapping public Result<List<DeferredLearningRecordResponse>> list() { return Result.success(service.list()); }
+    @GetMapping public Result<PageResponse<DeferredLearningRecordResponse>> list(
+            @RequestParam(required=false) Long taskId, @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="20") int size) { return Result.success(service.pendingPage(taskId, page, size)); }
     @PostMapping("/{id}/retry") public Result<ActionSyncResponse> retry(@PathVariable Long id) {
         return Result.success(service.retry(id));
     }

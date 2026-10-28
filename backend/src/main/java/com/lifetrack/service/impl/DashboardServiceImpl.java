@@ -59,15 +59,14 @@ public class DashboardServiceImpl implements DashboardService {
         Set<Long> validTaskIds = validPlans.stream().map(Task::getId).collect(Collectors.toSet());
         List<CheckInRecord> allCheckIns = checkInRecordRepository
                 .findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
-                        userId, LocalDate.of(1970, 1, 1), today)
+                        userId, today.minusDays(6), today)
                 .stream()
                 .filter(record -> validTaskIds.contains(record.getTaskId()))
                 .toList();
         int completedPlanCount = (int) validPlans.stream().filter(t -> t.getStatus() == PlanStatus.COMPLETED).count();
         BigDecimal learningPlanCompletionRate = validPlans.isEmpty() ? BigDecimal.ZERO
                 : BigDecimal.valueOf(completedPlanCount * 100L).divide(BigDecimal.valueOf(validPlans.size()), 1, RoundingMode.HALF_UP);
-        SortedSet<LocalDate> checkInDates = allCheckIns.stream()
-                .map(CheckInRecord::getCheckInDate)
+        SortedSet<LocalDate> checkInDates = checkInRecordRepository.findDashboardDates(userId, PlanStatus.CANCELLED, today).stream()
                 .collect(Collectors.toCollection(TreeSet::new));
         int[] checkInStreaks = CheckInService.calculateStreaks(checkInDates, today);
         int checkedInDays = checkInDates.size();

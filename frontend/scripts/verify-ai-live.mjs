@@ -46,7 +46,7 @@ try {
   const initial = (await api("GET", "/tasks")).find(t => t.id === plan).updatedAt;
   await new Promise(r => setTimeout(r, 1100));
   assert.equal((await api("GET", "/tasks")).find(t => t.id === plan).updatedAt, initial, "只读刷新不能改变更新时间");
-  const record = text => api("POST", "/actions/sync", { taskId: plan, rawInput: text, durationMinutes: 30 });
+  const record = text => api("POST", "/actions/sync", { taskId: plan, rawInput: text, durationMinutes: 30, requestId: crypto.randomUUID() });
   const irrelevant = await record("今天吃了香蕉，没有学习Spring Boot，也没有写代码");
   assert.equal(irrelevant.updates.length, 0);
   const partial = await record("今天刚开始用Maven创建Spring Boot项目，正在学习启动配置，还没完成hello接口，也没有运行测试");
@@ -54,6 +54,7 @@ try {
   assert.ok((await api("GET", `/tasks/${plan}`)).totalProgress < 100);
   const first = await record("今天已用Maven创建并启动Spring Boot应用，完成GET /hello接口返回hello，实际HTTP请求验证状态码200且响应hello，接口步骤的所有要求均已完成并验证通过。");
   assert.equal((await api("GET", `/tasks/${plan}/subtasks`))[0].currentProgress, 100, JSON.stringify(first));
+  assert.ok((await api("GET", `/tasks/${plan}/subtasks`))[1].currentProgress < 100, "HTTP接口验证不能冒充未提及的JUnit/MockMvc测试完成");
   const second = await record("今天已为GET /hello接口编写完整JUnit和MockMvc自动化测试，断言HTTP状态码200及响应体hello，实际运行所有测试全部通过，测试步骤的全部要求已完成并验收通过。");
   const detail = await api("GET", `/tasks/${plan}`);
   assert.equal(detail.totalProgress, 100, JSON.stringify(second));

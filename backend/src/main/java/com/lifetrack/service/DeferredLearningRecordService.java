@@ -23,13 +23,34 @@ public class DeferredLearningRecordService {
     private final ActionLogRepository logs;
     private final ActionService actions;
 
+    @Transactional(readOnly = true)
+    public PageResponse<DeferredLearningRecordResponse> pendingPage(Long taskId, int page, int size) {
+        if (page < 0 || page > 1000000 || size < 1 || size > 100) throw new BusinessException(400, "页码应为0到1000000，每页1到100条");
+        Long userId = UserContext.getUserId();
+        if (taskId != null) {
+            Task task = tasks.findById(taskId).orElseThrow(() -> new BusinessException(404, "计划不存在"));
+            if (!task.getUserId().equals(userId)) throw new BusinessException(403, "无权查看该计划");
+        }
+        var entries = records.findPendingPage(userId, taskId, DeferredLearningRecord.Status.APPLIED,
+                org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "recordedAt", "id")));
+        Map<Long, String> titles = tasks.findAllById(entries.getContent().stream().map(DeferredLearningRecord::getTaskId).distinct().toList())
+                .stream().filter(t -> t.getUserId().equals(userId)).collect(Collectors.toMap(Task::getId, Task::getTitle));
+        return PageResponse.of(entries.getTotalElements(), entries.getContent().stream()
+                .map(r -> response(r, titles.getOrDefault(r.getTaskId(), "已删除的计划"))).toList());
+    }
+
     /** 原文先提交到数据库；外部AI失败不会回滚原文，也不会产生学习时长或打卡。 */
     public ActionSyncResponse submit(ActionSyncRequest request) {
         var input = new DeferredLearningRecordRequest();
         input.setTaskId(request.getTaskId());
         input.setContent(request.getRawInput());
         input.setDurationMinutes(request.getDurationMinutes());
+        input.setRequestId(request.getRequestId());
         DeferredLearningRecordResponse saved = recordTransactions.execute(tx -> save(input));
+        if (saved.status() == DeferredLearningRecord.Status.APPLIED)
+            return ActionSyncResponse.builder().recordId(saved.id()).replayed(true).updates(List.of())
+                    .aiAnalysis("该次提交已成功处理，本次未重复计时或打卡").build();
         return retry(saved.id());
     }
 
@@ -37,6 +58,15 @@ public class DeferredLearningRecordService {
     public DeferredLearningRecordResponse save(DeferredLearningRecordRequest request) {
         Long userId = UserContext.getUserId();
         Task task = ownedLockedTask(request.getTaskId(), userId);
+        String requestId = request.getRequestId() == null ? UUID.randomUUID().toString() : request.getRequestId().toLowerCase(java.util.Locale.ROOT);
+        Optional<DeferredLearningRecord> existing = records.findByUserIdAndRequestId(userId, requestId);
+        if (existing.isPresent()) {
+            DeferredLearningRecord previous = existing.get();
+            if (!previous.getTaskId().equals(request.getTaskId()) || !previous.getContent().equals(request.getContent().trim())
+                    || !previous.getDurationMinutes().equals(request.getDurationMinutes()))
+                throw new BusinessException(409, "提交标识已用于其他学习内容，请重新提交");
+            return response(previous, task.getTitle());
+        }
         LocalDateTime now = LocalDateTime.now(ZONE);
         LocalDate today = now.toLocalDate();
         if (task.getStatus() != PlanStatus.IN_PROGRESS || today.isBefore(task.getStartDate()) || today.isAfter(task.getEndDate())) {
@@ -44,19 +74,10 @@ public class DeferredLearningRecordService {
         }
         if (request.getDurationMinutes() == null || request.getDurationMinutes() < 1 || request.getDurationMinutes() > 1440)
             throw new BusinessException(400, "学习时长必须为1到1440整数分钟");
-        DeferredLearningRecord record = records.save(DeferredLearningRecord.builder().userId(userId).taskId(task.getId())
+        DeferredLearningRecord record = records.save(DeferredLearningRecord.builder().userId(userId).taskId(task.getId()).requestId(requestId)
                 .content(request.getContent().trim()).durationMinutes(request.getDurationMinutes()).recordedAt(now)
                 .status(DeferredLearningRecord.Status.PENDING).lastAnalysis("记录已保存，尚未分析成功，时长未计入").build());
         return response(record, task.getTitle());
-    }
-
-    @Transactional(readOnly = true)
-    public List<DeferredLearningRecordResponse> list() {
-        Long userId = UserContext.getUserId();
-        List<DeferredLearningRecord> entries = records.findByUserIdOrderByRecordedAtDesc(userId);
-        Map<Long, String> titles = tasks.findAllById(entries.stream().map(DeferredLearningRecord::getTaskId).distinct().toList())
-                .stream().filter(t -> t.getUserId().equals(userId)).collect(Collectors.toMap(Task::getId, Task::getTitle));
-        return entries.stream().map(r -> response(r, titles.getOrDefault(r.getTaskId(), "已删除的计划"))).toList();
     }
 
     public ActionSyncResponse retry(Long id) {

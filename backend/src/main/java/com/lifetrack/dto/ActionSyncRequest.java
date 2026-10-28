@@ -7,6 +7,9 @@ import lombok.Data;
 @Data
 @Schema(description = "行为同步请求")
 public class ActionSyncRequest {
+    @NotBlank(message = "缺少提交标识，请刷新页面")
+    @jakarta.validation.constraints.Pattern(regexp = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", message = "提交标识格式错误")
+    private String requestId;
     @jakarta.validation.constraints.NotNull(message = "请选择学习计划")
     @Schema(description = "学习记录所属计划")
     private Long taskId;

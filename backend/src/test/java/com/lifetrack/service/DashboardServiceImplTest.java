@@ -37,6 +37,13 @@ class DashboardServiceImplTest {
     void setUp() {
         UserContext.setUserId(7L);
         UserContext.setUsername("测试用户");
+        org.mockito.Mockito.lenient().when(checkInRecordRepository.findDashboardDates(anyLong(), any(), any())).thenAnswer(i -> {
+            var valid = taskRepository.findByUserId(i.getArgument(0)).stream().filter(t -> t.getStatus() != PlanStatus.CANCELLED)
+                    .map(Task::getId).collect(java.util.stream.Collectors.toSet());
+            return checkInRecordRepository.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
+                    i.getArgument(0), java.time.LocalDate.of(1970,1,1), i.getArgument(2)).stream()
+                    .filter(r -> valid.contains(r.getTaskId())).map(CheckInRecord::getCheckInDate).distinct().sorted().toList();
+        });
     }
 
     @AfterEach

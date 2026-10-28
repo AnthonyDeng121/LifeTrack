@@ -5,6 +5,8 @@ import lombok.Data;
 
 @Data
 public class DeferredLearningRecordRequest {
+    @NotBlank @Pattern(regexp = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    private String requestId;
     @NotNull @Positive private Long taskId;
     @NotBlank(message = "学习内容不能为空")
     @Size(max = 500, message = "学习内容不能超过500字") private String content;

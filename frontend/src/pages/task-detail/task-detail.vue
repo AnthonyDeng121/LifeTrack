@@ -36,6 +36,7 @@
           <text class="pill status-badge" :class="'status-' + task.status">{{ task.statusDescription }}</text>
         </view>
         <button class="glass-button plan-edit-btn" @tap="openPlanEdit">编辑计划</button>
+        <button class="glass-button" @tap="viewLearningHistory">查看本计划学习记录</button>
       </view>
 
       <view class="section-head">
@@ -81,7 +82,7 @@
         <text v-if="historyFilterError" class="text-muted">{{ historyFilterError }}</text>
         <text v-if="historyLoading">正在查询打卡历史...</text>
         <text v-if="historyLoadError">{{ historyLoadError }}</text>
-        <button v-if="historyLoadError" class="glass-button" @tap="loadFilteredHistory">重试历史查询</button>
+        <button v-if="historyLoadError" class="glass-button" @tap="loadFilteredHistory(attendancePage)">重试历史查询</button>
       </view>
       <view v-if="!historyLoading && !historyLoadError && checkInHistory.length === 0" class="glass-card empty-card"><text>所选日期范围暂无正式打卡记录</text></view>
       <view v-if="checkInHistory.length" class="checkin-history">
@@ -89,6 +90,13 @@
           <view class="history-head"><text>{{ record.checkInDate }}</text><text v-if="record.durationMinutes > 0" class="pill">{{ record.durationMinutes }} 分钟</text><text v-else class="pill">已打卡</text></view>
           <text v-if="record.content" class="history-content">{{ record.automatic ? "关联学习片段" : "历史打卡备注" }}：{{ record.content }}</text>
           <text v-if="record.mood" class="text-muted small">心情：{{ record.mood }}</text>
+        </view>
+      </view>
+      <view v-if="attendanceTotal" class="glass-card history-filters">
+        <text>第 {{ attendancePage + 1 }} / {{ attendancePageCount }} 页，共 {{ attendanceTotal }} 条打卡</text>
+        <view class="history-filter-row">
+          <button class="glass-button" :disabled="historyLoading || attendancePage <= 0" @tap="previousAttendancePage">上一页</button>
+          <button class="glass-button" :disabled="historyLoading || attendancePage >= attendancePageCount - 1" @tap="nextAttendancePage">下一页</button>
         </view>
       </view>
 
@@ -201,7 +209,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { onLoad } from "@dcloudio/uni-app";
-import { addSubtask, completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats } from "../../services/api";
+import { addSubtask, completeSubtask, getSubtasks, getTaskDetail, updateTask, deleteTask, deleteSubtask, updateSubtask, getCheckInHistory, getCheckInStats, previewPeriodChange } from "../../services/api";
 import { TASK_CATEGORIES } from "../../services/config";
 import { validatePlanPeriod } from "../../services/planRules";
 import { getBusinessDate } from "../../services/businessTime";
@@ -249,6 +257,10 @@ const historyEndDate = ref("");
 const historyFilterError = ref("");
 const historyLoadError = ref("");
 const historyLoading = ref(false);
+const attendancePage = ref(0);
+const attendanceTotal = ref(0);
+const attendancePageSize = 20;
+const attendancePageCount = computed(() => Math.max(1, Math.ceil(attendanceTotal.value / attendancePageSize)));
 let appliedHistoryFilters = {};
 let historyQueryVersion = 0;
 function filterCheckInHistory() {
@@ -266,18 +278,24 @@ function resetCheckInHistory() {
   historyStartDate.value = ""; historyEndDate.value = "";
   return filterCheckInHistory();
 }
-async function loadFilteredHistory() {
+async function loadFilteredHistory(requestedPage = 0) {
   if (!task.value.id) return;
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 0;
   const version = ++historyQueryVersion;
   historyLoading.value = true;
   historyLoadError.value = "";
   try {
-    const rows = await getCheckInHistory({ taskId: task.value.id, ...appliedHistoryFilters });
-    if (version === historyQueryVersion) checkInHistory.value = Array.isArray(rows) ? rows : [];
+    const rows = await getCheckInHistory({ taskId: task.value.id, ...appliedHistoryFilters, page, size: attendancePageSize });
+    if (version !== historyQueryVersion) return;
+    const last = Math.max(0, Math.ceil(rows.total / attendancePageSize) - 1);
+    if (page > last) return loadFilteredHistory(last);
+    checkInHistory.value = rows.list; attendancePage.value = page; attendanceTotal.value = rows.total;
   } catch {
     if (version === historyQueryVersion) historyLoadError.value = "打卡历史查询失败，已保留上次结果，请重试";
   } finally { if (version === historyQueryVersion) historyLoading.value = false; }
 }
+function nextAttendancePage() { if (!historyLoading.value && attendancePage.value < attendancePageCount.value - 1) return loadFilteredHistory(attendancePage.value + 1); }
+function previousAttendancePage() { if (!historyLoading.value && attendancePage.value > 0) return loadFilteredHistory(attendancePage.value - 1); }
 const checkInLoading = ref(false);
 const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
@@ -285,7 +303,7 @@ const targetFeedback = computed(() => {
   const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
   if (task.value.status === "COMPLETED") return remaining === 0
     ? "学习步骤全部完成，打卡目标也已达成"
-    : `学习步骤全部完成；打卡目标未达成，还差 ${remaining} 天。两项独立评价，无需补造打卡`;
+    : `学习步骤全部完成；打卡目标未达成，还差 ${remaining} 天。有效周期内仍可继续真实打卡`;
   if (task.value.status === "ENDED") return remaining === 0
     ? "计划已人工结束，未计为学习完成；打卡目标已达成，记录保留"
     : `计划已人工结束，未计为学习完成；打卡目标未达成，还差 ${remaining} 天，记录保留`;
@@ -336,6 +354,10 @@ function goBack() {
 
 function goRecord() {
   uni.redirectTo({ url: "/pages/record/record" });
+}
+
+function viewLearningHistory() {
+  uni.navigateTo({ url: `/pages/record/record?taskId=${task.value.id}` });
 }
 
 async function loadTask() {
@@ -400,8 +422,7 @@ async function savePlan() {
     const payload = { ...planForm.value, title: planForm.value.title.trim(), targetDays: Number(planForm.value.targetDays) };
     if (payload.startDate !== task.value.startDate || payload.endDate !== task.value.endDate) {
       // 每次保存重新读取，不能使用页面初次加载的旧历史作为删除确认依据。
-      const history = await getCheckInHistory({ taskId: task.value.id });
-      const outside = history.filter(record => record.checkInDate < payload.startDate || record.checkInDate > payload.endDate);
+      const outside = await previewPeriodChange(task.value.id, payload.startDate, payload.endDate);
       if (outside.length) {
         const confirmed = await new Promise(resolve => uni.showModal({
           title: "确认修改计划周期？",
@@ -413,7 +434,7 @@ async function savePlan() {
         }));
         if (!confirmed) return;
         payload.discardOutsideCheckIns = true;
-        payload.confirmedDiscardCheckInIds = outside.map(record => record.id);
+        payload.confirmedDiscardCheckInIds = outside;
       }
     }
     task.value = await updateTask(task.value.id, payload);

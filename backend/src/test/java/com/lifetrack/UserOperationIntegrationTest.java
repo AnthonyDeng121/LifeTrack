@@ -76,9 +76,9 @@ class UserOperationIntegrationTest {
         var duplicate = api("POST", "/check-ins", Map.of("taskId", id, "checkInDate", today.toString(), "content", "重复提交", "durationMinutes", 30));
         assertEquals(409, duplicate.path("code").asInt());
         var history = api("GET", "/check-ins?taskId=" + id + "&startDate=" + today + "&endDate=" + today, null);
-        assertEquals(1, history.path("data").size());
-        assertEquals(0, history.path("data").get(0).path("durationMinutes").asInt());
-        assertEquals("", history.path("data").get(0).path("content").asText());
+        assertEquals(1, history.path("data").path("list").size());
+        assertEquals(0, history.path("data").path("list").get(0).path("durationMinutes").asInt());
+        assertEquals("", history.path("data").path("list").get(0).path("content").asText());
         assertEquals(2, api("GET", "/check-ins/tasks/" + id + "/stats", null).path("data").path("checkedInDays").asInt());
         assertEquals(0, api("GET", "/actions/history", null).path("data").path("total").asInt(), "正式打卡不会伪造AI学习记录");
         var plans = api("GET", "/tasks?status=IN_PROGRESS&startDate=" + today + "&endDate=" + today, null).path("data");
@@ -94,7 +94,7 @@ class UserOperationIntegrationTest {
         var preview=api("POST","/tasks/deconstruct/preview",Map.of("title","学习数据库事务","stepCount",3));
         assertEquals(503,preview.path("code").asInt());
         assertEquals(1,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
-        var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationMinutes",30));
+        var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationMinutes",30,"requestId",UUID.randomUUID().toString()));
         assertEquals(200,failed.path("code").asInt());
         assertTrue(failed.path("data").path("analysisUnavailable").asBoolean());
         assertEquals(0,database.queryForObject("select count(*) from action_logs where task_id=?",Integer.class,id));
@@ -138,8 +138,62 @@ class UserOperationIntegrationTest {
         assertEquals(400, api("POST", "/check-ins", Map.of("taskId", id)).path("code").asInt());
         long step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
         assertEquals(400, api("PUT", "/tasks/subtasks/" + step + "/complete", null).path("code").asInt());
-        assertEquals(1, api("GET", "/check-ins?taskId=" + id, null).path("data").size());
+        assertEquals(1, api("GET", "/check-ins?taskId=" + id, null).path("data").path("list").size());
         assertFalse(api("GET", "/dashboard/stats", null).path("data").has("moodQuote"));
+    }
+
+    @Test void completedLearningStillAcceptsAttendanceInsidePeriodAndRejectsDuplicates() throws Exception {
+        long id = create(today.minusDays(5), today.plusDays(7));
+        long step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
+        assertEquals(200, api("PUT", "/tasks/subtasks/" + step + "/complete", null).path("code").asInt());
+        assertEquals("COMPLETED", api("GET", "/tasks/" + id, null).path("data").path("status").asText());
+        for (int i=0;i<6;i++) assertEquals(200, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.minusDays(i).toString())).path("code").asInt());
+        assertEquals(409, api("POST", "/check-ins", Map.of("taskId",id)).path("code").asInt());
+        var stats = api("GET", "/check-ins/tasks/"+id+"/stats", null).path("data");
+        assertEquals(6, stats.path("checkedInDays").asInt()); assertEquals(100, stats.path("completionRate").asInt());
+        assertEquals(100, api("GET", "/tasks/"+id,null).path("data").path("totalProgress").asInt());
+        assertEquals(400, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.plusDays(1).toString())).path("code").asInt());
+        database.update("update tasks set end_date=? where id=?", today.minusDays(1), id);
+        assertEquals(400, api("POST", "/check-ins", Map.of("taskId",id)).path("code").asInt());
+    }
+
+    @Test void databasePaginationIsStableFilteredBoundedAndDoesNotChangeStatistics() throws Exception {
+        long id=create(today.minusDays(50),today.plusDays(7));
+        for(int i=0;i<41;i++) {
+            database.update("insert into check_in_records (user_id,task_id,check_in_date,content,duration_minutes,automatic,created_at) values (?,?,?,?,0,false,now())",user.getId(),id,today.minusDays(i),"");
+            database.update("insert into deferred_learning_records (user_id,task_id,content,duration_minutes,recorded_at,status) values (?,?,?,30,?,?)",user.getId(),id,"分页记录"+i,today.atTime(12,0),i<5?"APPLIED":"PENDING");
+        }
+        Set<Long> attendanceIds=new HashSet<>();
+        for(int page=0;page<3;page++) {
+            var data=api("GET","/check-ins?taskId="+id+"&page="+page+"&size=20",null).path("data");
+            assertEquals(41,data.path("total").asInt()); assertEquals(page<2?20:1,data.path("list").size());
+            for(var row:data.path("list")) assertTrue(attendanceIds.add(row.path("id").asLong()),"相同排序字段也不能跨页重复");
+        }
+        assertEquals(41,attendanceIds.size());
+        assertEquals(41,api("GET","/check-ins/tasks/"+id+"/stats",null).path("data").path("checkedInDays").asInt());
+        var filtered=api("GET","/check-ins?taskId="+id+"&startDate="+today+"&endDate="+today,null).path("data");
+        assertEquals(1,filtered.path("total").asInt());
+        Set<Long> pendingIds=new HashSet<>();
+        for(int page=0;page<2;page++) {
+            var data=api("GET","/actions/deferred?taskId="+id+"&page="+page+"&size=20",null).path("data");
+            assertEquals(36,data.path("total").asInt()); assertEquals(page==0?20:16,data.path("list").size());
+            for(var row:data.path("list")) { assertTrue(pendingIds.add(row.path("id").asLong())); assertNotEquals("APPLIED",row.path("status").asText()); }
+        }
+        for(String path:List.of("/check-ins?page=-1","/check-ins?size=101","/actions/deferred?page=-1","/actions/deferred?size=0"))
+            assertEquals(400,api("GET",path,null).path("code").asInt());
+        long second=create(today,today.plusDays(7));
+        assertEquals(0,api("GET","/actions/deferred?taskId="+second,null).path("data").path("total").asInt());
+    }
+
+    @Test void retryAfterLostResponseKeepsOnePendingSubmissionAndRejectsKeyReuse() throws Exception {
+        long id=create(today.minusDays(2),today.plusDays(7)); String key=UUID.randomUUID().toString();
+        var body=Map.of("taskId",id,"content","断网重发的学习记录","durationMinutes",30,"requestId",key);
+        var first=api("POST","/actions/deferred",body).path("data");
+        var second=api("POST","/actions/deferred",body).path("data");
+        assertEquals(first.path("id").asLong(),second.path("id").asLong());
+        assertEquals(1,database.queryForObject("select count(*) from deferred_learning_records where task_id=?",Integer.class,id));
+        assertEquals(0,database.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,id));
+        assertEquals(409,api("POST","/actions/deferred",Map.of("taskId",id,"content","被篡改的正文","durationMinutes",30,"requestId",key)).path("code").asInt());
     }
 
     @Test void longTitleAndNonIntegerDurationAreClearBadRequestsWithoutWrites() throws Exception {
@@ -162,6 +216,7 @@ class UserOperationIntegrationTest {
         long step=api("GET","/tasks/"+id+"/subtasks",null).path("data").get(0).path("id").asLong();
         var entry=logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(id).subTaskId(step).category(Task.Category.学习)
                 .rawInput("权限隔离测试记录").contribution(BigDecimal.ZERO).durationMinutes(1).build());
+        var ownPending=api("POST","/actions/deferred",Map.of("taskId",id,"content","权限隔离待分析记录","durationMinutes",30,"requestId",UUID.randomUUID().toString())).path("data").path("id").asLong();
         User foreign=users.saveAndFlush(User.builder().username("foreign-test-"+UUID.randomUUID()).password("TEST_ONLY").build());
         String ownerToken=token;
         try {
@@ -172,6 +227,11 @@ class UserOperationIntegrationTest {
             assertEquals(403,api("DELETE","/tasks/"+id,null).path("code").asInt());
             assertEquals(403,api("POST","/check-ins",Map.of("taskId",id)).path("code").asInt());
             assertEquals(403,api("GET","/check-ins?taskId="+id,null).path("code").asInt());
+            assertEquals(403,api("GET","/actions/deferred?taskId="+id,null).path("code").asInt());
+            assertEquals(403,api("GET","/actions/history?taskId="+id,null).path("code").asInt());
+            assertEquals(403,api("GET","/tasks/"+id+"/period-preview?startDate="+today+"&endDate="+today.plusDays(5),null).path("code").asInt());
+            assertEquals(403,api("POST","/actions/deferred/"+ownPending+"/retry",Map.of()).path("code").asInt());
+            assertEquals(403,api("POST","/actions/deferred",Map.of("taskId",id,"content","越权提交","durationMinutes",30,"requestId",UUID.randomUUID().toString())).path("code").asInt());
             assertEquals(403,api("DELETE","/actions/"+entry.getId(),null).path("code").asInt());
             assertEquals(403,api("PUT","/tasks/subtasks/"+step+"/complete",null).path("code").asInt());
             assertEquals(1,database.queryForObject("select count(*) from tasks where id=? and user_id=?",Integer.class,id,user.getId()));
@@ -265,7 +325,7 @@ class UserOperationIntegrationTest {
         assertEquals(1, after.path("checkInTrend").get(6).path("checkInCount").asInt());
         assertEquals(0, after.path("weeklyTrend").get(6).path("progress").asInt());
         assertFalse(after.has("checkInCompletionRate"));
-        assertEquals(1, api("GET", "/check-ins?taskId=" + cancelled, null).path("data").size());
+        assertEquals(1, api("GET", "/check-ins?taskId=" + cancelled, null).path("data").path("list").size());
         assertEquals(1, api("GET", "/actions/history", null).path("data").path("total").asInt());
     }
 

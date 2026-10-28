@@ -162,18 +162,18 @@ let manualPayload;
 let deferredData = [];
 let retriedId;
 const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript}
+const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript.replace(/onHide\(.*;|onUnload\(.*;|onLoad\(.*;/g, "")}
   return { rawInput, durationHours, durationMinutes, readDurationMinutes, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, retryRecord, loadDeferredRecords };
 `)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
   syncArguments = args;
   return syncResponse;
-}, async () => ({}), async () => ({ list: [] }), async () => [{ id: 101 }], async payload => { manualPayload = payload; }, async () => deferredData,
+}, async () => ({}), async () => ({ list: [] }), async () => [{ id:101, status:"IN_PROGRESS",startDate:"2000-01-01",endDate:"2099-12-31" }], async payload => { manualPayload = payload; }, async () => ({list:deferredData,total:deferredData.length}),
 async id => { retriedId = id; deferredData = [{ id, status: "APPLIED" }]; return { updates: [{ taskId: 101, subTaskId: 1 }] }; }, getBusinessDate);
 recording.rawInput.value = "学习编曲";
 recording.durationMinutes.value = "30";
 recording.selectedTaskId.value = 101;
 await recording.submitRecord();
-assert.deepEqual(syncArguments, ["学习编曲", 30, 101]);
+assert.deepEqual(syncArguments.slice(0, 3), ["学习编曲", 30, 101]);
 assert.equal(recording.rawInput.value, "", "服务器已保存原文，重新分析使用记录ID");
 assert.equal(recording.syncing.value, false);
 syncResponse = { updates: [], matchingAmbiguous: true, aiAnalysis: "请补充具体知识点" };
@@ -191,7 +191,7 @@ recording.durationHours.value = "1"; recording.durationMinutes.value = "30";
 recording.selectedTaskId.value = 101;
 await recording.submitRecord();
 assert.equal(recording.syncResult.value.analysisUnavailable, true);
-assert.deepEqual(syncArguments, ["学习编曲软件", 90, 101]);
+assert.deepEqual(syncArguments.slice(0, 3), ["学习编曲软件", 90, 101]);
 assert.equal(recording.rawInput.value, "");
 assert.equal(recording.syncing.value, false);
 for (const [h, m, expected] of [["", "", null], ["0", "0", null], ["1.5", "0", null], ["1", "60", null], ["-1", "5", null], ["24", "1", null], ["24", "0", 1440], ["", "1", 1]]) {
@@ -256,7 +256,7 @@ let historyFailure = false;
 let saveFailure = false;
 let modalCopy;
 const editing = new Function("computed", "ref", "watch", "onLoad", "uni", "TASK_CATEGORIES", "getBusinessDate",
-  "validatePlanPeriod", "getCheckInHistory", "getCheckInStats", "updateTask", `${detailScript}
+  "validatePlanPeriod", "getCheckInHistory", "getCheckInStats", "updateTask", "previewPeriodChange", `${detailScript}
   return { task, planForm, showPlanEdit, savingPlan, stepsEditable, planClosed, showEditDialog, editingSubtask,
     openPlanEdit, savePlan, openAddDialog, openEditDialog, saveSubtask, finishSubtask };
 `)(computed, ref, watch, () => {}, {
@@ -268,7 +268,7 @@ async () => ({}), async (id, payload) => {
   if (saveFailure) throw new Error("records changed, confirm again");
   editPayloads.push({ id, payload });
   return { ...editing.task.value, ...payload };
-});
+}, async (id,start,end) => { if (historyFailure) throw new Error("history unavailable"); return checkInHistory.filter(r=>r.checkInDate < start || r.checkInDate > end).map(r=>r.id); });
 editing.task.value = { id: 101, version: 7, title: "学习", category: "学习", startDate: "2026-10-23", endDate: "2026-10-31", targetDays: 5, status: "IN_PROGRESS" };
 editing.openPlanEdit();
 editing.planForm.value.startDate = "2026-10-25";

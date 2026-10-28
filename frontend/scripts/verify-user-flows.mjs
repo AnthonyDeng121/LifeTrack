@@ -28,9 +28,9 @@ const record = await page("record", {
     return { ...payload, id: 1 };
   },
   syncAction: async () => { aiCalls++; return { updates: [] }; },
-  getTasks: async () => [active], getDeferredLearningRecords: async () => [],
+  getTasks: async () => [active], getDeferredLearningRecords: async () => ({ list: [], total: 0 }),
   getDashboardStats: async () => { throw new Error("Record page must not load dashboard"); },
-  getCheckInHistory: async () => [{ id: 1 }],
+  getCheckInHistory: async () => ({list:[{ id:1 }],total:1}),
   getActionHistory: async (page, size) => {
     historyCalls.push({ page, size });
     if (holdHistory) return holdHistory;
@@ -118,7 +118,7 @@ const detail = await page("task-detail", {
   getCheckInHistory: async filters => {
     attendanceFilters.push(filters);
     if (attendanceFailure) throw new Error("attendance unavailable");
-    return [{ id: 11, checkInDate: "2026-10-25" }];
+    return {list:[{ id: 11, checkInDate: "2026-10-25" }],total:1};
   },
   getCheckInStats: async () => { if (statsFailure) throw new Error("stats unavailable"); return { checkedInDays: 5 }; },
 }, "task, historyStartDate, historyEndDate, historyFilterError, historyLoadError, checkInHistory, checkInStats, checkInError, filterCheckInHistory, resetCheckInHistory, loadCheckIns");
@@ -128,7 +128,7 @@ await detail.filterCheckInHistory();
 assert.equal(attendanceFilters.length, 0);
 detail.historyStartDate.value = "2026-10-25";
 await detail.filterCheckInHistory();
-assert.deepEqual(attendanceFilters[0], { taskId: 101, startDate: "2026-10-25", endDate: "2026-10-25" });
+assert.deepEqual(attendanceFilters[0], { taskId: 101, startDate: "2026-10-25", endDate: "2026-10-25", page:0, size:20 });
 assert.equal(detail.checkInStats.value.checkedInDays, 0, "筛选历史不修改概览统计");
 statsFailure = true;
 await detail.loadCheckIns();
@@ -140,7 +140,7 @@ assert.equal(detail.checkInStats.value.checkedInDays, 5, "历史接口失败不�
 assert.match(detail.historyLoadError.value, /已保留上次结果/);
 attendanceFailure = false;
 await detail.resetCheckInHistory();
-assert.deepEqual(attendanceFilters.at(-1), { taskId: 101 });
+assert.deepEqual(attendanceFilters.at(-1), { taskId: 101, page:0, size:20 });
 console.log("Manual check-in, date filters, history pagination and failure isolation checks passed.");
 
 let savedMood;
@@ -182,6 +182,42 @@ staleReport({ title: "old report" });
 await Promise.resolve();
 assert.equal(dashboard.report.value.title, "new report");
 console.log("Dashboard core data does not wait for AI; stale feedback and task failures are isolated.");
+
+let pendingRows = Array.from({length:21},(_,i)=>({id:100-i,status:"PENDING"}));
+const pagedRecord = await page("record", {
+  getDeferredLearningRecords: async ({page,size}) => ({total:pendingRows.length,list:pendingRows.slice(page*size,(page+1)*size)}),
+  retryDeferredLearningRecord: async id => {pendingRows=pendingRows.filter(r=>r.id!==id);return {updates:[{}]};},
+  getTasks: async()=>[], getActionHistory:async()=>({total:0,list:[]}),
+}, "loadDeferredRecords, nextDeferredPage, deferredPage, deferredTotal, pendingRecords, retryRecord, rawInput");
+await pagedRecord.loadDeferredRecords(); assert.equal(pagedRecord.pendingRecords.value.length,20);
+await pagedRecord.nextDeferredPage(); assert.equal(pagedRecord.pendingRecords.value.length,1);
+pagedRecord.rawInput.value="未提交草稿";
+await pagedRecord.retryRecord(pagedRecord.pendingRecords.value[0]);
+assert.equal(pagedRecord.deferredPage.value,0);assert.equal(pagedRecord.deferredTotal.value,20);
+assert.equal(pagedRecord.rawInput.value,"未提交草稿");
+
+let lost = true; const submissionIds=[];
+const resilient = await page("record", {
+  syncAction:async (...args)=>{submissionIds.push(args[3]);if(lost){lost=false;throw new Error("response lost after save");}return {updates:[],replayed:true};},
+  getDeferredLearningRecords:async()=>({total:0,list:[]}),getTasks:async()=>[],getActionHistory:async()=>({total:0,list:[]}),
+}, "rawInput,durationMinutes,selectedTaskId,submitRecord");
+resilient.rawInput.value="网络响应丢失测试";resilient.durationMinutes.value="30";resilient.selectedTaskId.value=101;
+await resilient.submitRecord(); await resilient.submitRecord();
+assert.equal(submissionIds[0],submissionIds[1]);
+assert.match(submissionIds[0],/^[0-9a-f-]{36}$/);
+
+let dateAtMidnight="2026-10-25";
+const completedPlan={...active,status:"COMPLETED"};
+const midnight = await page("record", {
+  getBusinessDate:()=>dateAtMidnight,getTasks:async()=>[completedPlan],
+  getCheckInHistory:async()=>({total:0,list:[]}),
+  createCheckIn:async payload=>({...payload,checkInDate:dateAtMidnight}),
+}, "plans,manualTaskId,manualAlreadyChecked,businessToday,refreshBusinessDate,loadPlans,loadManualAttendance,submitDailyCheckIn");
+await midnight.loadPlans();midnight.manualTaskId.value=101;midnight.manualAlreadyChecked.value=true;
+dateAtMidnight="2026-10-26";midnight.refreshBusinessDate();await midnight.loadManualAttendance();
+assert.equal(midnight.businessToday.value,"2026-10-26");assert.equal(midnight.manualAlreadyChecked.value,false);
+await midnight.submitDailyCheckIn();assert.equal(midnight.manualAlreadyChecked.value,true);
+console.log("Pending pagination rollback, submission replay key and simulated Shanghai date rollover checks passed.");
 
 let authCalls = 0;
 let phoneCalls = 0;

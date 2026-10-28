@@ -64,6 +64,16 @@ class DecompositionTests(unittest.TestCase):
         self.assertEqual(1, llm.call_count)
 
     @patch("ai_server.call_llm")
+    def test_literal_newlines_in_model_text_are_normalized_without_fake_steps(self, llm):
+        raw = json.dumps(self.valid, ensure_ascii=False)
+        raw = raw.replace("绘制TCP/IP分层图", "绘制TCP/IP\n分层图")
+        llm.return_value = raw
+        response = self.client.post("/ai/deconstruct", json={"title":"计算机网络"}).get_json()
+        self.assertEqual(200, response["code"])
+        self.assertIn("TCP/IP 分层图", response["data"]["goals"][0]["sub_tasks"][0]["step"])
+        self.assertEqual(1, llm.call_count)
+
+    @patch("ai_server.call_llm")
     def test_generic_template_gets_one_correction_attempt(self, llm):
         llm.side_effect = [json.dumps(example(["阅读基础教材", "完成在线课程"])), json.dumps(self.valid)]
         result = self.client.post("/ai/deconstruct", json={"title": "学习计算机网络"}).get_json()

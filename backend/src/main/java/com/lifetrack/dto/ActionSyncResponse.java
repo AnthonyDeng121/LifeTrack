@@ -16,6 +16,7 @@ import java.util.List;
 public class ActionSyncResponse {
     @Schema(description = "已保存的原始学习记录ID，失败后使用此ID重新分析")
     private Long recordId;
+    private boolean replayed;
     private boolean analysisUnavailable;
     private boolean matchingAmbiguous;
     @Schema(description = "本次持久化的步骤学习记录数，同一次输入可能对应多个步骤")

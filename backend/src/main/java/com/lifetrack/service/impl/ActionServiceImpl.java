@@ -167,6 +167,12 @@ public class ActionServiceImpl implements ActionService {
                     .build();
         }
         rawMatches = new ArrayList<>(uniqueMatches.values());
+        List<AIMatchResult.MatchDetail> provenCompletions = rawMatches.stream().filter(m -> m.isCompleted()
+                && m.getCompletionEvidence() != null && m.getCompletionEvidence().trim().length() >= 8
+                && request.getRawInput().contains(m.getCompletionEvidence().trim())
+                && supportsCompletion(eligible.get(m.getSubTaskId()).getContent(), request.getRawInput())).toList();
+        Set<Long> completionIds = hasIndependentEvidence(request.getRawInput(), provenCompletions, true)
+                ? provenCompletions.stream().map(AIMatchResult.MatchDetail::getSubTaskId).collect(Collectors.toSet()) : Set.of();
         long matchCount = rawMatches.stream().filter(Objects::nonNull)
                 .filter(m -> m.getIncrement() != null && m.getIncrement().signum() > 0 && eligible.containsKey(m.getSubTaskId()))
                 .map(AIMatchResult.MatchDetail::getSubTaskId).distinct().count();
@@ -176,9 +182,7 @@ public class ActionServiceImpl implements ActionService {
             if (step == null || !matchedSteps.add(step.getId())) continue;
             Task task = taskMap.get(step.getTaskId());
             // AI 只提供建议；后端限制贡献并保存实际增量，保证封顶与撤销准确。
-            String evidence = match.getCompletionEvidence();
-            boolean completed = match.isCompleted() && evidence != null && evidence.trim().length() >= 8
-                    && request.getRawInput().contains(evidence.trim());
+            boolean completed = completionIds.contains(step.getId());
             // 普通投入估算最多95%；达到100%需要用户原话中的具体完成证据，或详情页手动确认。
             BigDecimal remaining = (completed ? BigDecimal.ONE : new BigDecimal("0.95"))
                     .subtract(step.getCurrentProgress()).max(BigDecimal.ZERO);
@@ -220,8 +224,19 @@ public class ActionServiceImpl implements ActionService {
 
     @Override
     public PageResponse<ActionHistoryResponse> getHistory(Pageable pageable) {
+        return getHistory(pageable, null);
+    }
+
+    @Override
+    public PageResponse<ActionHistoryResponse> getHistory(Pageable pageable, Long taskId) {
         Long userId = UserContext.getUserId();
-        Page<ActionLog> page = actionLogRepository.findByUserId(userId, pageable);
+        if (pageable.getPageSize() > 100) throw new BusinessException(400,"每页最多100条学习记录");
+        if (taskId != null) {
+            Task task=taskRepository.findById(taskId).orElseThrow(()->new BusinessException(404,"计划不存在"));
+            if (!task.getUserId().equals(userId)) throw new BusinessException(403,"无权查看该计划");
+        }
+        Page<ActionLog> page = taskId == null ? actionLogRepository.findByUserId(userId, pageable)
+                : actionLogRepository.findByUserIdAndTaskId(userId, taskId, pageable);
 
         // 获取涉及到的任务 ID 列表，用于批量查询任务标题
         Set<Long> taskIds = page.getContent().stream()
@@ -249,9 +264,13 @@ public class ActionServiceImpl implements ActionService {
     }
 
     private boolean hasIndependentEvidence(String input, java.util.Collection<AIMatchResult.MatchDetail> matches) {
+        return hasIndependentEvidence(input, matches, false);
+    }
+
+    private boolean hasIndependentEvidence(String input, java.util.Collection<AIMatchResult.MatchDetail> matches, boolean completion) {
         List<int[]> occupied = new ArrayList<>();
         for (var match : matches) {
-            String evidence = match.getMatchEvidence();
+            String evidence = completion ? match.getCompletionEvidence() : match.getMatchEvidence();
             if (evidence == null || evidence.trim().length() < 4) return false;
             evidence = evidence.trim();
             int start = input.indexOf(evidence);
@@ -260,6 +279,15 @@ public class ActionServiceImpl implements ActionService {
             for (int[] span : occupied) if (start < span[1] && end > span[0]) return false;
             occupied.add(new int[]{start, end});
         }
+        return true;
+    }
+
+    private boolean supportsCompletion(String step, String input) {
+        // 这是保守的自动完成门槛，不代替知识掌握评估；HTTP验证不能冒充JUnit/MockMvc测试。
+        if (java.util.regex.Pattern.compile("还没|尚未|未完成|未通过|没有(?:完成|实现|运行|通过|学习)|刚开始|正在(?:学习|练习|实现)").matcher(input).find()) return false;
+        var tokens=java.util.regex.Pattern.compile("[A-Za-z][A-Za-z0-9_+.#/-]{1,}").matcher(step);
+        String normalized=input.toLowerCase(java.util.Locale.ROOT);
+        while(tokens.find()) if (!normalized.contains(tokens.group().toLowerCase(java.util.Locale.ROOT))) return false;
         return true;
     }
 
@@ -330,9 +358,9 @@ public class ActionServiceImpl implements ActionService {
                             .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)).toList();
                     if (remaining.isEmpty() && Boolean.TRUE.equals(record.getAutomatic())) {
                         checkInRecordRepository.delete(record);
-                    } else if (!remaining.isEmpty() || record.getContent() == null || record.getContent().isBlank()) {
+                    } else {
                         // 只汇总已成功落库的学习日志；手动打卡原备注不再被覆盖。
-                        // 无日志的旧手动记录保留原值，新手动打卡初始为0。
+                        // 撤销最后一条成功日志时也必须归零；旧手动备注始终保留。
                         record.setDurationMinutes(remaining.stream().mapToInt(a -> a.getDurationMinutes() == null ? 0 : a.getDurationMinutes()).sum());
                         if (Boolean.TRUE.equals(record.getAutomatic()) && !remaining.isEmpty()) record.setContent(remaining.get(0).getRawInput());
                         checkInRecordRepository.save(record);

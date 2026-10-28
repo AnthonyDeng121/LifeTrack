@@ -85,18 +85,19 @@ export function getCheckInStats(taskId) {
   return request({ ...endpoints.checkIns.stats(taskId) });
 }
 
-export function syncAction(rawInput, durationMinutes, taskId) {
-  return request({ ...endpoints.actions.sync(rawInput, durationMinutes, taskId), timeout: 50000 });
+export function syncAction(rawInput, durationMinutes, taskId, requestId) {
+  return request({ ...endpoints.actions.sync(rawInput, durationMinutes, taskId, requestId), timeout: 50000 });
 }
 
 export function addSubtask(taskId, data) { return request(endpoints.tasks.addSubtask(taskId, data)); }
 export function saveDeferredLearningRecord(data) { return request(endpoints.actions.saveDeferred(data)); }
-export function getDeferredLearningRecords() { return request(endpoints.actions.deferred); }
+export function getDeferredLearningRecords(filters = {}) { return request(endpoints.actions.deferred(filters)); }
+export function previewPeriodChange(taskId, startDate, endDate) { return request(endpoints.tasks.periodPreview(taskId, startDate, endDate)); }
 export function retryDeferredLearningRecord(id) { return request(endpoints.actions.retryDeferred(id)); }
 export function importDeferredLearningRecords() { return request(endpoints.actions.importDeferred); }
 
-export function getActionHistory(page = 0, size = 10) {
-  return request({ ...endpoints.actions.history(page, size) });
+export function getActionHistory(page = 0, size = 10, taskId) {
+  return request({ ...endpoints.actions.history(page, size, taskId) });
 }
 
 export function deleteAction(actionId) {

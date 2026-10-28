@@ -523,6 +523,13 @@ public class TaskService {
         return task;
     }
 
+    @Transactional(readOnly = true)
+    public List<Long> previewOutsideCheckIns(Long taskId, LocalDate start, LocalDate end) {
+        Task task = getOwnedTask(taskId);
+        if (start == null || end == null || start.isAfter(end)) throw new BusinessException(400, "计划周期不合法");
+        return checkInRecordRepository.findOutsideIds(task.getUserId(), taskId, start, end);
+    }
+
     private void validatePlanPeriod(LocalDate startDate, LocalDate endDate, Integer targetDays) {
         if (startDate == null || endDate == null) {
             throw new BusinessException(400, "计划开始日期和结束日期不能为空");

@@ -78,7 +78,8 @@ def validate_decomposition(data, step_count=None):
             step = item.get("step")
             if not isinstance(step, str) or not step.strip() or len(step) > 120:
                 raise ValueError("步骤描述为空或过长")
-            step = step.strip()
+            step = " ".join(step.split())
+            item["step"] = step
             if step in GENERIC_STEPS:
                 raise ValueError("步骤过于通用：" + step + "，应补充学科知识点与可验证产出")
             if step in seen:
@@ -307,7 +308,11 @@ def ai_deconstruct():
         for attempt in range(2):
             raw_res = call_llm(final_prompt)
             try:
-                data = validate_decomposition(json.loads(clean_output(raw_res)), count)
+                cleaned = clean_output(raw_res)
+                if any(ord(c) < 32 and c not in "\n\r\t" for c in cleaned):
+                    raise ValueError("模型JSON含非法控制字符")
+                # 部分模型在字符串内输出实际换行。只容忍文本空白，仍按JSON解析并执行全部结构及业务校验。
+                data = validate_decomposition(json.loads(cleaned, strict=False), count)
                 final_step = data["goals"][0]["sub_tasks"][-1]["step"]
                 if not any(word in final_step for word in ("验收", "通过", "验证", "测试", "测验", "达标")):
                     raise ValueError("最后一步缺少整体目标的具体收尾产出与验收标准")
@@ -417,4 +422,4 @@ def ai_adjust_strategy():
 
 if __name__ == "__main__":
     # 本地运行，端口5000
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=int(os.getenv("AI_PORT", "5000")), debug=False)

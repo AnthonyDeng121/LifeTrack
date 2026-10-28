@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ZONE = dt.timezone(dt.timedelta(hours=8))
 SOURCE_PREFIXES = ('backend/src/', 'backend/scripts/', 'frontend/src/', 'frontend/scripts/', 'AI_Server/')
 SOURCE_FILES = {'backend/pom.xml', 'frontend/package.json', 'frontend/package-lock.json',
-                'verify-course.ps1', 'scripts/verify_course.py', 'scripts/test_verification.py'}
+                'verify-course.ps1', 'start-local.ps1', 'stop-local.ps1', 'scripts/package_delivery.py',
+                'scripts/verify_course.py', 'scripts/test_verification.py'}
 REQUIRED_CHECKS = {'backend','frontend','python-ai','verification-tooling','python-dependencies'}
 
 def digest(data):

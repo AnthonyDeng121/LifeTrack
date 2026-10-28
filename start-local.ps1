@@ -1,4 +1,4 @@
-param([switch]$WithAI)
+param([switch]$WithAI, [ValidateRange(1,65535)][int]$AIPort = 5000)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
@@ -93,7 +93,11 @@ Assert-CommandExists 'npm.cmd' 'Install npm.'
 if ($WithAI) { Assert-CommandExists 'python' 'Install Python 3.12 (the verified runtime).' }
 Assert-PortAvailable 8081 'Backend'
 Assert-PortAvailable 5173 'Frontend'
-if ($WithAI) { Assert-PortAvailable 5000 'AI service' }
+if ($WithAI) {
+    Assert-PortAvailable $AIPort 'AI service'
+    $env:AI_PORT = "$AIPort"
+    $env:AI_BASE_URL = "http://127.0.0.1:$AIPort/ai"
+}
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 $started = @()
@@ -117,7 +121,7 @@ try {
         $ai = Start-LocalProcess 'ai' (Join-Path $projectRoot 'AI_Server') $aiCommand
         $started += $ai
         $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
-        Wait-LocalReady 'http://127.0.0.1:5000/health' 120 $ai
+        Wait-LocalReady "http://127.0.0.1:$AIPort/health" 120 $ai
     }
 
     $started | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
@@ -126,7 +130,7 @@ try {
     Write-Host '  Frontend: http://localhost:5173/#/'
     Write-Host '  Backend:  http://localhost:8081'
     Write-Host '  Swagger:  http://localhost:8081/swagger-ui.html'
-    if ($WithAI) { Write-Host '  AI:       http://127.0.0.1:5000' }
+    if ($WithAI) { Write-Host "  AI:       http://127.0.0.1:$AIPort" }
     Write-Host 'Stop all services with: .\stop-local.ps1'
     Write-Host "Logs: $runtimeDir"
 } catch {

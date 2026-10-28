@@ -31,11 +31,12 @@ public class CheckInController {
 
     @Operation(summary = "查询打卡历史", description = "可按计划和日期范围筛选")
     @GetMapping
-    public Result<List<CheckInResponse>> history(
+    public Result<com.lifetrack.dto.PageResponse<CheckInResponse>> history(
             @RequestParam(required = false) Long taskId,
             @RequestParam(required = false) LocalDate startDate,
-            @RequestParam(required = false) LocalDate endDate) {
-        return Result.success(checkInService.history(taskId, startDate, endDate));
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return Result.success(checkInService.historyPage(taskId, startDate, endDate, page, size));
     }
 
     @Operation(summary = "获取指定计划的打卡统计")

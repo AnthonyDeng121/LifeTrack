@@ -41,7 +41,7 @@ try {
   assert.equal((await api.getTaskDetail(id)).title,'Frontend live contract edited');
   await api.createCheckIn({taskId:id,content:''});
   await assert.rejects(()=>api.createCheckIn({taskId:id,content:''}),e=>e.code===409);
-  assert.equal((await api.getCheckInHistory({taskId:id,startDate:today,endDate:today})).length,1);
+  assert.equal((await api.getCheckInHistory({taskId:id,startDate:today,endDate:today})).total,1);
   assert.equal((await api.getCheckInStats(id)).checkedInDays,1);
   assert.equal((await api.getCheckInStats(id)).completionRate,100);
   const dashboard = await api.getDashboardStats();
@@ -49,6 +49,13 @@ try {
   assert.equal(dashboard.learningPlanCompletionRate,0);
   const history=await api.getActionHistory(0,20);
   assert.deepEqual(history.list,[]); assert.equal(history.total,0);
+  const key = crypto.randomUUID();
+  await api.saveDeferredLearningRecord({taskId:id,content:'frontend durable retry contract',durationMinutes:30,requestId:key});
+  await api.saveDeferredLearningRecord({taskId:id,content:'frontend durable retry contract',durationMinutes:30,requestId:key});
+  const pending=await api.getDeferredLearningRecords({taskId:id,page:0,size:20});
+  assert.equal(pending.total,1); assert.equal(pending.list.length,1);
+  assert.equal((await api.getActionHistory(0,20,id)).total,0);
+  assert.deepEqual(await api.previewPeriodChange(id,today,today),[]);
 } finally {
   if(id) { await api.deleteTask(id); await assert.rejects(()=>api.getTaskDetail(id),e=>e.code===404); }
 }

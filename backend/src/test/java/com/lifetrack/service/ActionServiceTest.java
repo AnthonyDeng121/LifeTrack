@@ -130,6 +130,36 @@ class ActionServiceTest {
         assertEquals(0, service.syncAction(request()).getUpdates().get(0).getIncrement().signum());
         assertEquals(0, step.getCurrentProgress().compareTo(new BigDecimal("0.95")));
     }
+
+    @Test void httpEvidenceCannotCompleteUnmentionedJunitAndMockMvcStep() {
+        eligible();step.setContent("使用JUnit和MockMvc测试GET /hello并验证HTTP响应");
+        var completed=match(11,"1");completed.setCompleted(true);
+        completed.setCompletionEvidence("已完成GET /hello接口的HTTP访问并验证通过");analysis(completed);
+        var input=request();input.setRawInput("已完成GET /hello接口的HTTP访问并验证通过");
+        service.syncAction(input);
+        assertTrue(step.getCurrentProgress().compareTo(new BigDecimal("0.30"))<=0);
+    }
+
+    @Test void explicitNotCompletedCannotBecomeOneHundredEvenWhenModelSaysCompleted() {
+        eligible();var completed=match(11,"1");completed.setCompleted(true);
+        completed.setCompletionEvidence("尚未完成编曲软件全部练习，正在学习基础操作");analysis(completed);
+        var input=request();input.setRawInput(completed.getCompletionEvidence());
+        service.syncAction(input);
+        assertTrue(step.getCurrentProgress().compareTo(new BigDecimal("0.30"))<=0);
+    }
+
+    @Test void oneGenericCompletionSentenceCannotCompleteTwoDifferentSteps() {
+        eligible();
+        var second=SubTask.builder().id(12L).taskId(1L).content("编写节奏").currentProgress(BigDecimal.ZERO).build();
+        when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step,second));
+        var a=match(11,"1");var b=match(12,"1");
+        for(var m:List.of(a,b)){m.setCompleted(true);m.setCompletionEvidence("所有步骤的要求都已完成并验证通过");}
+        analysis(a,b);
+        var input=request();input.setRawInput("练习编曲软件；编写节奏；所有步骤的要求都已完成并验证通过");
+        service.syncAction(input);
+        assertTrue(step.getCurrentProgress().compareTo(new BigDecimal("0.30"))<=0);
+        assertTrue(second.getCurrentProgress().compareTo(new BigDecimal("0.30"))<=0);
+    }
     @Test void rejectsOutsidePeriodBeforeCallingAI() {
         plan.setEndDate(today.minusDays(1));
         when(tasks.findIdsByUserIdAndStatus(7L, PlanStatus.IN_PROGRESS)).thenReturn(List.of(1L));

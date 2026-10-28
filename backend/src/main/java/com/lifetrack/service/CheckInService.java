@@ -30,6 +30,23 @@ public class CheckInService {
     private final CheckInRecordRepository checkInRecordRepository;
     private final TaskRepository taskRepository;
 
+    @Transactional(readOnly = true)
+    public com.lifetrack.dto.PageResponse<CheckInResponse> historyPage(Long taskId, LocalDate startDate, LocalDate endDate, int page, int size) {
+        if (page < 0 || page > 1000000 || size < 1 || size > 100) throw new BusinessException(400, "页码应为0到1000000，每页1到100条");
+        Long userId = UserContext.getUserId();
+        if (taskId != null) getOwnedTask(taskId, userId);
+        LocalDate start = startDate == null ? LocalDate.of(1000, 1, 1) : startDate;
+        LocalDate end = endDate == null ? today() : endDate;
+        if (start.isAfter(end)) throw new BusinessException(400, "查询开始日期不能晚于结束日期");
+        var rows = checkInRecordRepository.findHistoryPage(userId, taskId, start, end,
+                org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "checkInDate", "createdAt", "id")));
+        var titles = taskRepository.findAllById(rows.getContent().stream().map(CheckInRecord::getTaskId).distinct().toList()).stream()
+                .filter(t -> t.getUserId().equals(userId)).collect(Collectors.toMap(Task::getId, Task::getTitle));
+        return com.lifetrack.dto.PageResponse.of(rows.getTotalElements(), rows.getContent().stream()
+                .map(r -> toResponse(r, titles.getOrDefault(r.getTaskId(), "已删除的计划"))).toList());
+    }
+
     @Transactional
     public CheckInResponse create(CheckInCreateRequest request) {
         Long userId = UserContext.getUserId();
@@ -59,46 +76,13 @@ public class CheckInService {
     }
 
     @Transactional(readOnly = true)
-    public List<CheckInResponse> history(Long taskId, LocalDate startDate, LocalDate endDate) {
-        Long userId = UserContext.getUserId();
-        LocalDate queryStart = startDate == null ? LocalDate.of(1970, 1, 1) : startDate;
-        LocalDate queryEnd = endDate == null ? today() : endDate;
-        if (queryStart.isAfter(queryEnd)) {
-            throw new BusinessException(400, "查询开始日期不能晚于结束日期");
-        }
-
-        List<CheckInRecord> records;
-        Map<Long, String> taskTitles;
-        if (taskId != null) {
-            Task task = getOwnedTask(taskId, userId);
-            records = checkInRecordRepository
-                    .findByUserIdAndTaskIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
-                            userId, taskId, queryStart, queryEnd);
-            taskTitles = Map.of(taskId, task.getTitle());
-        } else {
-            records = checkInRecordRepository
-                    .findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(
-                            userId, queryStart, queryEnd);
-            Set<Long> taskIds = records.stream().map(CheckInRecord::getTaskId).collect(Collectors.toSet());
-            taskTitles = taskRepository.findAllById(taskIds).stream()
-                    .filter(task -> task.getUserId().equals(userId))
-                    .collect(Collectors.toMap(Task::getId, Task::getTitle));
-        }
-
-        return records.stream()
-                .map(record -> toResponse(record, taskTitles.getOrDefault(record.getTaskId(), "已删除的计划")))
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
     public CheckInStatsResponse stats(Long taskId) {
         Long userId = UserContext.getUserId();
         Task task = getOwnedTask(taskId, userId);
         List<CheckInRecord> records = checkInRecordRepository
-                .findByUserIdAndTaskIdOrderByCheckInDateAsc(userId, taskId);
+                .findByUserIdAndTaskIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(userId, taskId, today().minusDays(6), today());
 
-        SortedSet<LocalDate> dates = records.stream()
-                .map(CheckInRecord::getCheckInDate)
+        SortedSet<LocalDate> dates = checkInRecordRepository.findPlanDates(userId, taskId).stream()
                 .collect(Collectors.toCollection(TreeSet::new));
         int[] streaks = calculateStreaks(dates, today());
         int checkedInDays = dates.size();
@@ -175,8 +159,9 @@ public class CheckInService {
         if (today().isAfter(task.getEndDate())) {
             throw new BusinessException(400, "学习计划已经过期，不能打卡");
         }
-        if (task.getStatus() != PlanStatus.IN_PROGRESS) {
-            throw new BusinessException(400, "只有进行中的学习计划可以打卡，当前状态为"
+        if (task.getStatus() != PlanStatus.IN_PROGRESS && task.getStatus() != PlanStatus.COMPLETED
+                && task.getStatus() != PlanStatus.NOT_STARTED) {
+            throw new BusinessException(400, "仅有效周期内进行中或学习已完成的计划可打卡，当前状态为"
                     + task.getStatus().getDescription());
         }
     }

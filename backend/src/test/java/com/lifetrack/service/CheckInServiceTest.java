@@ -78,6 +78,14 @@ class CheckInServiceTest {
         assertTrue(error.getMessage().contains("不在学习计划周期内"));
     }
 
+    @Test void midnightActivationDoesNotDependOnNextScheduledMinute() {
+        LocalDate today=LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        Task task=activePlan(today,today.plusDays(5));task.setStatus(PlanStatus.NOT_STARTED);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(checkInRecordRepository.saveAndFlush(org.mockito.ArgumentMatchers.any())).thenAnswer(i -> i.getArgument(0));
+        assertDoesNotThrow(()->checkInService.create(request(today)));
+    }
+
     @Test
     void shouldRejectCheckInForCancelledPlan() {
         LocalDate today = LocalDate.now();
@@ -87,7 +95,7 @@ class CheckInServiceTest {
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> checkInService.create(request(today)));
-        assertTrue(error.getMessage().contains("只有进行中的学习计划可以打卡"));
+        assertTrue(error.getMessage().contains("仅有效周期内"));
     }
 
     @Test
@@ -126,8 +134,8 @@ class CheckInServiceTest {
                 record(today, 60)
         );
         when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
-        when(checkInRecordRepository.findByUserIdAndTaskIdOrderByCheckInDateAsc(7L, 1L))
-                .thenReturn(records);
+        when(checkInRecordRepository.findPlanDates(7L,1L)).thenReturn(records.stream().map(CheckInRecord::getCheckInDate).toList());
+        when(checkInRecordRepository.findByUserIdAndTaskIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(7L,1L,today.minusDays(6),today)).thenReturn(records);
 
         var stats = checkInService.stats(1L);
         assertEquals(3, stats.getCheckedInDays());
@@ -191,8 +199,7 @@ class CheckInServiceTest {
         Task task = activePlan(today.minusDays(3), today.plusDays(3));
         task.setTargetDays(2);
         when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
-        when(checkInRecordRepository.findByUserIdAndTaskIdOrderByCheckInDateAsc(7L, 1L))
-                .thenReturn(List.of(record(today.minusDays(2), 20), record(today.minusDays(1), 20), record(today, 20)));
+        when(checkInRecordRepository.findPlanDates(7L,1L)).thenReturn(List.of(today.minusDays(2),today.minusDays(1),today));
 
         assertEquals("100", checkInService.stats(1L).getCompletionRate().toPlainString());
     }

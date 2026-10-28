@@ -15,6 +15,7 @@ public interface ActionLogRepository extends JpaRepository<ActionLog, Long> {
     List<ActionLog> findByUserIdAndCreatedAtBetween(Long userId, LocalDateTime start, LocalDateTime end);
     List<ActionLog> findByTaskId(Long taskId);
     Page<ActionLog> findByUserId(Long userId, Pageable pageable);
+    Page<ActionLog> findByUserIdAndTaskId(Long userId, Long taskId, Pageable pageable);
 
     @Query("select coalesce(sum(a.durationMinutes), 0) from ActionLog a where a.userId = ?1 and a.taskId = ?2")
     long sumLearningMinutes(Long userId, Long taskId);

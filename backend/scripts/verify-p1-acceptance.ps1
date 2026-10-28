@@ -10,7 +10,17 @@ function Invoke-LifeTrack([string]$Method, [string]$Path, $Body = $null, [string
         $current = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path $Path -Token $Token
         $Body.version = $current.data.version
     }
-    Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $Token
+    $response = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method $Method -Path $Path -Body $Body -Token $Token
+    if ($Method -eq "GET" -and $Path -match '^/check-ins(?:\?|$)' -and $response.code -eq 200) {
+        $all = @($response.data.list); $total = $response.data.total; $page = 1
+        while ($all.Count -lt $total) {
+            $separator = if ($Path.Contains('?')) { '&' } else { '?' }
+            $next = Invoke-LifeTrackApi -BaseUrl $BaseUrl -Method "GET" -Path "$Path${separator}page=$page" -Token $Token
+            if (-not $next.data.list.Count) { break }; $all += @($next.data.list); $page++
+        }
+        $response.data = $all
+    }
+    return $response
 }
 
 if (-not $Token) {
@@ -70,7 +80,7 @@ try {
     $completed = Invoke-LifeTrack "GET" "/tasks/$taskId" $null $token
     Assert-Equal "COMPLETED" $completed.data.status "status transition after all steps"
     $blockedByStatus = Invoke-LifeTrack "POST" "/check-ins" @{ taskId = $taskId; checkInDate = $todayText; content = "completed"; durationMinutes = 10 } $token
-    Assert-Equal 400 $blockedByStatus.code "status rejection"
+    Assert-Equal 409 $blockedByStatus.code "completed plan still enforces daily uniqueness"
 
     [pscustomobject]@{
         taskId = $taskId; historyApiCheckIns = @($history.data).Count; checkedInDays = $stats.data.checkedInDays

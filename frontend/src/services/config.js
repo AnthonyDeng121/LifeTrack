@@ -64,6 +64,7 @@ export const endpoints = {
       path: `/tasks/subtasks/${subTaskId}`,
       data,
     }),
+    periodPreview: (taskId, startDate, endDate) => ({ method: "GET", path: `/tasks/${taskId}/period-preview`, data: { startDate, endDate } }),
   },
   checkIns: {
     create: (data) => ({ method: "POST", path: "/check-ins", data }),
@@ -72,18 +73,18 @@ export const endpoints = {
   },
   actions: {
     saveDeferred: (data) => ({ method: "POST", path: "/actions/deferred", data }),
-    deferred: { method: "GET", path: "/actions/deferred" },
+    deferred: (filters = {}) => ({ method: "GET", path: "/actions/deferred", data: filters }),
     retryDeferred: (id) => ({ method: "POST", path: `/actions/deferred/${id}/retry` }),
     importDeferred: { method: "POST", path: "/actions/deferred/import-legacy" },
-    sync: (rawInput, durationMinutes, taskId) => ({
+    sync: (rawInput, durationMinutes, taskId, requestId) => ({
       method: "POST",
       path: "/actions/sync",
-      data: { rawInput, durationMinutes, taskId },
+      data: { rawInput, durationMinutes, taskId, ...(requestId ? { requestId } : {}) },
     }),
-    history: (page = 0, size = 10) => ({
+    history: (page = 0, size = 10, taskId) => ({
       method: "GET",
       path: "/actions/history",
-      data: { page, size },
+      data: { page, size, ...(taskId != null ? { taskId } : {}) },
     }),
     delete: (actionId) => ({ method: "DELETE", path: `/actions/${actionId}` }),
   },

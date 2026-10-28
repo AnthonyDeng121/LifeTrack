@@ -29,6 +29,12 @@ public class TaskController {
 
     private final TaskService taskService;
 
+    @GetMapping("/{taskId}/period-preview")
+    public Result<List<Long>> periodPreview(@PathVariable Long taskId, @RequestParam LocalDate startDate,
+            @RequestParam LocalDate endDate) {
+        return Result.success(taskService.previewOutsideCheckIns(taskId, startDate, endDate));
+    }
+
     @Operation(summary = "预览或调整AI拆解，不保存任务")
     @PostMapping("/deconstruct/preview")
     public Result<TaskDeconstructResponse> preview(@RequestBody @Validated com.lifetrack.dto.TaskPreviewRequest request) {

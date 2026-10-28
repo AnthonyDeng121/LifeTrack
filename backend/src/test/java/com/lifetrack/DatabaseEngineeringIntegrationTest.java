@@ -88,6 +88,69 @@ class DatabaseEngineeringIntegrationTest {
         } finally { pool.shutdownNow(); }
     }
 
+    @Test void lostSuccessResponseCanBeReplayedWithoutAnotherAnalysisOrDuration() {
+        var request=request(); request.setRequestId(UUID.randomUUID().toString());
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenReturn(analysis());
+        var first=deferred.submit(request); var repeated=deferred.submit(request);
+        assertTrue(repeated.isReplayed()); assertEquals(first.getRecordId(),repeated.getRecordId());
+        verify(ai,times(1)).analyzeAction(anyString(),anyString(),anyList());
+        assertEquals(1,jdbc.queryForObject("select count(*) from deferred_learning_records where task_id=?",Integer.class,planId));
+        assertEquals(30,jdbc.queryForObject("select sum(duration_minutes) from action_logs where task_id=?",Integer.class,planId));
+        assertEquals(1,jdbc.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,planId));
+    }
+
+    @Test void manualAttendanceSurvivesLearningSaveRetryAndUndoWithoutStaleMinutes() {
+        var manual=new CheckInCreateRequest(); manual.setTaskId(planId); attendance.create(manual);
+        jdbc.update("update check_in_records set content=? where task_id=?","旧手动备注",planId);
+        var input=new DeferredLearningRecordRequest();input.setTaskId(planId);input.setContent(request().getRawInput());input.setDurationMinutes(30);
+        long record=deferred.save(input).id();
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenReturn(analysis());
+        deferred.retry(record);
+        long log=jdbc.queryForObject("select id from action_logs where task_id=?",Long.class,planId);
+        actions.deleteAction(log);
+        assertEquals(1,jdbc.queryForObject("select count(*) from check_in_records where task_id=?",Integer.class,planId));
+        assertEquals(0,jdbc.queryForObject("select duration_minutes from check_in_records where task_id=?",Integer.class,planId));
+        assertEquals("旧手动备注",jdbc.queryForObject("select content from check_in_records where task_id=?",String.class,planId));
+        assertEquals(0,plans.getTaskDetail(planId).getLearningDurationMinutes());
+    }
+
+    @Test void oldPendingRecordCannotRecreateAttendanceAfterPeriodMovesForward() {
+        var input=new DeferredLearningRecordRequest();input.setTaskId(planId);input.setContent(request().getRawInput());input.setDurationMinutes(30);
+        long record=deferred.save(input).id();
+        var update=new TaskUpdateRequest();update.setVersion(plans.getTaskDetail(planId).getVersion());update.setStartDate(today.plusDays(1));
+        plans.updateTask(planId,update);
+        assertThrows(BusinessException.class,()->deferred.retry(record));
+        assertFalse(checkIns.existsByUserIdAndTaskIdAndCheckInDate(user.getId(),planId,today));
+        assertEquals("PENDING",jdbc.queryForObject("select status from deferred_learning_records where id=?",String.class,record));
+        verifyNoInteractions(ai);
+    }
+
+    @Test void periodEditAndAttendanceRaceNeverLeavesAnOutsideRecord() throws Exception {
+        var input=new TaskUpdateRequest();input.setVersion(plans.getTaskDetail(planId).getVersion());input.setStartDate(today.plusDays(1));
+        var ready=new CountDownLatch(1);var pool=Executors.newFixedThreadPool(2);
+        Callable<Integer> check=()->{UserContext.setUserId(user.getId());try{ready.await();var r=new CheckInCreateRequest();r.setTaskId(planId);attendance.create(r);return 200;}catch(BusinessException e){return e.getCode();}finally{UserContext.clear();}};
+        Callable<Integer> edit=()->{UserContext.setUserId(user.getId());try{ready.await();plans.updateTask(planId,input);return 200;}catch(BusinessException e){return e.getCode();}finally{UserContext.clear();}};
+        try {
+            var a=pool.submit(check);var b=pool.submit(edit);ready.countDown();
+            int ca=a.get(10,TimeUnit.SECONDS),cb=b.get(10,TimeUnit.SECONDS);
+            assertTrue(ca==200 && cb==409 || ca==400 && cb==200,"竞争必须由锁和服务端重新校验决定");
+            var plan=tasks.findById(planId).orElseThrow();
+            assertTrue(checkIns.findByUserIdAndTaskIdOrderByCheckInDateAsc(user.getId(),planId).stream()
+                    .allMatch(r->!r.getCheckInDate().isBefore(plan.getStartDate()) && !r.getCheckInDate().isAfter(plan.getEndDate())));
+        } finally {pool.shutdownNow();}
+    }
+
+    @Test void repeatedWeightEditsRemainPositiveNormalizedAndRollbackIllegalChanges() {
+        for(int i=0;i<4;i++){var add=new SubTaskCreateRequest();add.setContent("压力学习步骤"+i);add.setWeight(new BigDecimal("0.20"));plans.addSubTask(planId,add);}
+        for(int i=0;i<60;i++) {
+            var current=steps.findByTaskIdOrderByOrderNumAsc(planId);var update=new SubTaskUpdateRequest();update.setWeight(BigDecimal.valueOf((i%9+1)/10.0));
+            try {plans.updateSubTask(current.get(i%current.size()).getId(),update);}catch(BusinessException e){assertEquals(400,e.getCode());}
+            var saved=steps.findByTaskIdOrderByOrderNumAsc(planId);
+            assertTrue(saved.stream().allMatch(s->s.getWeight().compareTo(new BigDecimal("0.01"))>=0));
+            assertEquals(0,saved.stream().map(SubTask::getWeight).reduce(BigDecimal.ZERO,BigDecimal::add).compareTo(BigDecimal.ONE));
+        }
+    }
+
     @Test void migrationPreservesLegacyHistoryAndSeparatesFalseCompletedPlans() throws Exception {
         Long genuinelyComplete = create();
         jdbc.update("update tasks set status=1 where id in (?,?)", planId, genuinelyComplete);
