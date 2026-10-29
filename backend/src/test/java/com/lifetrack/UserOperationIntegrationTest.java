@@ -342,6 +342,18 @@ class UserOperationIntegrationTest {
         assertEquals(404,api("GET","/tasks/"+id,null).path("code").asInt());
     }
 
+    @Test void dashboardUsesPersistedWeightedGainEvenAfterStepWeightsChange() throws Exception {
+        long id = create(today.minusDays(1), today.plusDays(7));
+        long stepId = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
+        logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(id).subTaskId(stepId)
+                .category(Task.Category.学习).rawInput("加权历史统计测试").durationMinutes(30)
+                .contribution(new BigDecimal("0.20")).planContribution(new BigDecimal("0.05"))
+                .createdAt(today.atTime(10, 0)).build());
+        assertEquals(5.0, api("GET", "/dashboard/stats", null).path("data").path("todayTotalProgress").asDouble());
+        database.update("update sub_tasks set weight=0.8 where id=?", stepId);
+        assertEquals(5.0, api("GET", "/dashboard/stats", null).path("data").path("todayTotalProgress").asDouble());
+    }
+
     @Test void frontendApiModuleWorksAgainstRealHttpServerAndMysql() throws Exception {
         var process=new ProcessBuilder("node","../frontend/scripts/verify-http-contract.mjs");
         process.environment().put("TEST_API_BASE","http://localhost:"+port+"/api/v1");

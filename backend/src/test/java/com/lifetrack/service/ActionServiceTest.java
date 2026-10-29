@@ -89,6 +89,17 @@ class ActionServiceTest {
         verify(checkIns, times(1)).saveAndFlush(any());
         verify(logs, times(2)).save(any());
     }
+    @Test void snapshotsWeightedPlanGainSeparatelyFromStepGain() {
+        eligible(); step.setWeight(new BigDecimal("0.25")); analysis(match(11, "0.20"));
+        service.syncAction(request());
+        ArgumentCaptor<ActionLog> saved = ArgumentCaptor.forClass(ActionLog.class);
+        verify(logs).save(saved.capture());
+        assertEquals(0, new BigDecimal("0.20").compareTo(saved.getValue().getContribution()));
+        assertEquals(0, new BigDecimal("0.05").compareTo(saved.getValue().getPlanContribution()));
+        step.setWeight(new BigDecimal("0.80"));
+        assertEquals(0, new BigDecimal("0.05").compareTo(saved.getValue().getPlanContribution()));
+    }
+
     @Test void unrelatedInputDoesNotSaveOrCheckIn() {
         when(tasks.findIdsByUserIdAndStatus(7L, PlanStatus.IN_PROGRESS)).thenReturn(List.of(1L));
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
@@ -150,7 +161,7 @@ class ActionServiceTest {
 
     @Test void oneGenericCompletionSentenceCannotCompleteTwoDifferentSteps() {
         eligible();
-        var second=SubTask.builder().id(12L).taskId(1L).content("编写节奏").currentProgress(BigDecimal.ZERO).build();
+        var second=SubTask.builder().id(12L).taskId(1L).content("编写节奏").weight(new BigDecimal("0.50")).currentProgress(BigDecimal.ZERO).build();
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step,second));
         var a=match(11,"1");var b=match(12,"1");
         for(var m:List.of(a,b)){m.setCompleted(true);m.setCompletionEvidence("所有步骤的要求都已完成并验证通过");}
@@ -175,7 +186,7 @@ class ActionServiceTest {
     }
     @Test void multipleStepsCreateOneAttendanceAndDoNotDuplicateDuration() {
         eligible();
-        SubTask second = SubTask.builder().id(12L).taskId(1L).content("练习节奏")
+        SubTask second = SubTask.builder().id(12L).taskId(1L).content("练习节奏").weight(new BigDecimal("0.50"))
                 .currentProgress(BigDecimal.ZERO).build();
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step, second));
         analysis(match(11, "0.10"), match(12, "0.10"));
@@ -206,7 +217,7 @@ class ActionServiceTest {
     }
     @Test void inventedOrOverlappingMultiStepEvidenceIsRejected() {
         eligible(false);
-        var second = SubTask.builder().id(12L).taskId(1L).content("编写节奏").currentProgress(BigDecimal.ZERO).build();
+        var second = SubTask.builder().id(12L).taskId(1L).content("编写节奏").weight(new BigDecimal("0.50")).currentProgress(BigDecimal.ZERO).build();
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(step, second));
         var firstMatch = match(11, "0.10"); firstMatch.setMatchEvidence("练习编曲软件并编写节奏");
         analysis(firstMatch, match(12, "0.10"));
@@ -258,7 +269,7 @@ class ActionServiceTest {
         Task secondPlan = Task.builder().id(2L).userId(7L).title("英语学习").category(Task.Category.学习)
                 .status(PlanStatus.IN_PROGRESS).startDate(today).endDate(today.plusDays(1))
                 .totalProgress(BigDecimal.ZERO).build();
-        SubTask secondStep = SubTask.builder().id(22L).taskId(2L).content("听力练习")
+        SubTask secondStep = SubTask.builder().id(22L).taskId(2L).content("听力练习").weight(BigDecimal.ONE)
                 .currentProgress(BigDecimal.ZERO).build();
         when(tasks.findIdsByUserIdAndStatus(7L, PlanStatus.IN_PROGRESS)).thenReturn(List.of(1L, 2L));
         when(tasks.findLockedById(2L)).thenReturn(Optional.of(secondPlan));

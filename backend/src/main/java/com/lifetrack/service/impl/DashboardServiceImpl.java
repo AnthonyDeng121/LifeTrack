@@ -203,7 +203,7 @@ public class DashboardServiceImpl implements DashboardService {
         return logs
                 .stream()
                 .filter(log -> log.getCreatedAt().toLocalDate().equals(date))
-                .map(log -> log.getContribution() != null ? log.getContribution() : BigDecimal.ZERO)
+                  .map(log -> log.getPlanContribution() != null ? log.getPlanContribution() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .multiply(new BigDecimal("100"))
                 .setScale(1, RoundingMode.HALF_UP);

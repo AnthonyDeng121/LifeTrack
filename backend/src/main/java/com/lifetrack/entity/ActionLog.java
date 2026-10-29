@@ -41,6 +41,10 @@ public class ActionLog {
     @Column(precision = 7, scale = 4)
     private BigDecimal contribution;
 
+    // 保存发生时的计划增量，避免以后调整步骤权重改变历史统计。
+    @Column(name = "plan_contribution", precision = 11, scale = 8)
+    private BigDecimal planContribution;
+
     @Column(name = "ai_analysis")
     private String aiAnalysis;
 

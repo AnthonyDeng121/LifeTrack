@@ -206,6 +206,7 @@ public class ActionServiceImpl implements ActionService {
             savedDuration += allocatedDuration;
             actionLogRepository.save(ActionLog.builder().userId(userId).taskId(task.getId()).subTaskId(step.getId())
                     .rawInput(request.getRawInput().trim()).contribution(increment).category(task.getCategory())
+                    .planContribution(increment.multiply(step.getWeight()))
                     .durationMinutes(allocatedDuration).aiAnalysis(aiResult.getAiAnalysis())
                     .createdAt(recordedAt).build());
             step.setCurrentProgress(step.getCurrentProgress().add(increment));

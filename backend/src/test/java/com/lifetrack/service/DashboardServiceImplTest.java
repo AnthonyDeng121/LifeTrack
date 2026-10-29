@@ -125,7 +125,8 @@ class DashboardServiceImplTest {
         when(checkInRecordRepository.findByUserIdAndCheckInDateBetweenOrderByCheckInDateDescCreatedAtDesc(eq(7L), any(), any()))
                 .thenReturn(List.of(first, second, excluded));
         var includedLog = com.lifetrack.entity.ActionLog.builder().taskId(2L).category(Task.Category.学习)
-                .createdAt(today.atTime(10, 0)).durationMinutes(10).contribution(new java.math.BigDecimal("0.2")).build();
+                .createdAt(today.atTime(10, 0)).durationMinutes(10).contribution(new java.math.BigDecimal("0.2"))
+                .planContribution(new java.math.BigDecimal("0.05")).build();
         var cancelledLog = com.lifetrack.entity.ActionLog.builder().taskId(3L).category(Task.Category.学习)
                 .createdAt(today.atTime(10, 0)).durationMinutes(100).contribution(java.math.BigDecimal.ONE).build();
         when(actionLogRepository.findByUserIdAndCreatedAtBetween(eq(7L), any(), any())).thenReturn(List.of(includedLog, cancelledLog));
@@ -137,9 +138,9 @@ class DashboardServiceImplTest {
         assertEquals(0, stats.getCheckInTrend().get(5).getCheckInCount());
         assertEquals(1, stats.getCheckInTrend().get(6).getCheckInCount());
         assertEquals(50, stats.getCheckInTrend().get(6).getDurationMinutes());
-        assertEquals("20.0", stats.getTodayTotalProgress().toPlainString());
+        assertEquals("5.0", stats.getTodayTotalProgress().toPlainString());
         assertEquals(10, stats.getTimeDistribution().get(0).getMinutes());
-        assertEquals("20.0", stats.getWeeklyTrend().get(6).getProgress().toPlainString());
+        assertEquals("5.0", stats.getWeeklyTrend().get(6).getProgress().toPlainString());
         org.mockito.Mockito.verify(checkInRecordRepository, org.mockito.Mockito.never()).deleteAll(anyIterable());
     }
 
