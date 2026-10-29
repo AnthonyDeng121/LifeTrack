@@ -194,6 +194,13 @@
             <text class="text-muted small">修改权重后，其他子任务的权重将自动按比例重新分配。</text>
           </view>
 
+          <view v-if="editingSubtask.id && editingSubtask.originalProgress > 0 && editingSubtask.content.trim() !== editingSubtask.originalContent" class="form-block">
+            <text class="field-label">已有进度如何处理</text>
+            <picker :range="['新学习内容：进度清零', '仅文字修正：保留进度']" :value="editingSubtask.progressPolicy === 'KEEP' ? 1 : 0" @change="editingSubtask.progressPolicy = Number($event.detail.value) === 1 ? 'KEEP' : 'RESET'">
+              <view class="glass-input">{{ editingSubtask.progressPolicy === 'KEEP' ? '仅文字修正：保留进度' : '新学习内容：进度清零' }}</view>
+            </picker>
+            <text class="text-muted small">新学习内容需重新完成；历史学习记录、时长和打卡保留。只有内容含义不变的文字修正才应保留进度。</text>
+          </view>
           <button class="glass-button save-btn" :disabled="saving" :loading="saving" @tap="saveSubtask">{{ editingSubtask.id ? "保存修改" : "添加子计划" }}</button>
         </view>
       </view>
@@ -532,6 +539,10 @@ function openEditDialog(item) {
   if (!stepsEditable.value) return;
   editingSubtask.value = {
     id: item.id,
+    version: item.version,
+    originalContent: item.content,
+    originalProgress: Number(item.currentProgress || 0),
+    progressPolicy: "RESET",
     content: item.content,
     weight: formatWeight(item.weight)
   };
@@ -558,7 +569,20 @@ async function saveSubtask() {
   saving.value = true;
   try {
     const payload = { content: content.trim(), weight: Number(weight) / 100 };
-    if (id) await updateSubtask(id, payload);
+    if (id) {
+      payload.version = editingSubtask.value.version;
+      if (editingSubtask.value.originalProgress > 0 && content.trim() !== editingSubtask.value.originalContent) {
+        payload.progressPolicy = editingSubtask.value.progressPolicy;
+        const keep = payload.progressPolicy === "KEEP";
+        const confirmed = await new Promise(resolve => uni.showModal({
+          title: keep ? "确认仅修正文字？" : "确认更换学习内容？",
+          content: keep ? "仅适用于学习目标含义不变的文字修正，已有进度将保留。" : "该步骤进度将清零，需重新完成；旧记录、学习时长和打卡保留。",
+          success: result => resolve(result.confirm === true), fail: () => resolve(false),
+        }));
+        if (!confirmed) return;
+      }
+      await updateSubtask(id, payload);
+    }
     else await addSubtask(task.value.id, payload);
     uni.showToast({ title: "更新成功", icon: "none" });
     showEditDialog.value = false;
@@ -566,6 +590,11 @@ async function saveSubtask() {
     await refreshTaskProgress();
   } catch (error) {
     console.warn("update subtask failed", error);
+    if (error.code === 409) {
+      showEditDialog.value = false;
+      await Promise.all([loadSubtasks(), loadTask()]);
+      uni.showToast({ title: "计划或步骤已变化，请根据最新内容重新编辑", icon: "none" });
+    }
   } finally {
     saving.value = false;
   }

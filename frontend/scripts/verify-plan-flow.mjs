@@ -14,6 +14,10 @@ assert.equal(getInclusivePeriodDays("2026-10-01", "2026-10-10"), 10);
 assert.equal(validatePlanPeriod("2026-10-11", "2026-10-10", 1), "开始日期不能晚于结束日期");
 assert.equal(validatePlanPeriod("2026-10-01", "2026-10-10", 11), "目标天数应为1-10天");
 assert.equal(validatePlanPeriod("2026-10-01", "2026-10-10", 7), "");
+for (const [start, end] of [["0999-12-31", "1000-01-06"], ["9999-12-31", "+10000-01-01"], ["2026-02-30", "2026-03-05"]]) {
+  assert.notEqual(validatePlanPeriod(start, end, 1), "");
+}
+assert.equal(validatePlanPeriod("1000-01-01", "9999-12-31", 1), "");
 
 assert.equal(validateCheckInForm({ content: "", durationMinutes: 0, status: "IN_PROGRESS" }), "");
 assert.equal(validateCheckInForm({ content: "学习", durationMinutes: -1, status: "IN_PROGRESS" }), "学习时长必须为非负整数");
@@ -162,9 +166,10 @@ let manualPayload;
 let deferredData = [];
 let retriedId;
 const recordScript = recordPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
-const recording = new Function("computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript.replace(/onHide\(.*;|onUnload\(.*;|onLoad\(.*;/g, "")}
+const recordStorage = new Map();
+const recording = new Function("getUser", "getApiBaseUrl", "computed", "ref", "onShow", "uni", "syncAction", "getDashboardStats", "getActionHistory", "getTasks", "saveDeferredLearningRecord", "getDeferredLearningRecords", "retryDeferredLearningRecord", "getBusinessDate", `${recordScript.replace(/onHide\(.*;|onUnload\(.*;|onLoad\(.*;/g, "")}
   return { rawInput, durationHours, durationMinutes, readDurationMinutes, syncing, selectedTaskId, syncResult, resultIsRetry, pendingRecords, submitRecord, retryRecord, loadDeferredRecords };
-`)(computed, ref, () => {}, { showToast() {} }, async (...args) => {
+`)(() => ({ userId: 7 }), () => "http://localhost:8081/api/v1", computed, ref, () => {}, { showToast() {}, getStorageSync: key => recordStorage.get(key), setStorageSync: (key, value) => recordStorage.set(key, structuredClone(value)) }, async (...args) => {
   syncArguments = args;
   return syncResponse;
 }, async () => ({}), async () => ({ list: [] }), async () => [{ id:101, status:"IN_PROGRESS",startDate:"2000-01-01",endDate:"2099-12-31" }], async payload => { manualPayload = payload; }, async () => ({list:deferredData,total:deferredData.length}),
@@ -215,11 +220,13 @@ assert.deepEqual(endpoints.actions.retryDeferred(33), { method: "POST", path: "/
 // 实际执行详情页的新增与编辑分支，确认共用弹窗不会把新增误发为更新。
 let addedStep;
 let editedStep;
+let allowStepChange = true;
+let stepConflict = false;
 const detailScript = detailPage.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
 const detail = new Function("computed", "ref", "onLoad", "uni", "TASK_CATEGORIES", "getSubtasks", "getTaskDetail", "addSubtask", "updateSubtask", "watch", "getBusinessDate", `${detailScript}
   return { task, subtasks, checkInStats, targetFeedback, editingSubtask, showEditDialog, openAddDialog, openEditDialog, closeEditDialog, saveSubtask };
-`)(computed, ref, () => {}, { showToast() {} }, ["学习"], async () => [], async () => ({ id: 101, status: "IN_PROGRESS" }),
-async (id, data) => { addedStep = { id, data }; }, async (id, data) => { editedStep = { id, data }; }, watch, getBusinessDate);
+`)(computed, ref, () => {}, { showToast() {}, showModal: ({success}) => success({confirm:allowStepChange}) }, ["学习"], async () => [], async () => ({ id: 101, status: "IN_PROGRESS" }),
+async (id, data) => { addedStep = { id, data }; }, async (id, data) => { if(stepConflict) throw Object.assign(new Error("stale form"),{code:409}); editedStep = { id, data }; }, watch, getBusinessDate);
 detail.task.value.id = 101;
 detail.task.value.status = "IN_PROGRESS";
 detail.openAddDialog();
@@ -228,9 +235,31 @@ detail.editingSubtask.value.weight = 25;
 await detail.saveSubtask();
 assert.deepEqual(addedStep, { id: 101, data: { content: "新增学习步骤", weight: 0.25 } });
 assert.equal(detail.showEditDialog.value, false);
-detail.openEditDialog({ id: 9, content: "已有步骤", weight: 30 });
+detail.openEditDialog({ id: 9, content: "已有步骤", weight: 30, version: 8 });
 await detail.saveSubtask();
-assert.deepEqual(editedStep, { id: 9, data: { content: "已有步骤", weight: 0.3 } });
+assert.deepEqual(editedStep, { id: 9, data: { content: "已有步骤", weight: 0.3, version: 8 } });
+detail.task.value.status = "IN_PROGRESS";
+detail.openEditDialog({ id: 9, content: "已学会的加法", weight: 30, version: 9, currentProgress: 100 });
+detail.editingSubtask.value.content = "全新的微积分";
+await detail.saveSubtask();
+assert.equal(editedStep.data.progressPolicy, "RESET");
+assert.equal(editedStep.data.version, 9);
+detail.openEditDialog({ id: 9, content: "错别字", weight: 30, version: 10, currentProgress: 100 });
+detail.editingSubtask.value.content = "修正文字";
+detail.editingSubtask.value.progressPolicy = "KEEP";
+await detail.saveSubtask();
+assert.equal(editedStep.data.progressPolicy, "KEEP");
+const lastSavedStep = editedStep;
+allowStepChange = false;
+detail.openEditDialog({ id: 9, content: "已完成", weight: 30, version: 11, currentProgress: 100 });
+detail.editingSubtask.value.content = "取消修改";
+await detail.saveSubtask();
+assert.equal(editedStep,lastSavedStep,"取消进度清零确认时不能发送更新");
+assert.equal(detail.showEditDialog.value,true);
+allowStepChange = true;stepConflict = true;
+await detail.saveSubtask();
+assert.equal(detail.showEditDialog.value,false,"冲突后关闭旧步骤表单，读取最新列表后重新编辑");
+stepConflict = false;
 detail.openEditDialog({ id: 9, content: "低权重步骤", weight: 1 });
 assert.equal(detail.editingSubtask.value.weight, 1, "接口返回的1%不能被误显示为100%");
 detail.checkInStats.value = { targetDays: 20, checkedInDays: 5 };

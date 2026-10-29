@@ -13,6 +13,8 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Schema(description = "子任务列表响应对象")
 public class SubTaskListResponse {
+    @Schema(description = "步骤列表读取时的计划版本")
+    private Long version;
     @Schema(description = "子任务ID", example = "1")
     private Long id;
 

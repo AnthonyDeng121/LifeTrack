@@ -37,6 +37,10 @@ try {
   assert.equal((await api.getTaskDetail(id)).status,'IN_PROGRESS');
   assert.equal((await api.getTasks({status:'IN_PROGRESS',startDate:today,endDate:today})).some(p=>p.id===id),true);
   assert.equal((await api.getSubtasks(id)).length,1);
+  const stepBefore = (await api.getSubtasks(id))[0];
+  await api.updateSubtask(stepBefore.id,{content:'Latest content',version:stepBefore.version});
+  await assert.rejects(()=>api.updateSubtask(stepBefore.id,{content:'Stale overwrite',version:stepBefore.version}),e=>e.code===409);
+  assert.equal((await api.getSubtasks(id))[0].content,'Latest content');
   await api.updateTask(id,{title:'Frontend live contract edited',version:(await api.getTaskDetail(id)).version});
   assert.equal((await api.getTaskDetail(id)).title,'Frontend live contract edited');
   await api.createCheckIn({taskId:id,content:''});

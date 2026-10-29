@@ -33,6 +33,8 @@ public class CheckInService {
 
     @Transactional(readOnly = true)
     public com.lifetrack.dto.PageResponse<CheckInResponse> historyPage(Long taskId, LocalDate startDate, LocalDate endDate, int page, int size) {
+        PlanDateRules.requireSupported(startDate);
+        PlanDateRules.requireSupported(endDate);
         if (page < 0 || page > 1000000 || size < 1 || size > 100) throw new BusinessException(400, "页码应为0到1000000，每页1到100条");
         Long userId = UserContext.getUserId();
         if (taskId != null) getOwnedTask(taskId, userId);
@@ -147,6 +149,7 @@ public class CheckInService {
     }
 
     private void validateCheckIn(Task task, LocalDate checkInDate) {
+        PlanDateRules.requireSupported(checkInDate);
         if (task.getStartDate() == null || task.getEndDate() == null) {
             throw new BusinessException(400, "学习计划周期不完整，无法打卡");
         }

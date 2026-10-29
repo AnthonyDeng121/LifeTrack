@@ -29,7 +29,7 @@ class SubTaskManagementTest {
         org.mockito.Mockito.lenient().when(steps.findTaskIdById(org.mockito.ArgumentMatchers.anyLong())).thenAnswer(i -> steps.findById(i.getArgument(0)).map(com.lifetrack.entity.SubTask::getTaskId));
         UserContext.setUserId(7L);
         java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
-        task = Task.builder().id(1L).userId(7L).status(PlanStatus.IN_PROGRESS)
+        task = Task.builder().id(1L).userId(7L).version(0L).status(PlanStatus.IN_PROGRESS)
                 .startDate(today).endDate(today.plusDays(6)).build();
     }
     @AfterEach void clear() { UserContext.clear(); }
@@ -90,7 +90,7 @@ class SubTaskManagementTest {
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(task));
         when(steps.findById(11L)).thenReturn(Optional.of(original));
         when(steps.findByTaskIdOrderByOrderNumAsc(1L)).thenReturn(List.of(original, other));
-        var input = new com.lifetrack.dto.SubTaskUpdateRequest(); input.setWeight(BigDecimal.ONE);
+        var input = new com.lifetrack.dto.SubTaskUpdateRequest(); input.setVersion(0L); input.setWeight(BigDecimal.ONE);
         assertThrows(BusinessException.class, () -> service.updateSubTask(11L, input));
         assertEquals(new BigDecimal("0.5"), other.getWeight());
         verify(steps, never()).save(any()); verify(steps, never()).saveAll(any());

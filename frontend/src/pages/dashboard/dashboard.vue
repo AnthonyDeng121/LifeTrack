@@ -20,7 +20,7 @@
           <text class="pill">学习计划完成率</text>
           <text class="hero-number">{{ formatProgress(stats.learningPlanCompletionRate) }}%</text>
           <text class="hero-desc">已完成 {{ stats.completedPlanCount || 0 }} / {{ stats.totalPlanCount || 0 }} 个未取消计划；已取消 {{ stats.cancelledPlanCount || 0 }} 个，不计入看板统计</text>
-          <text class="text-muted small">仅全部学习步骤完成计入完成数；人工结束不算学习完成，打卡达标单独统计。</text>
+          <text class="text-muted small">全部学习步骤完成且实际打卡天数达到目标，才计入已完成计划；单项达标仍可继续，人工结束不计完成。</text>
         </view>
         <view class="hero-orb">
           <text>☁</text>

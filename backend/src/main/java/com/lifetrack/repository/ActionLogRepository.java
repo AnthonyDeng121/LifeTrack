@@ -12,6 +12,9 @@ import org.springframework.data.jpa.repository.Query;
 
 @Repository
 public interface ActionLogRepository extends JpaRepository<ActionLog, Long> {
+    @Modifying(flushAutomatically = true)
+    @Query("update ActionLog a set a.subTaskId = null where a.subTaskId = ?1")
+    void detachStepProgress(Long stepId);
     List<ActionLog> findByUserIdAndCreatedAtBetween(Long userId, LocalDateTime start, LocalDateTime end);
     List<ActionLog> findByTaskId(Long taskId);
     Page<ActionLog> findByUserId(Long userId, Pageable pageable);

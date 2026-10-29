@@ -217,7 +217,7 @@ class DatabaseEngineeringIntegrationTest {
     @Test void repeatedWeightEditsRemainPositiveNormalizedAndRollbackIllegalChanges() {
         for(int i=0;i<4;i++){var add=new SubTaskCreateRequest();add.setContent("压力学习步骤"+i);add.setWeight(new BigDecimal("0.20"));plans.addSubTask(planId,add);}
         for(int i=0;i<60;i++) {
-            var current=steps.findByTaskIdOrderByOrderNumAsc(planId);var update=new SubTaskUpdateRequest();update.setWeight(BigDecimal.valueOf((i%9+1)/10.0));
+            var current=steps.findByTaskIdOrderByOrderNumAsc(planId);var update=new SubTaskUpdateRequest();update.setVersion(tasks.findById(planId).orElseThrow().getVersion());update.setWeight(BigDecimal.valueOf((i%9+1)/10.0));
             try {plans.updateSubTask(current.get(i%current.size()).getId(),update);}catch(BusinessException e){assertEquals(400,e.getCode());}
             var saved=steps.findByTaskIdOrderByOrderNumAsc(planId);
             assertTrue(saved.stream().allMatch(s->s.getWeight().compareTo(new BigDecimal("0.01"))>=0));

@@ -231,6 +231,9 @@ public class ActionServiceImpl implements ActionService {
 
     @Override
     public PageResponse<ActionHistoryResponse> getHistory(Pageable pageable, Long taskId) {
+        Set<String> allowedSorts = Set.of("createdAt", "id", "durationMinutes", "contribution", "category", "taskId", "subTaskId");
+        if (pageable.getSort().stream().anyMatch(order -> !allowedSorts.contains(order.getProperty())))
+            throw new BusinessException(400, "不支持的排序字段，可使用createdAt、id、durationMinutes、contribution、category、taskId、subTaskId");
         Long userId = UserContext.getUserId();
         if (pageable.getPageSize() > 100) throw new BusinessException(400,"每页最多100条学习记录");
         if (taskId != null) {

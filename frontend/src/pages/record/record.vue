@@ -28,6 +28,7 @@
 
       <view class="glass-card input-card">
         <text class="section-title">AI 学习记录</text>
+        <text v-if="recoveryMessage" class="hint" role="status">{{ recoveryMessage }}</text>
         <view class="input-group">
           <text class="input-label">所属学习计划</text>
           <picker :range="planLabels" :value="selectedPlanIndex" :disabled="syncing" @change="selectPlan">
@@ -153,6 +154,7 @@ import { onShow, onHide, onUnload, onLoad } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
 import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, getDeferredLearningRecords, retryDeferredLearningRecord } from "../../services/api";
 import { getBusinessDate } from "../../services/businessTime";
+import { getUser, getApiBaseUrl } from "../../services/http";
 
 const plans = ref([]);
 const historyPlans = ref([]);
@@ -232,7 +234,12 @@ async function submitDailyCheckIn() {
     if (error.code === 409) { manualResultTaskId.value = payload.taskId; manualAlreadyChecked.value = true; }
   } finally { manualSaving.value = false; }
 }
-const learningPlans = computed(() => plans.value.filter(p => p.status === "IN_PROGRESS"));
+const learningPlans = computed(() => {
+  const eligible = plans.value.filter(p => p.status === "IN_PROGRESS");
+  const recovering = historyPlans.value.find(p => p.id === selectedTaskId.value);
+  return recovering && !eligible.some(p => p.id === recovering.id) && hasUnconfirmedDraft()
+    ? [...eligible, { ...recovering, title: `${recovering.title}（核对上次提交结果）` }] : eligible;
+});
 const planLabels = computed(() => ["请选择学习计划", ...learningPlans.value.map(p => p.title)]);
 const selectedPlanIndex = computed(() => Math.max(0, learningPlans.value.findIndex(p => p.id === selectedTaskId.value) + 1));
 function selectPlan(event) {
@@ -244,9 +251,10 @@ async function loadPlans() {
     const rows = await getTasks();
     historyPlans.value = rows;
     plans.value = rows.filter(p => p.status === "IN_PROGRESS" && p.startDate <= date && p.endDate >= date);
-    if (!learningPlans.value.some(p => p.id === selectedTaskId.value)) selectedTaskId.value = null;
+    if (!learningPlans.value.some(p => p.id === selectedTaskId.value) && !hasUnconfirmedDraft()) selectedTaskId.value = null;
     if (!plans.value.some(p => p.id === manualTaskId.value)) manualTaskId.value = null;
     await loadManualAttendance();
+    restoreSubmission();
     plansError.value = "";
   } catch {
     plansError.value = "计划列表加载失败，仍可尝试自动匹配";
@@ -342,9 +350,10 @@ async function submitRecord() {
   syncing.value = true;
   try {
     const signature = JSON.stringify([selectedTaskId.value, value, mins]);
-    if (submission.signature !== signature) submission = { signature, id: newRequestId() };
+    const submission = rememberSubmission(signature, selectedTaskId.value, value, mins);
     syncResult.value = await syncAction(value, mins, selectedTaskId.value, submission.id);
-    submission = {};
+    forgetSubmission(submission.id);
+    recoveryMessage.value = "";
     rawInput.value = "";
     durationHours.value = "";
     durationMinutes.value = "";
@@ -352,13 +361,55 @@ async function submitRecord() {
     uni.showToast({ title: syncResult.value?.updates?.length ? "分析成功，时长已计入" : "原记录已保存，时长未计入", icon: "none" });
   } catch (error) {
     console.warn("sync action failed", error);
+    if (!error.code) uni.showToast({ title: error.message || "提交结果尚未确认，请恢复后重试", icon: "none" });
     await loadDeferredRecords();
   } finally {
     syncing.value = false;
   }
 }
 
-let submission = {};
+const recoveryMessage = ref("");
+function submissionKey() {
+  const userId = getUser().userId;
+  if (!userId) throw new Error("请重新登录后提交学习记录");
+  return `lifetrack_unconfirmed_submissions:${getApiBaseUrl()}:${userId}`;
+}
+function unconfirmedSubmissions() {
+  const entries = uni.getStorageSync(submissionKey());
+  return Array.isArray(entries) ? entries : [];
+}
+function rememberSubmission(signature, taskId, content, minutes) {
+  const entries = unconfirmedSubmissions();
+  const existing = entries.find(entry => entry.signature === signature);
+  if (existing) return existing;
+  if (entries.length >= 20) throw new Error("仍有较多结果未确认的提交，请先恢复核对已有记录");
+  const entry = { signature, id: newRequestId(), taskId, content, minutes };
+  uni.setStorageSync(submissionKey(), [...entries, entry]);
+  if (!unconfirmedSubmissions().some(saved => saved.id === entry.id)) throw new Error("无法保存提交标识，请检查本地存储后重试");
+  return entry;
+}
+function forgetSubmission(id) {
+  uni.setStorageSync(submissionKey(), unconfirmedSubmissions().filter(entry => entry.id !== id));
+}
+function hasUnconfirmedDraft() {
+  try {
+    const signature = JSON.stringify([selectedTaskId.value, rawInput.value.trim(), readDurationMinutes()]);
+    return unconfirmedSubmissions().some(entry => entry.signature === signature);
+  } catch { return false; }
+}
+function restoreSubmission() {
+  if (syncing.value || rawInput.value.trim()) return;
+  try {
+    const entry = unconfirmedSubmissions().at(-1);
+    if (!entry) return;
+    rawInput.value = entry.content;
+    selectedTaskId.value = entry.taskId;
+    durationHours.value = String(Math.floor(entry.minutes / 60));
+    durationMinutes.value = String(entry.minutes % 60);
+    recoveryMessage.value = "上次提交结果尚未确认，已恢复草稿；再次提交将复用原标识核对，不重复计时。";
+  } catch { recoveryMessage.value = "未能恢复上次提交，请检查本地存储和登录状态。"; }
+}
+onShow(restoreSubmission);
 function newRequestId() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
     const n = Math.floor(Math.random() * 16); return (c === "x" ? n : (n & 3) | 8).toString(16);

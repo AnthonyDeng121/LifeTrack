@@ -69,6 +69,7 @@ public class DeferredLearningRecordService {
         }
         LocalDateTime now = LocalDateTime.now(ZONE);
         LocalDate today = now.toLocalDate();
+        PlanDateRules.refresh(task, today);
         if (task.getStatus() != PlanStatus.IN_PROGRESS || today.isBefore(task.getStartDate()) || today.isAfter(task.getEndDate())) {
             throw new BusinessException(400, "仅有效周期内的进行中计划可以保存学习记录");
         }

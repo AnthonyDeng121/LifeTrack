@@ -64,6 +64,7 @@ public class TaskService {
         int order = existing.stream().map(SubTask::getOrderNum).filter(java.util.Objects::nonNull).max(Integer::compareTo).orElse(0) + 1;
         subTaskRepository.save(SubTask.builder().taskId(taskId).content(request.getContent().trim())
                 .weight(weight).currentProgress(BigDecimal.ZERO).isCompleted(0).orderNum(order).build());
+        task.setUpdatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         updateTaskProgress(taskId);
     }
 
@@ -126,6 +127,8 @@ public class TaskService {
      */
     @Transactional(readOnly = true)
     public List<TaskListResponse> getTaskList(String statusValue, LocalDate startDate, LocalDate endDate) {
+        PlanDateRules.requireSupported(startDate);
+        PlanDateRules.requireSupported(endDate);
         // 1. 从上下文获取当前登录用户 ID
         Long userId = UserContext.getUserId();
 
@@ -252,6 +255,7 @@ public class TaskService {
     /**
      * 获取指定主任务下的所有子任务
      */
+    @Transactional(readOnly = true)
     public List<SubTaskListResponse> getSubTaskList(Long taskId) {
         // 1. 校验任务是否存在且属于当前用户
         Long userId = UserContext.getUserId();
@@ -267,6 +271,7 @@ public class TaskService {
 
         // 3. 转换为 DTO
         return subTasks.stream().map(st -> SubTaskListResponse.builder()
+                        .version(task.getVersion())
                         .id(st.getId())
                         .content(st.getContent())
                         .weight(st.getWeight().multiply(new BigDecimal("100")))
@@ -369,6 +374,7 @@ public class TaskService {
         subTaskRepository.delete(targetSubTask);
 
         // 6. 更新主任务总进度
+        parentTask.setUpdatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         updateTaskProgress(parentTask.getId());
     }
 
@@ -401,6 +407,7 @@ public class TaskService {
         subTaskRepository.save(subTask);
 
         // 3. 更新主任务总进度
+        parentTask.setUpdatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         updateTaskProgress(parentTask.getId());
     }
 
@@ -421,6 +428,9 @@ public class TaskService {
             throw new BusinessException(403, "无权操作该任务");
         }
         requireEditableSteps(parentTask);
+        if (request.getVersion() == null) throw new BusinessException(400, "缺少步骤版本，请刷新后重新编辑");
+        if (!java.util.Objects.equals(request.getVersion(), parentTask.getVersion()))
+            throw new BusinessException(409, "计划或步骤已被其他操作修改，请刷新后重新编辑");
         SubTask subTask = subTaskRepository.findById(subTaskId)
                 .orElseThrow(() -> new BusinessException(404, "子任务已删除"));
 
@@ -429,7 +439,18 @@ public class TaskService {
             if (request.getContent().isBlank() || request.getContent().trim().length() > 255) {
                 throw new BusinessException(400, "子计划内容应为1到255字");
             }
-            subTask.setContent(request.getContent().trim());
+            String content = request.getContent().trim();
+            if (!content.equals(subTask.getContent()) && subTask.getCurrentProgress().signum() > 0) {
+                if (!"RESET".equals(request.getProgressPolicy()) && !"KEEP".equals(request.getProgressPolicy()))
+                    throw new BusinessException(400, "修改已有进度的内容时，请选择新内容清零或仅文字修正保留进度");
+                if ("RESET".equals(request.getProgressPolicy())) {
+                    subTask.setCurrentProgress(BigDecimal.ZERO);
+                    subTask.setIsCompleted(0);
+                    // 历史与时长保留；撤销旧日志不能再扣除新学习内容的进度。
+                    actionLogRepository.detachStepProgress(subTaskId);
+                }
+            }
+            subTask.setContent(content);
         }
 
         if (request.getWeight() != null) {
@@ -448,6 +469,8 @@ public class TaskService {
         subTaskRepository.save(subTask);
 
         // 4. 更新主任务进度 (因为权重变了，进度也会变)
+        // 纯文字或零进度权重修改也推进父计划版本，拒绝过期步骤表单。
+        parentTask.setUpdatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         updateTaskProgress(parentTask.getId());
     }
 
@@ -531,12 +554,16 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public List<Long> previewOutsideCheckIns(Long taskId, LocalDate start, LocalDate end) {
+        PlanDateRules.requireSupported(start);
+        PlanDateRules.requireSupported(end);
         Task task = getOwnedTask(taskId);
         if (start == null || end == null || start.isAfter(end)) throw new BusinessException(400, "计划周期不合法");
         return checkInRecordRepository.findOutsideIds(task.getUserId(), taskId, start, end);
     }
 
     private void validatePlanPeriod(LocalDate startDate, LocalDate endDate, Integer targetDays) {
+        PlanDateRules.requireSupported(startDate);
+        PlanDateRules.requireSupported(endDate);
         if (startDate == null || endDate == null) {
             throw new BusinessException(400, "计划开始日期和结束日期不能为空");
         }
@@ -624,8 +651,7 @@ public class TaskService {
     }
 
     private void refreshStatusByDate(Task task) {
-        if (task.getStatus().isClosed() || task.getStatus() == PlanStatus.EXPIRED) return;
-        task.setStatus(statusByDate(task.getStartDate(), task.getEndDate()));
+        PlanDateRules.refresh(task, today());
     }
 
     private LocalDate today() {

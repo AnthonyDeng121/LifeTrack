@@ -17,6 +17,12 @@ import java.math.BigDecimal;
 @Schema(description = "子任务更新请求")
 public class SubTaskUpdateRequest {
 
+    @Schema(description = "读取步骤列表时的计划版本，旧表单返回409")
+    private Long version;
+
+    @Schema(description = "已有进度的内容变更策略：RESET新内容清零；KEEP仅文字修正保留")
+    private String progressPolicy;
+
     @Schema(description = "子任务内容", example = "新任务内容")
     private String content;
 

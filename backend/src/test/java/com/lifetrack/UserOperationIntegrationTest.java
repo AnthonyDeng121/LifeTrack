@@ -65,6 +65,92 @@ class UserOperationIntegrationTest {
         return id;
     }
 
+    @Test void stepContentChangeRequiresExplicitProgressPolicyAndKeepsHistoryWithoutOldProgress() throws Exception {
+        long id = create(today, today.plusDays(7));
+        long step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
+        assertEquals(200, api("PUT", "/tasks/subtasks/" + step + "/complete", null).path("code").asInt());
+        long version = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("version").asLong();
+        var oldLog = logs.saveAndFlush(ActionLog.builder().userId(user.getId()).taskId(id).subTaskId(step)
+                .rawInput("旧内容学习记录").durationMinutes(30).contribution(new java.math.BigDecimal("0.20"))
+                .category(Task.Category.学习).build());
+        assertEquals(400, api("PUT", "/tasks/subtasks/" + step, Map.of("version", version, "content", "全新内容")).path("code").asInt());
+        assertEquals(1, database.queryForObject("select is_completed from sub_tasks where id=?", Integer.class, step));
+        assertEquals(200, api("PUT", "/tasks/subtasks/" + step,
+                Map.of("version", version, "content", "学习数据库（文字修正）", "progressPolicy", "KEEP")).path("code").asInt());
+        assertEquals(1, database.queryForObject("select is_completed from sub_tasks where id=?", Integer.class, step));
+        long next = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("version").asLong();
+        assertTrue(next > version, "仅文字变更也必须推进版本");
+        assertEquals(409, api("PUT", "/tasks/subtasks/" + step,
+                Map.of("version", version, "content", "旧窗口内容", "progressPolicy", "RESET")).path("code").asInt());
+        assertEquals(200, api("PUT", "/tasks/subtasks/" + step,
+                Map.of("version", next, "content", "全新的微积分学习", "progressPolicy", "RESET")).path("code").asInt());
+        var updated = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0);
+        assertEquals(0, updated.path("isCompleted").asInt());
+        assertEquals(0, updated.path("currentProgress").decimalValue().signum());
+        assertEquals(30, api("GET", "/tasks/" + id, null).path("data").path("learningDurationMinutes").asInt());
+        assertNull(database.queryForObject("select sub_task_id from action_logs where id=?", Long.class, oldLog.getId()));
+        assertEquals("旧内容学习记录", logs.findById(oldLog.getId()).orElseThrow().getRawInput());
+        // 新内容有了新进度后，撤销旧日志只撤销旧时长，不能扣除新内容进度。
+        database.update("update sub_tasks set current_progress=0.30 where id=?", step);
+        database.update("update tasks set total_progress=0.30 where id=?", id);
+        assertEquals(200, api("DELETE", "/actions/" + oldLog.getId(), null).path("code").asInt());
+        assertEquals(0, database.queryForObject("select current_progress from sub_tasks where id=?", java.math.BigDecimal.class, step)
+                .compareTo(new java.math.BigDecimal("0.30")));
+    }
+
+    @Test void staleStepEditorCannotOverwriteEvenWhenLearningProgressDoesNotChange() throws Exception {
+        long id = create(today, today.plusDays(7));
+        var step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0);
+        String path = "/tasks/subtasks/" + step.path("id").asLong();
+        long version = step.path("version").asLong();
+        assertEquals(400, api("PUT", path, Map.of("content", "缺版本")).path("code").asInt());
+        assertEquals(200, api("PUT", path, Map.of("version", version, "content", "窗口B的新内容")).path("code").asInt());
+        assertEquals(409, api("PUT", path, Map.of("version", version, "content", "窗口A的旧内容")).path("code").asInt());
+        assertEquals("窗口B的新内容", api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("content").asText());
+    }
+
+    @Test void unsupportedHistorySortIsAClientErrorAndValidSortStillWorks() throws Exception {
+        assertEquals(400, api("GET", "/actions/history?sort=nonexistent,asc", null).path("code").asInt());
+        assertEquals(400, api("GET", "/actions/history?sort=createdAt,desc&sort=rawInput,asc", null).path("code").asInt());
+        assertEquals(200, api("GET", "/actions/history?sort=durationMinutes,asc&sort=id,desc", null).path("code").asInt());
+    }
+
+    @Test void databaseDateBoundsAreRejectedBeforePersistenceAcrossPlanInputs() throws Exception {
+        for (String[] period : List.of(new String[]{"0999-12-31", "1000-01-06"}, new String[]{"9999-12-31", "+10000-01-01"})) {
+            var response = api("POST", "/tasks/manual", Map.of("title", "非法年份", "category", "学习",
+                    "startDate", period[0], "endDate", period[1], "targetDays", 1,
+                    "subTasks", List.of(Map.of("content", "测试", "weight", 1))));
+            assertEquals(400, response.path("code").asInt());
+            assertTrue(response.path("message").asText().contains("1000到9999"));
+        }
+        assertEquals(0, database.queryForObject("select count(*) from tasks where user_id=?", Integer.class, user.getId()));
+        long id = create(today, today.plusDays(7));
+        long version = api("GET", "/tasks/" + id, null).path("data").path("version").asLong();
+        assertEquals(400, api("PUT", "/tasks/" + id, Map.of("version", version, "endDate", "+10000-01-01")).path("code").asInt());
+        assertEquals(400, api("GET", "/tasks/" + id + "/period-preview?startDate=0999-01-01&endDate=" + today, null).path("code").asInt());
+        assertEquals(400, api("GET", "/tasks?endDate=%2B10000-01-01", null).path("code").asInt());
+        assertEquals(400, api("POST", "/check-ins", Map.of("taskId", id, "checkInDate", "+10000-01-01")).path("code").asInt());
+        assertEquals(400, api("GET", "/check-ins?startDate=0999-01-01", null).path("code").asInt());
+        assertEquals(200, api("PUT", "/tasks/" + id, Map.of("version", version, "startDate", "1000-01-01", "endDate", "9999-12-31")).path("code").asInt());
+    }
+
+    @Test void learningSubmissionActivatesByBusinessDateWithoutWaitingForScheduledRefresh() throws Exception {
+        long id = create(today, today.plusDays(7));
+        // 模拟已跨入开始日，但分钟调度还未激活数据库状态。
+        database.update("update tasks set status=2 where id=?", id);
+        var input = Map.of("requestId", UUID.randomUUID().toString(), "taskId", id, "content", "学习数据库事务", "durationMinutes", 30);
+        var saved = api("POST", "/actions/deferred", input);
+        assertEquals(200, saved.path("code").asInt());
+        assertEquals(0, database.queryForObject("select status from tasks where id=?", Integer.class, id));
+        assertEquals(1, database.queryForObject("select count(*) from deferred_learning_records where task_id=?", Integer.class, id));
+        for (int status : List.of(1, 3, 4, 5)) {
+            database.update("update tasks set status=? where id=?", status, id);
+            var blocked = new java.util.HashMap<String, Object>(input); blocked.put("requestId", UUID.randomUUID().toString());
+            assertEquals(400, api("POST", "/actions/deferred", blocked).path("code").asInt(), "终态不可被日期归一化重新打开");
+        }
+        assertEquals(1, database.queryForObject("select count(*) from deferred_learning_records where task_id=?", Integer.class, id));
+    }
+
     @Test void manualAttendanceRejectsDuplicateAndDateFiltersUsePersistedRecordsWithoutAI() throws Exception {
         long id = create(today.minusDays(2), today.plusDays(7));
         long future = create(today.plusDays(10), today.plusDays(20));

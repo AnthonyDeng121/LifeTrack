@@ -6,8 +6,10 @@ import { validateCheckInForm, validatePlanPeriod } from "../src/services/planRul
 async function page(name, dependencies, exposed) {
   const source = await readFile(new URL(`../src/pages/${name}/${name}.vue`, import.meta.url), "utf8");
   const script = source.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*;$/gm, "");
+  const localStorage = new Map();
   const bindings = { ref, computed, watch, onShow() {}, onLoad() {}, onMounted() {}, onHide() {}, onUnload() {},
-    uni: { showToast() {}, navigateTo() {} }, TASK_CATEGORIES: ["学习"],
+    getUser: () => ({ userId: 7 }), getApiBaseUrl: () => "http://localhost:8081/api/v1",
+    uni: { showToast() {}, navigateTo() {}, getStorageSync: key => localStorage.get(key), setStorageSync: (key, value) => localStorage.set(key, structuredClone(value)) }, TASK_CATEGORIES: ["学习"],
     getBusinessDate: () => "2026-10-25", validateCheckInForm, validatePlanPeriod, ...dependencies };
   return new Function(...Object.keys(bindings), `${script}\nreturn { ${exposed} };`)(...Object.values(bindings));
 }
@@ -205,6 +207,60 @@ resilient.rawInput.value="网络响应丢失测试";resilient.durationMinutes.va
 await resilient.submitRecord(); await resilient.submitRecord();
 assert.equal(submissionIds[0],submissionIds[1]);
 assert.match(submissionIds[0],/^[0-9a-f-]{36}$/);
+
+// 模拟组件销毁和重新加载；存储跨实例保留，服务端结果丢失不能生成第二个标识。
+const durableStorage = new Map();
+let recoveredUser = 7;
+let recoveredBase = "http://localhost:8081/api/v1";
+const durableIds = [];
+const durableDependencies = {
+  getUser: () => ({userId:recoveredUser}), getApiBaseUrl: () => recoveredBase,
+  uni: { showToast() {}, getStorageSync: key => durableStorage.get(key), setStorageSync: (key,value) => durableStorage.set(key,structuredClone(value)) },
+  getDeferredLearningRecords: async () => ({total:0,list:[]}), getTasks: async () => [active], getActionHistory: async () => ({total:0,list:[]}),
+  syncAction: async (...args) => {durableIds.push(args[3]);throw new Error("response lost");},
+};
+const recoveryBindings = "rawInput,durationHours,durationMinutes,selectedTaskId,submitRecord,restoreSubmission,recoveryMessage";
+const beforeRefresh = await page("record",durableDependencies,recoveryBindings);
+beforeRefresh.rawInput.value="刷新恢复测试";beforeRefresh.durationMinutes.value="30";beforeRefresh.selectedTaskId.value=101;
+await beforeRefresh.submitRecord();
+const afterRefresh = await page("record",durableDependencies,recoveryBindings);
+afterRefresh.restoreSubmission();
+assert.equal(afterRefresh.rawInput.value,"刷新恢复测试");
+assert.match(afterRefresh.recoveryMessage.value,/复用原标识/);
+await afterRefresh.submitRecord();
+assert.equal(durableIds[0],durableIds[1]);
+afterRefresh.rawInput.value="改换内容";
+await afterRefresh.submitRecord();
+assert.notEqual(durableIds[1],durableIds[2]);
+afterRefresh.rawInput.value="刷新恢复测试";
+await afterRefresh.submitRecord();
+assert.equal(durableIds[0],durableIds[3],"改过内容后再恢复旧内容仍复用未确认的标识");
+for (const scope of ["other-user","other-server"]) {
+  if (scope === "other-user") recoveredUser=8; else {recoveredUser=7;recoveredBase="http://other-server:8081/api/v1";}
+  const other = await page("record",durableDependencies,recoveryBindings); other.restoreSubmission();
+  assert.equal(other.rawInput.value, "", "不能恢复另一用户或另一服务地址的学习正文");
+}
+recoveredUser=7;recoveredBase="http://localhost:8081/api/v1";
+const successfulRecovery = await page("record", {...durableDependencies, syncAction:async (...args)=>{
+  assert.equal(args[3],durableIds[0]);return {updates:[],replayed:true};
+}}, recoveryBindings);
+successfulRecovery.rawInput.value="刷新恢复测试";successfulRecovery.durationMinutes.value="30";successfulRecovery.selectedTaskId.value=101;
+await successfulRecovery.submitRecord();
+assert.equal([...durableStorage.values()].flat().some(entry=>entry.id===durableIds[0]),false);
+let unsafeCalls=0;
+const storageFailure = await page("record", {...durableDependencies,
+  uni:{showToast(){},getStorageSync(){return [];},setStorageSync(){throw new Error("storage unavailable");}},
+  syncAction:async()=>{unsafeCalls++;},
+},recoveryBindings);
+storageFailure.rawInput.value="不能持久化则不发送";storageFailure.durationMinutes.value="30";storageFailure.selectedTaskId.value=101;
+await storageFailure.submitRecord();assert.equal(unsafeCalls,0);
+const closedRecovery = await page("record", {...durableDependencies,
+  getTasks:async()=>[{...active,status:"COMPLETED"}],
+}, `${recoveryBindings},loadPlans,learningPlans`);
+closedRecovery.restoreSubmission();await closedRecovery.loadPlans();
+assert.equal(closedRecovery.selectedTaskId.value,101,"提交完成后丢响应，恢复核对不能被活动计划筛选清掉");
+assert.match(closedRecovery.learningPlans.value[0].title,/核对上次提交结果/);
+console.log("Reload recovery, per-user/server isolation, content changes and storage failure checks passed (platform stubs).");
 
 let dateAtMidnight="2026-10-25";
 const completedPlan={...active,status:"IN_PROGRESS",totalProgress:100};
