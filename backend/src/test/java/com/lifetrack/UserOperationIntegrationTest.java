@@ -146,11 +146,13 @@ class UserOperationIntegrationTest {
         long id = create(today.minusDays(5), today.plusDays(7));
         long step = api("GET", "/tasks/" + id + "/subtasks", null).path("data").get(0).path("id").asLong();
         assertEquals(200, api("PUT", "/tasks/subtasks/" + step + "/complete", null).path("code").asInt());
+        assertEquals("IN_PROGRESS", api("GET", "/tasks/" + id, null).path("data").path("status").asText());
+        for (int i=0;i<5;i++) assertEquals(200, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.minusDays(i).toString())).path("code").asInt());
         assertEquals("COMPLETED", api("GET", "/tasks/" + id, null).path("data").path("status").asText());
-        for (int i=0;i<6;i++) assertEquals(200, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.minusDays(i).toString())).path("code").asInt());
-        assertEquals(409, api("POST", "/check-ins", Map.of("taskId",id)).path("code").asInt());
+        assertEquals(400, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.minusDays(5).toString())).path("code").asInt());
+        assertEquals(400, api("POST", "/actions/sync", Map.of("taskId",id,"rawInput","继续学习数据库", "durationMinutes",30,"requestId",UUID.randomUUID().toString())).path("code").asInt());
         var stats = api("GET", "/check-ins/tasks/"+id+"/stats", null).path("data");
-        assertEquals(6, stats.path("checkedInDays").asInt()); assertEquals(100, stats.path("completionRate").asInt());
+        assertEquals(5, stats.path("checkedInDays").asInt()); assertEquals(100, stats.path("completionRate").asInt());
         assertEquals(100, api("GET", "/tasks/"+id,null).path("data").path("totalProgress").asInt());
         assertEquals(400, api("POST", "/check-ins", Map.of("taskId",id,"checkInDate",today.plusDays(1).toString())).path("code").asInt());
         database.update("update tasks set end_date=? where id=?", today.minusDays(1), id);
@@ -297,6 +299,7 @@ class UserOperationIntegrationTest {
         long completed = create(today.minusDays(2), today.plusDays(7));
         long active = create(today.minusDays(2), today.plusDays(7));
         long cancelled = create(today.minusDays(2), today.plusDays(7));
+        database.update("update tasks set target_days=1 where id=?", completed);
         for (long id : List.of(completed, active)) {
             var response = api("POST", "/check-ins", Map.of("taskId", id));
             assertEquals(200, response.path("code").asInt());

@@ -90,8 +90,10 @@ public class ActionServiceImpl implements ActionService {
         Map<Long, List<SubTask>> planSteps = subTaskRepository.findByTaskIdInOrderByTaskIdAscOrderNumAsc(taskMap.keySet()).stream()
                 .collect(Collectors.groupingBy(SubTask::getTaskId));
         for (Task task : activeTasks) {
+            boolean reviewing = !planSteps.getOrDefault(task.getId(), List.of()).isEmpty()
+                    && planSteps.get(task.getId()).stream().allMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0);
             for (SubTask step : planSteps.getOrDefault(task.getId(), List.of())) {
-                if (step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) continue;
+                if (!reviewing && step.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0) continue;
                 eligible.put(step.getId(), step);
                 aiCandidates.add(SubTask.builder().id(step.getId()).taskId(task.getId())
                         .content("计划：" + task.getTitle() + "；步骤：" + step.getContent())

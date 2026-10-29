@@ -233,7 +233,7 @@ const stepsEditable = computed(() => ["NOT_STARTED", "IN_PROGRESS"].includes(tas
 const categories = TASK_CATEGORIES;
 const statusOptions = [
   { value: "NOT_STARTED", label: "未开始" }, { value: "IN_PROGRESS", label: "进行中" },
-  { value: "COMPLETED", label: "学习成果完成（需全部步骤完成）" }, { value: "CANCELLED", label: "已取消" },
+  { value: "COMPLETED", label: "计划已完成（学习与打卡均达标）" }, { value: "CANCELLED", label: "已取消" },
   { value: "ENDED", label: "人工结束（不计学习完成）" },
   { value: "EXPIRED", label: "已过期" },
 ];
@@ -301,9 +301,9 @@ const checkInError = ref("");
 const checkInStats = ref({ checkedInDays: 0, currentStreak: 0, longestStreak: 0, completionRate: 0, recentSevenDays: [] });
 const targetFeedback = computed(() => {
   const remaining = Math.max(0, Number(checkInStats.value.targetDays || task.value.targetDays || 0) - Number(checkInStats.value.checkedInDays || 0));
-  if (task.value.status === "COMPLETED") return remaining === 0
-    ? "学习步骤全部完成，打卡目标也已达成"
-    : `学习步骤全部完成；打卡目标未达成，还差 ${remaining} 天。有效周期内仍可继续真实打卡`;
+  if (task.value.status === "COMPLETED") return "学习与打卡均达100%，计划已完成，停止新增打卡和学习记录";
+  if (task.value.status === "IN_PROGRESS" && Number(task.value.totalProgress) >= 100)
+    return `学习进度100%；打卡还差 ${remaining} 天，可继续打卡和填写学习情况，学习进度保持100%`;
   if (task.value.status === "ENDED") return remaining === 0
     ? "计划已人工结束，未计为学习完成；打卡目标已达成，记录保留"
     : `计划已人工结束，未计为学习完成；打卡目标未达成，还差 ${remaining} 天，记录保留`;

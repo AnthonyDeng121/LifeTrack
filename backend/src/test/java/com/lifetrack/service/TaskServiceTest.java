@@ -165,6 +165,8 @@ class TaskServiceTest {
         TaskUpdateRequest request = new TaskUpdateRequest(); request.setVersion(0L);
         request.setStatus("COMPLETED");
 
+        when(checkInRecordRepository.countByUserIdAndTaskIdAndCheckInDateBetween(any(), any(), any(), any())).thenReturn(8L);
+
         assertEquals("COMPLETED", taskService.updateTask(1L, request).getStatus());
     }
 

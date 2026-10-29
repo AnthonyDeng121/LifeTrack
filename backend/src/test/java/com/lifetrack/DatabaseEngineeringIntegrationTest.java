@@ -71,6 +71,80 @@ class DatabaseEngineeringIntegrationTest {
                 .subTaskId(step).increment(new BigDecimal("0.20")).build())).build();
     }
 
+    @Test void learningFirstAllowsReviewUntilLastAttendanceAndThenCloses() {
+        plans.completeSubTask(steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId());
+        assertEquals(PlanStatus.IN_PROGRESS,tasks.findById(planId).orElseThrow().getStatus());
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenReturn(analysis());
+        var input=request(); input.setRequestId(UUID.randomUUID().toString());
+        var result=deferred.submit(input);
+        assertEquals(30,result.getDurationMinutes());
+        assertEquals(1,result.getSavedRecordCount());
+        assertEquals(0,result.getUpdates().get(0).getIncrement().signum());
+        assertEquals(0,tasks.findById(planId).orElseThrow().getTotalProgress().compareTo(BigDecimal.ONE));
+        assertTrue(deferred.submit(input).isReplayed());
+        for(int i=1;i<5;i++) {
+            jdbc.update("insert into check_in_records (user_id,task_id,check_in_date,content,duration_minutes,automatic,created_at) values (?,?,?,?,0,false,now())",user.getId(),planId,today.minusDays(i),"");
+        }
+        // Only dates within the plan count: expand the test period before checking the final day.
+        jdbc.update("update tasks set start_date=? where id=?",today.minusDays(5),planId);
+        // Recalculate via a normal update of the attendance target.
+        var edit=new TaskUpdateRequest();edit.setVersion(tasks.findById(planId).orElseThrow().getVersion());edit.setTargetDays(6);
+        plans.updateTask(planId,edit);
+        var finalDay=new CheckInCreateRequest();finalDay.setTaskId(planId);finalDay.setCheckInDate(today.minusDays(5));
+        attendance.create(finalDay);
+        assertEquals(PlanStatus.COMPLETED,tasks.findById(planId).orElseThrow().getStatus());
+        assertThrows(BusinessException.class,()->deferred.submit(request()));
+        assertThrows(BusinessException.class,()->attendance.create(finalDay));
+    }
+
+    @Test void attendanceFirstCanExceedTargetUntilLearningCompletes() {
+        jdbc.update("update tasks set start_date=? where id=?",today.minusDays(6),planId);
+        for(int i=0;i<6;i++) {
+            var r=new CheckInCreateRequest();r.setTaskId(planId);r.setCheckInDate(today.minusDays(i));attendance.create(r);
+        }
+        assertEquals(PlanStatus.IN_PROGRESS,tasks.findById(planId).orElseThrow().getStatus());
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenReturn(analysis());
+        assertEquals(30,deferred.submit(request()).getDurationMinutes());
+        plans.completeSubTask(steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId());
+        assertEquals(PlanStatus.COMPLETED,tasks.findById(planId).orElseThrow().getStatus());
+        assertEquals(6,attendance.stats(planId).getCheckedInDays());
+    }
+
+    @Test void loweringAttendanceTargetCanCompleteLearningButCannotForceIncompleteLearning() {
+        var r=new CheckInCreateRequest();r.setTaskId(planId);attendance.create(r);
+        var edit=new TaskUpdateRequest();edit.setVersion(tasks.findById(planId).orElseThrow().getVersion());edit.setStatus("COMPLETED");
+        assertThrows(BusinessException.class,()->plans.updateTask(planId,edit));
+        plans.completeSubTask(steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId());
+        edit.setVersion(tasks.findById(planId).orElseThrow().getVersion());
+        assertThrows(BusinessException.class,()->plans.updateTask(planId,edit));
+        edit.setStatus(null);edit.setTargetDays(1);
+        assertEquals("COMPLETED",plans.updateTask(planId,edit).getStatus());
+    }
+
+    @Test void v4ReopensOnlyOldLearningOnlyCompletionAndPreservesHistory() {
+        Long both=create(),ended=create(),expired=create(),future=create();
+        for(Long id:List.of(planId,both,expired,future)) {
+            jdbc.update("update tasks set status=1,total_progress=1 where id=?",id);
+            jdbc.update("update sub_tasks set current_progress=1,is_completed=1 where task_id=?",id);
+        }
+        jdbc.update("update tasks set target_days=1 where id=?",both);
+        jdbc.update("insert into check_in_records (user_id,task_id,check_in_date,content,duration_minutes,automatic,created_at) values (?,?,?,?,0,false,now())",user.getId(),both,today,"history");
+        jdbc.update("update tasks set status=5 where id=?",ended);
+        jdbc.update("update tasks set start_date=?,end_date=? where id=?",today.minusDays(8),today.minusDays(1),expired);
+        jdbc.update("update tasks set start_date=?,end_date=? where id=?",today.plusDays(1),today.plusDays(8),future);
+        long version=tasks.findById(planId).orElseThrow().getVersion();
+        var sql=new org.springframework.core.io.ClassPathResource("db/migration/V4__complete_only_when_learning_and_attendance_reached.sql");
+        new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(sql).execute(dataSource);
+        assertEquals(PlanStatus.IN_PROGRESS,tasks.findById(planId).orElseThrow().getStatus());
+        assertEquals(version+1,tasks.findById(planId).orElseThrow().getVersion());
+        assertEquals(PlanStatus.COMPLETED,tasks.findById(both).orElseThrow().getStatus());
+        assertEquals(PlanStatus.ENDED,tasks.findById(ended).orElseThrow().getStatus());
+        assertEquals(PlanStatus.EXPIRED,tasks.findById(expired).orElseThrow().getStatus());
+        assertEquals(PlanStatus.NOT_STARTED,tasks.findById(future).orElseThrow().getStatus());
+        assertEquals("history",checkIns.findByUserIdAndTaskIdOrderByCheckInDateAsc(user.getId(),both).get(0).getContent());
+        assertEquals(0,steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getCurrentProgress().compareTo(BigDecimal.ONE));
+    }
+
     @Test void simultaneousAttendanceHasExactlyOneWinner() throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);

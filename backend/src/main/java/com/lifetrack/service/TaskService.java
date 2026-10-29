@@ -193,6 +193,7 @@ public class TaskService {
         validatePlanPeriod(nextStart, nextEnd, nextTargetDays);
         PlanStatus targetStatus = PlanStatus.fromValue(request.getStatus());
         boolean periodChanged = !nextStart.equals(task.getStartDate()) || !nextEnd.equals(task.getEndDate());
+        boolean completionInputsChanged = periodChanged || !nextTargetDays.equals(task.getTargetDays());
         boolean closed = task.getStatus().isClosed();
         if (closed && (periodChanged || !nextTargetDays.equals(task.getTargetDays()))) {
             throw new BusinessException(400, "已关闭计划不可修改周期和打卡目标，请新建计划");
@@ -218,6 +219,8 @@ public class TaskService {
             List<SubTask> steps = subTaskRepository.findByTaskIdOrderByOrderNumAsc(taskId);
             if (steps.isEmpty() || steps.stream().anyMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) < 0))
                 throw new BusinessException(400, "学习步骤尚未全部完成；如需停止执行，请选择人工结束");
+            if (checkInRecordRepository.countByUserIdAndTaskIdAndCheckInDateBetween(task.getUserId(), taskId, nextStart, nextEnd) < nextTargetDays)
+                throw new BusinessException(400, "打卡目标尚未达成，两个完成率均达100%后计划才完成");
             task.setTotalProgress(BigDecimal.ONE);
         }
         if (periodChanged) {
@@ -240,6 +243,7 @@ public class TaskService {
         task.setStatus(closed ? task.getStatus() : targetStatus != null && targetStatus.isClosed()
                 ? targetStatus : datedStatus);
 
+        if (completionInputsChanged) updateTaskProgress(taskId);
         Task saved = taskRepository.save(task);
         taskRepository.flush(); // 让响应携带这次写入后的版本，而不是刷新前的旧版本。
         return toDetailResponse(saved);
@@ -463,9 +467,11 @@ public class TaskService {
             if (task.getStatus().isClosed()) return;
             refreshStatusByDate(task);
             task.setTotalProgress(totalProgress);
-            // 如果进度达到 1.0，自动标记主任务为已完成 (可选逻辑，按需添加)
+            // 两个指标独立计算，只有同时达标才关闭计划。
             if (task.getStatus() == PlanStatus.IN_PROGRESS && !subTasks.isEmpty()
-                    && subTasks.stream().allMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0)) {
+                    && subTasks.stream().allMatch(s -> s.getCurrentProgress().compareTo(BigDecimal.ONE) >= 0)
+                    && checkInRecordRepository.countByUserIdAndTaskIdAndCheckInDateBetween(task.getUserId(), taskId,
+                        task.getStartDate(), task.getEndDate()) >= task.getTargetDays()) {
                 task.setStatus(PlanStatus.COMPLETED);
             } else {
                 refreshStatusByDate(task);

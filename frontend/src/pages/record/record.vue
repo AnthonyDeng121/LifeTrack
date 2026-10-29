@@ -18,7 +18,7 @@
           <picker :range="manualPlanLabels" :value="manualPlanIndex" :disabled="manualSaving" @change="selectManualPlan"><view class="glass-input">{{ manualPlanLabels[manualPlanIndex] }}</view></picker>
           <text v-if="plansError" class="hint">{{ plansError }}</text>
           <button v-if="plansError" class="glass-button" @tap="loadPlans">重新加载计划</button>
-          <text v-else-if="!plans.length" class="hint">暂无有效周期内可打卡的计划。学习完成的计划也可继续打卡。</text>
+          <text v-else-if="!plans.length" class="hint">暂无有效周期内可打卡的计划。学习和打卡同时达标后，计划停止新增记录。</text>
         </view>
         <text class="hint">日期：{{ businessToday }}</text>
         <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!retryingId" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
@@ -211,8 +211,8 @@ async function submitDailyCheckIn() {
   const plan = plans.value.find(item => item.id === manualTaskId.value);
   if (!plan) return uni.showToast({ title: "请选择进行中的学习计划", icon: "none" });
   const date = getBusinessDate();
-  if (!["IN_PROGRESS", "COMPLETED"].includes(plan.status) || date < plan.startDate || date > plan.endDate) {
-    return uni.showToast({ title: "仅有效周期内进行中或学习已完成的计划可打卡", icon: "none" });
+  if (plan.status !== "IN_PROGRESS" || date < plan.startDate || date > plan.endDate) {
+    return uni.showToast({ title: "仅有效周期内未完成的计划可打卡", icon: "none" });
   }
   const payload = { taskId: plan.id };
   manualSaving.value = true;
@@ -223,6 +223,9 @@ async function submitDailyCheckIn() {
     manualResultTaskId.value = saved.taskId;
     manualAlreadyChecked.value = true;
     manualMessage.value = `${saved.checkInDate} 打卡成功，未增加学习进度或虚构学习时长。实际学习内容可在下方分次记录。`;
+    await loadPlans();
+    if (!plans.value.some(p => p.id === saved.taskId)) manualMessage.value = "打卡成功，计划已双达标完成，停止新增打卡和学习情况，历史仍可查看。";
+    else manualAlreadyChecked.value = true;
     uni.showToast({ title: "正式打卡成功", icon: "none" });
   } catch (error) {
     manualMessage.value = error.code === 409 ? "该计划当天已打卡，未新增记录或重复累计时长。继续学习可使用下方 AI 学习记录。" : error.message || "打卡失败，请检查网络后重试";
@@ -240,10 +243,10 @@ async function loadPlans() {
     const date = getBusinessDate();
     const rows = await getTasks();
     historyPlans.value = rows;
-    plans.value = rows.filter(p => ["IN_PROGRESS", "COMPLETED"].includes(p.status) && p.startDate <= date && p.endDate >= date);
+    plans.value = rows.filter(p => p.status === "IN_PROGRESS" && p.startDate <= date && p.endDate >= date);
     if (!learningPlans.value.some(p => p.id === selectedTaskId.value)) selectedTaskId.value = null;
     if (!plans.value.some(p => p.id === manualTaskId.value)) manualTaskId.value = null;
-    loadManualAttendance();
+    await loadManualAttendance();
     plansError.value = "";
   } catch {
     plansError.value = "计划列表加载失败，仍可尝试自动匹配";

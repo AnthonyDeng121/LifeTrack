@@ -50,10 +50,11 @@ class DecompositionTests(unittest.TestCase):
     def test_report_receives_separate_achievement_and_attendance(self, llm):
         llm.return_value = json.dumps({"title": "学习总结", "ai_summary": "提前完成"})
         self.client.post("/ai/report", json={"logs": [], "plan_outcomes": [{"title": "Spring Boot",
-            "status": "COMPLETED", "target_days": 3, "actual_check_in_days": 1}]})
+            "status": "IN_PROGRESS", "learning_progress": 100, "target_days": 3, "actual_check_in_days": 1}]})
         prompt = llm.call_args.args[0]
         self.assertIn('"actual_check_in_days": 1', prompt)
-        self.assertIn("不能判为学习未达标", prompt)
+        self.assertIn("不能否定成果或虚构出勤", prompt)
+        self.assertIn("学习步骤与打卡目标均已达标", prompt)
 
     @patch("ai_server.call_llm")
     def test_specific_result_is_returned_without_replacement(self, llm):

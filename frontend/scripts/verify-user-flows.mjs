@@ -207,7 +207,7 @@ assert.equal(submissionIds[0],submissionIds[1]);
 assert.match(submissionIds[0],/^[0-9a-f-]{36}$/);
 
 let dateAtMidnight="2026-10-25";
-const completedPlan={...active,status:"COMPLETED"};
+const completedPlan={...active,status:"IN_PROGRESS",totalProgress:100};
 const midnight = await page("record", {
   getBusinessDate:()=>dateAtMidnight,getTasks:async()=>[completedPlan],
   getCheckInHistory:async()=>({total:0,list:[]}),

@@ -58,10 +58,12 @@ try {
   const second = await record("今天已为GET /hello接口编写完整JUnit和MockMvc自动化测试，断言HTTP状态码200及响应体hello，实际运行所有测试全部通过，测试步骤的全部要求已完成并验收通过。");
   const detail = await api("GET", `/tasks/${plan}`);
   assert.equal(detail.totalProgress, 100, JSON.stringify(second));
-  assert.equal(detail.status, "COMPLETED");
+  assert.equal(detail.status, "IN_PROGRESS");
   const stats = await api("GET", `/check-ins/tasks/${plan}/stats`);
   assert.equal(stats.checkedInDays, 1);
   assert.ok(stats.completionRate < 100, "提前学完仍保留真实打卡率");
+  await api("PUT", `/tasks/${plan}`, {version:detail.version,targetDays:1});
+  assert.equal((await api("GET", `/tasks/${plan}`)).status,"COMPLETED");
   const history = await api("GET", "/actions/history?size=100");
   const lastLog = history.list.find(log => log.rawInput.includes("完整JUnit和MockMvc"));
   assert.ok(lastLog);

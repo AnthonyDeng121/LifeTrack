@@ -29,6 +29,7 @@ public class CheckInService {
 
     private final CheckInRecordRepository checkInRecordRepository;
     private final TaskRepository taskRepository;
+    private final TaskService taskService;
 
     @Transactional(readOnly = true)
     public com.lifetrack.dto.PageResponse<CheckInResponse> historyPage(Long taskId, LocalDate startDate, LocalDate endDate, int page, int size) {
@@ -69,7 +70,9 @@ public class CheckInService {
                 .automatic(false)
                 .build();
         try {
-            return toResponse(checkInRecordRepository.saveAndFlush(record), task.getTitle());
+            CheckInRecord saved = checkInRecordRepository.saveAndFlush(record);
+            taskService.updateTaskProgress(task.getId());
+            return toResponse(saved, task.getTitle());
         } catch (DataIntegrityViolationException ex) {
             throw new BusinessException(409, "该学习计划当天已经打卡，请勿重复打卡");
         }
@@ -159,9 +162,9 @@ public class CheckInService {
         if (today().isAfter(task.getEndDate())) {
             throw new BusinessException(400, "学习计划已经过期，不能打卡");
         }
-        if (task.getStatus() != PlanStatus.IN_PROGRESS && task.getStatus() != PlanStatus.COMPLETED
+        if (task.getStatus() != PlanStatus.IN_PROGRESS
                 && task.getStatus() != PlanStatus.NOT_STARTED) {
-            throw new BusinessException(400, "仅有效周期内进行中或学习已完成的计划可打卡，当前状态为"
+            throw new BusinessException(400, "仅有效周期内未完成的计划可打卡，当前状态为"
                     + task.getStatus().getDescription());
         }
     }

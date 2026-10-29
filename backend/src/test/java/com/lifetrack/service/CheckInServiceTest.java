@@ -32,6 +32,7 @@ import static org.mockito.Mockito.when;
 class CheckInServiceTest {
     @Mock private CheckInRecordRepository checkInRecordRepository;
     @Mock private TaskRepository taskRepository;
+    @Mock private TaskService taskService;
     @InjectMocks private CheckInService checkInService;
 
     @BeforeEach

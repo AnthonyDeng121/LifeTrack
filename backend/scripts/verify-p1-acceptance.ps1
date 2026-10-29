@@ -76,11 +76,12 @@ try {
     $expectedDays = @((Invoke-LifeTrack "GET" "/check-ins" $null $token).data | Where-Object { $_.taskId -in $eligibleIds } | Select-Object -ExpandProperty checkInDate -Unique).Count
     Assert-Equal $expectedDays ([int]$dashboardAfter.data.checkedInDays) "dashboard natural days"
     $planSteps = Invoke-LifeTrack "GET" "/tasks/$taskId/subtasks" $null $token
+    $null = Invoke-LifeTrack "PUT" "/tasks/$taskId" @{ targetDays = 3 } $token
     foreach ($step in $planSteps.data) { $null = Invoke-LifeTrack "PUT" "/tasks/subtasks/$($step.id)/complete" $null $token }
     $completed = Invoke-LifeTrack "GET" "/tasks/$taskId" $null $token
     Assert-Equal "COMPLETED" $completed.data.status "status transition after all steps"
     $blockedByStatus = Invoke-LifeTrack "POST" "/check-ins" @{ taskId = $taskId; checkInDate = $todayText; content = "completed"; durationMinutes = 10 } $token
-    Assert-Equal 409 $blockedByStatus.code "completed plan still enforces daily uniqueness"
+    Assert-Equal 400 $blockedByStatus.code "double completed plan rejects further attendance"
 
     [pscustomobject]@{
         taskId = $taskId; historyApiCheckIns = @($history.data).Count; checkedInDays = $stats.data.checkedInDays

@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface CheckInRecordRepository extends JpaRepository<CheckInRecord, Long> {
+    long countByUserIdAndTaskIdAndCheckInDateBetween(Long userId, Long taskId, LocalDate start, LocalDate end);
     @org.springframework.data.jpa.repository.Query("select r.checkInDate from CheckInRecord r where r.userId=?1 and r.taskId=?2 order by r.checkInDate")
     List<LocalDate> findPlanDates(Long userId, Long taskId);
     @org.springframework.data.jpa.repository.Query("select r from CheckInRecord r where r.userId = :userId and (:taskId is null or r.taskId = :taskId) and r.checkInDate between :start and :end")
