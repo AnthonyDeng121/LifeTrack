@@ -56,3 +56,4 @@ jwt:
 ai:
   base-url: ${AI_BASE_URL:http://127.0.0.1:5000/ai}
   read-timeout-seconds: ${AI_READ_TIMEOUT_SECONDS:40}
+  deconstruct-read-timeout-seconds: ${AI_DECONSTRUCT_READ_TIMEOUT_SECONDS:90}

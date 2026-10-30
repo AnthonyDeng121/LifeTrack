@@ -10,13 +10,24 @@ import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.io.IOException;
+import java.net.HttpURLConnection;
 import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 public class RestConfig {
     @Bean
-    public RestTemplate restTemplate(@Value("${ai.read-timeout-seconds:40}") int readTimeoutSeconds) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+    public RestTemplate restTemplate(@Value("${ai.read-timeout-seconds:40}") int readTimeoutSeconds,
+            @Value("${ai.deconstruct-read-timeout-seconds:90}") int deconstructReadTimeoutSeconds) {
+        int deconstructMillis = Math.toIntExact(Duration.ofSeconds(deconstructReadTimeoutSeconds).toMillis());
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory() {
+            @Override
+            protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+                super.prepareConnection(connection, httpMethod);
+                // 拆解包含一次质量修复重试；其他分析请求继续使用较短的独立预算。
+                if (connection.getURL().getPath().endsWith("/deconstruct")) connection.setReadTimeout(deconstructMillis);
+            }
+        };
         requestFactory.setConnectTimeout(Duration.ofSeconds(2));
         requestFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
         RestTemplate restTemplate = new RestTemplate(requestFactory);

@@ -9,6 +9,7 @@ URL = os.getenv("ZHIPU_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/comp
 MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
 TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.3"))
 MODEL_READ_TIMEOUT = float(os.getenv("AI_MODEL_READ_TIMEOUT_SECONDS", "30"))
+MODEL_CONNECT_TIMEOUT = float(os.getenv("AI_MODEL_CONNECT_TIMEOUT_SECONDS", "8"))
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -252,7 +253,7 @@ def call_llm(prompt):
         "temperature": TEMPERATURE
     }
     try:
-        resp = requests.post(URL, json=payload, headers=HEADERS, timeout=(3, MODEL_READ_TIMEOUT))
+        resp = requests.post(URL, json=payload, headers=HEADERS, timeout=(MODEL_CONNECT_TIMEOUT, MODEL_READ_TIMEOUT))
         if resp.status_code != 200:
             print(f"LLM API Error: {resp.status_code} - {resp.text}")
             resp.raise_for_status()

@@ -97,3 +97,7 @@ await liveApi.deleteDeferredLearningRecord(8);
 assert.equal(calls[2].method, "PUT"); assert.equal(calls[2].url.endsWith("/actions/deferred/7"), true);
 assert.deepEqual(calls[2].data, { content: "corrected", durationMinutes: 45 });
 assert.equal(calls[3].method, "DELETE");
+await liveApi.previewTaskByAI({ title: "synthetic plan", stepCount: 2 });
+await liveApi.createTaskByAI("synthetic plan", "学习", "2026-10-30", "2026-11-05", 5);
+assert.equal(calls[4].timeout, 100000); assert.equal(calls[5].timeout, 100000);
+assert.ok(calls[4].timeout > 90000, "拆解前端预算需覆盖后端两次生成窗口");

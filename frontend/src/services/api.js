@@ -46,7 +46,7 @@ export function getSubtasks(taskId) {
 }
 
 export function createTaskByAI(title, category, startDate, endDate, targetDays) {
-  return request({ ...endpoints.tasks.deconstruct(title, category, startDate, endDate, targetDays), timeout: 50000, showError: false });
+  return request({ ...endpoints.tasks.deconstruct(title, category, startDate, endDate, targetDays), timeout: 100000, showError: false });
 }
 
 export function createTaskManually(data) {
@@ -54,7 +54,7 @@ export function createTaskManually(data) {
 }
 
 export function previewTaskByAI(data) {
-  return request({ ...endpoints.tasks.preview(data), timeout: 75000, showError: false });
+  return request({ ...endpoints.tasks.preview(data), timeout: 100000, showError: false });
 }
 
 export function completeSubtask(subTaskId) {
