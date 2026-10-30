@@ -319,6 +319,8 @@ class UserOperationIntegrationTest {
             assertEquals(403,api("GET","/actions/history?taskId="+id,null).path("code").asInt());
             assertEquals(403,api("GET","/tasks/"+id+"/period-preview?startDate="+today+"&endDate="+today.plusDays(5),null).path("code").asInt());
             assertEquals(403,api("POST","/actions/deferred/"+ownPending+"/retry",Map.of()).path("code").asInt());
+            assertEquals(403,api("PUT","/actions/deferred/"+ownPending,Map.of("content","越权编辑","durationMinutes",30)).path("code").asInt());
+            assertEquals(403,api("DELETE","/actions/deferred/"+ownPending,null).path("code").asInt());
             assertEquals(403,api("POST","/actions/deferred",Map.of("taskId",id,"content","越权提交","durationMinutes",30,"requestId",UUID.randomUUID().toString())).path("code").asInt());
             assertEquals(403,api("DELETE","/actions/"+entry.getId(),null).path("code").asInt());
             assertEquals(403,api("PUT","/tasks/subtasks/"+step+"/complete",null).path("code").asInt());
@@ -352,6 +354,37 @@ class UserOperationIntegrationTest {
         assertEquals(5.0, api("GET", "/dashboard/stats", null).path("data").path("todayTotalProgress").asDouble());
         database.update("update sub_tasks set weight=0.8 where id=?", stepId);
         assertEquals(5.0, api("GET", "/dashboard/stats", null).path("data").path("todayTotalProgress").asDouble());
+    }
+
+    @Test void pendingEditsAndRemovalPreserveDateRejectOldRequestsAndRespectClosedPlans() throws Exception {
+        long id = create(today.minusDays(2), today.plusDays(7));
+        String requestId = UUID.randomUUID().toString();
+        Map<String,Object> submission = Map.of("taskId", id, "content", "尚未分析的旧描述", "durationMinutes", 30, "requestId", requestId);
+        var original = api("POST", "/actions/deferred", submission).path("data");
+        long old = original.path("id").asLong();
+        var changed = api("PUT", "/actions/deferred/" + old, Map.of("content", "修正后的具体学习描述", "durationMinutes", 45)).path("data");
+        long replacement = changed.path("id").asLong();
+        assertNotEquals(old, replacement);
+        assertEquals(original.path("recordedAt"), changed.path("recordedAt"));
+        assertEquals(45, changed.path("durationMinutes").asInt());
+        assertEquals(409, api("POST", "/actions/deferred", submission).path("code").asInt());
+        assertEquals(409, api("POST", "/actions/deferred/"+old+"/retry", Map.of()).path("code").asInt());
+        assertEquals(409, api("PUT", "/actions/deferred/"+old, Map.of("content", "旧表单", "durationMinutes", 1)).path("code").asInt());
+        var list = api("GET", "/actions/deferred?taskId="+id, null).path("data");
+        assertEquals(1, list.path("total").asInt());
+        assertTrue(list.path("list").get(0).path("canRetry").asBoolean());
+        var detail = api("GET", "/tasks/"+id, null).path("data");
+        assertEquals(200, api("PUT", "/tasks/"+id, Map.of("version", detail.path("version").asLong(), "status", "ENDED")).path("code").asInt());
+        var closed = api("GET", "/actions/deferred?taskId="+id, null).path("data").path("list").get(0);
+        assertFalse(closed.path("canRetry").asBoolean());
+        assertFalse(closed.path("retryBlockedReason").asText().isBlank());
+        assertEquals(400, api("POST", "/actions/deferred/"+replacement+"/retry", Map.of()).path("code").asInt());
+        assertEquals(400, api("PUT", "/actions/deferred/"+replacement, Map.of("content", "不应修改", "durationMinutes", 10)).path("code").asInt());
+        assertEquals(200, api("DELETE", "/actions/deferred/"+replacement, null).path("code").asInt());
+        assertEquals(0, api("GET", "/actions/deferred?taskId="+id, null).path("data").path("total").asInt());
+        assertEquals("[已移除]", database.queryForObject("select content from deferred_learning_records where id=?", String.class, replacement));
+        assertEquals(0, database.queryForObject("select count(*) from action_logs where task_id=?", Integer.class, id));
+        assertEquals(0, database.queryForObject("select count(*) from check_in_records where task_id=?", Integer.class, id));
     }
 
     @Test void frontendApiModuleWorksAgainstRealHttpServerAndMysql() throws Exception {

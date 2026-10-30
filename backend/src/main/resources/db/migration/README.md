@@ -16,3 +16,5 @@ V4修正旧COMPLETED但学习与打卡没有同时达标的状态，按Asia/Shan
 
 V5新增action_logs.plan_contribution（DECIMAL(11,8)）。新记录保存步骤增量乘发生时权重，今日及七日趋势不再直接相加步骤增量。历史仅能按仍关联步骤的迁移时权重估算；失去关联的保留NULL并不计入增量，不能虚构历史权重。原日志、时长和步骤contribution均保留。后续迁移从V6开始。
 
+V6为待分析记录新增DISCARDED状态。修改生成新记录并保留原日期，旧记录清空正文和时长、仅保留提交防重凭证；删除也使用该凭证，防止旧requestId重新创建已删除内容。APPLIED不可经待分析入口修改或删除。新增action_logs(user_id,task_id,created_at,id)索引供上海当天半开区间聚合和首条内容查询。后续迁移从V7开始。
+

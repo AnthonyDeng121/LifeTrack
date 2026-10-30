@@ -71,6 +71,57 @@ class DatabaseEngineeringIntegrationTest {
                 .subTaskId(step).increment(new BigDecimal("0.20")).build())).build();
     }
 
+    @Test void undoOldAiRecordPreservesLaterManualCompletionAndRealAttendance() {
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenReturn(analysis());
+        deferred.submit(request());
+        long log = jdbc.queryForObject("select id from action_logs where task_id=?", Long.class, planId);
+        long step = steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId();
+        plans.completeSubTask(step);
+        assertNull(jdbc.queryForObject("select sub_task_id from action_logs where id=?", Long.class, log));
+        actions.deleteAction(log);
+        assertEquals(0, steps.findById(step).orElseThrow().getCurrentProgress().compareTo(BigDecimal.ONE));
+        assertEquals(1, steps.findById(step).orElseThrow().getIsCompleted());
+        assertEquals(0, tasks.findById(planId).orElseThrow().getTotalProgress().compareTo(BigDecimal.ONE));
+        assertEquals(PlanStatus.IN_PROGRESS, tasks.findById(planId).orElseThrow().getStatus());
+        assertEquals(0, attendance.stats(planId).getCheckedInDays());
+        assertEquals(0, plans.getTaskDetail(planId).getLearningDurationMinutes());
+    }
+
+    @Test void dailyAggregationUsesHalfOpenShanghaiDayAndKeepsManualNotes() {
+        var manual = new CheckInCreateRequest(); manual.setTaskId(planId); attendance.create(manual);
+        jdbc.update("update check_in_records set content='保留手动备注' where task_id=?", planId);
+        LocalDateTime[] times = {today.minusDays(1).atTime(23,59,59), today.atStartOfDay(),
+                today.atTime(23,59,59), today.plusDays(1).atStartOfDay()};
+        int[] minutes = {900, 30, 40, 800};
+        for (int i=0;i<times.length;i++) jdbc.update("insert into action_logs (user_id,task_id,category,raw_input,duration_minutes,contribution,created_at) values (?,?,'学习','边界数据',?,0,?)",
+                user.getId(), planId, minutes[i], times[i]);
+        actions.refreshAttendance(planId, today);
+        assertEquals(70, jdbc.queryForObject("select duration_minutes from check_in_records where task_id=?", Integer.class, planId));
+        assertEquals("保留手动备注", jdbc.queryForObject("select content from check_in_records where task_id=?", String.class, planId));
+        assertEquals(1770, plans.getTaskDetail(planId).getLearningDurationMinutes());
+    }
+
+    @Test void editingWhileAiIsRunningDiscardsStaleAnalysisWithoutAnyProgress() throws Exception {
+        var input = new DeferredLearningRecordRequest(); input.setTaskId(planId); input.setContent(request().getRawInput()); input.setDurationMinutes(30);
+        long record = deferred.save(input).id();
+        var started = new CountDownLatch(1); var release = new CountDownLatch(1);
+        var result = analysis();
+        when(ai.analyzeAction(anyString(),anyString(),anyList())).thenAnswer(call -> { started.countDown(); assertTrue(release.await(10, TimeUnit.SECONDS)); return result; });
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var future = executor.submit(() -> { UserContext.setUserId(user.getId());
+                try { deferred.retry(record); return 200; } catch(BusinessException e) { return e.getCode(); } finally { UserContext.clear(); } });
+            assertTrue(started.await(10, TimeUnit.SECONDS));
+            var edit = new DeferredLearningRecordUpdateRequest(); edit.setContent("修正后的事务练习"); edit.setDurationMinutes(45);
+            var replacement = deferred.update(record, edit);
+            release.countDown();
+            assertEquals(409, future.get(10, TimeUnit.SECONDS));
+            assertEquals("PENDING", jdbc.queryForObject("select status from deferred_learning_records where id=?", String.class, replacement.id()));
+            assertEquals(0, jdbc.queryForObject("select count(*) from action_logs where task_id=?", Integer.class, planId));
+            assertEquals(0, jdbc.queryForObject("select count(*) from check_in_records where task_id=?", Integer.class, planId));
+        } finally { release.countDown(); executor.shutdownNow(); }
+    }
+
     @Test void learningFirstAllowsReviewUntilLastAttendanceAndThenCloses() {
         plans.completeSubTask(steps.findByTaskIdOrderByOrderNumAsc(planId).get(0).getId());
         assertEquals(PlanStatus.IN_PROGRESS,tasks.findById(planId).orElseThrow().getStatus());

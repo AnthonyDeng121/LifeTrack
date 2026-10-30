@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 @Table(name = "deferred_learning_records")
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class DeferredLearningRecord {
-    public enum Status { PENDING, APPLIED, UNMATCHED }
+    public enum Status { PENDING, APPLIED, UNMATCHED, DISCARDED }
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @Column(length = 36) private String requestId;

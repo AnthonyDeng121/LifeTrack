@@ -1,0 +1,1255 @@
+[
+  {
+    "class": "com.lifetrack.AuthenticationHttpIntegrationTest",
+    "name": "removedAndProtectedRoutesUseActualHttpStatuses",
+    "seconds": 1.448,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.AuthenticationHttpIntegrationTest",
+    "name": "unexpectedExceptionsNeverLeakInternalMessage",
+    "seconds": 0.09,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.AuthenticationHttpIntegrationTest",
+    "name": "malformedAuthenticationInputHasSafeClientErrors",
+    "seconds": 0.267,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.AuthenticationHttpIntegrationTest",
+    "name": "nonDevelopmentEnvironmentDeniesDemonstrationEvenWhenSwitchesAreTrue",
+    "seconds": 0.079,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "editingWhileAiIsRunningDiscardsStaleAnalysisWithoutAnyProgress",
+    "seconds": 1.447,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "undoOldAiRecordPreservesLaterManualCompletionAndRealAttendance",
+    "seconds": 0.721,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "failedLearningRecordDoesNotCountUntilRetryAndNeverOverwritesManualNote",
+    "seconds": 0.248,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "filteredPlanListUsesTwoQueriesAndDoesNotWrite",
+    "seconds": 0.515,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "dailyAggregationUsesHalfOpenShanghaiDayAndKeepsManualNotes",
+    "seconds": 0.13,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "slowAiDoesNotBlockManualAttendance",
+    "seconds": 0.154,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "retryAnalyzesOutsideTransactionAndAppliesOriginalRecordExactlyOnce",
+    "seconds": 0.145,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "lostSuccessResponseCanBeReplayedWithoutAnotherAnalysisOrDuration",
+    "seconds": 0.147,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "oldPendingRecordCannotRecreateAttendanceAfterPeriodMovesForward",
+    "seconds": 0.103,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "consolidatedSchemaInitializesEmptyMysqlAndFlywayManagesOnlySubsequentVersions",
+    "seconds": 3.236,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "aiRunsWithoutTransactionAndChangedPlanRejectsStaleResult",
+    "seconds": 0.103,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "databaseRejectsInvalidPeriodAndCrossUserAttendanceDirectly",
+    "seconds": 0.154,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "concurrentRetriesCountOriginalDurationExactlyOnce",
+    "seconds": 0.147,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "v4ReopensOnlyOldLearningOnlyCompletionAndPreservesHistory",
+    "seconds": 0.23,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "manualAttendanceSurvivesLearningSaveRetryAndUndoWithoutStaleMinutes",
+    "seconds": 0.165,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "optimisticVersionRejectsDetachedStaleWrite",
+    "seconds": 0.082,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "repeatedWeightEditsRemainPositiveNormalizedAndRollbackIllegalChanges",
+    "seconds": 1.511,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "loweringAttendanceTargetCanCompleteLearningButCannotForceIncompleteLearning",
+    "seconds": 0.088,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "attendanceFirstCanExceedTargetUntilLearningCompletes",
+    "seconds": 0.183,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "migrationPreservesLegacyHistoryAndSeparatesFalseCompletedPlans",
+    "seconds": 0.237,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "learningFirstAllowsReviewUntilLastAttendanceAndThenCloses",
+    "seconds": 0.165,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "simultaneousAttendanceHasExactlyOneWinner",
+    "seconds": 0.048,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DatabaseEngineeringIntegrationTest",
+    "name": "periodEditAndAttendanceRaceNeverLeavesAnOutsideRecord",
+    "seconds": 0.058,
+    "outcome": "passed",
+    "layer": "real-mysql-transactions"
+  },
+  {
+    "class": "com.lifetrack.DevelopmentLoginIntegrationTest",
+    "name": "configuredDemoLoginWorksAndEqualPhoneSuffixesDoNotCollide",
+    "seconds": 0.232,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.entity.BusinessTimestampTest",
+    "name": "entityHooksUseShanghaiEvenWhenHostUsesUtc",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.entity.PlanStatusTest",
+    "name": "shouldKeepLegacyDatabaseCodesCompatible",
+    "seconds": 0.0,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.entity.PlanStatusTest",
+    "name": "shouldAllowOnlyDefinedStatusTransitions",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.entity.PlanStatusTest",
+    "name": "shouldParseEnglishNameAndChineseDescription",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.LifeTrackApplicationTests",
+    "name": "contextLoads",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "spring-context"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "rejectsNegativeAndZeroContributions",
+    "seconds": 1.084,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "snapshotsWeightedPlanGainSeparatelyFromStepGain",
+    "seconds": 0.015,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "historicalAnalysisCannotChangeCompletedPlan",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "oneInputCanCheckInTwoPlansWithoutDuplicatingDuration",
+    "seconds": 0.009,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "rejectsSecondUndoAfterWaitingForPlanLock",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "historicalAnalysisUsesOriginalDateEvenAfterPlanExpired",
+    "seconds": 0.008,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "multipleStepsCreateOneAttendanceAndDoNotDuplicateDuration",
+    "seconds": 0.011,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "inventedOrOverlappingMultiStepEvidenceIsRejected",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "undoDoesNotRemoveLegacyManualAttendance",
+    "seconds": 0.01,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "clampsActualContributionAndIgnoresDuplicateAndForeignSteps",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "rejectsOutsidePeriodBeforeCallingAI",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "oneGenericCompletionSentenceCannotCompleteTwoDifferentSteps",
+    "seconds": 0.008,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "inventedCompletionEvidenceCannotPromoteToOneHundred",
+    "seconds": 0.008,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "zeroIncrementLearningAtEstimateLimitStillKeepsAttendanceAndDuration",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "unrelatedInputDoesNotSaveOrCheckIn",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "explicitNotCompletedCannotBecomeOneHundredEvenWhenModelSaysCompleted",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "undoLastEffectiveRecordRemovesAutomaticAttendance",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "httpEvidenceCannotCompleteUnmentionedJunitAndMockMvcStep",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "broadDatabaseNoteCannotAdvanceEightStepsUsingSameEvidence",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "completedPlanCannotBeReopenedByUndoingLearningRecord",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "firstRecordCreatesAttendanceAndSecondOnlyUpdatesProgress",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "rejectsUnownedSelectedPlan",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.ActionServiceTest",
+    "name": "explicitCompletionUsesRemainingProgressAndStoresActualIncrement",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "shouldSignalUnavailableWithoutInventingProgress",
+    "seconds": 0.49,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "reportMergesOneInputAcrossStepsWithoutSummingStepPercentages",
+    "seconds": 0.018,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "shouldRejectUpstreamFailureAndEmptySteps",
+    "seconds": 0.01,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "shouldReadValidGlmDeconstruction",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "shouldReturnExplicitServiceUnavailableInsteadOfFakeDeconstruction",
+    "seconds": 0.009,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AIServiceTest",
+    "name": "shouldDistinguishRejectedDraftFromUnavailableProvider",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[1]",
+    "seconds": 0.211,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[2]",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[3]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[4]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[5]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "environmentCannotBeBypassedByEnablingBothSwitches(String)[6]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "incorrectCodeIsClientError",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "usesConfiguredDemoCodeAndPreservesExistingUser",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "diagnosticTextDoesNotExposePhoneCodeOrToken",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[1]",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[2]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[3]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[4]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[5]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "rejectsInvalidPhoneWithoutTouchingDatabase(String)[6]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.AuthServiceTest",
+    "name": "developmentSwitchesAreIndependentAndCanBeTurnedOff",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldRejectCheckInForCancelledPlan",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldCalculateCompletionRateAndSevenDayTrend",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "oneClickAttendanceNeedsNoRemarkOrInventedDuration",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldRejectDateOutsidePlanPeriod",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldTranslateDatabaseUniqueConstraintConflictToDuplicateCheckIn",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldCalculateCurrentAndLongestStreakFromRealDates",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldRejectDuplicateCheckInBeforeSaving",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldRejectFutureCheckInDate",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldReturnZeroCurrentStreakAfterGap",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldRejectCheckInAndStatsForAnotherUsersPlan",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "shouldCapCompletionRateAtOneHundredPercent",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.CheckInServiceTest",
+    "name": "midnightActivationDoesNotDependOnNextScheduledMinute",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DashboardServiceImplTest",
+    "name": "manualEndRemainsInDenominatorButIsNotLearningCompletion",
+    "seconds": 0.125,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DashboardServiceImplTest",
+    "name": "deduplicatesNaturalDaysAndExcludesCancelledPlansFromEveryDashboardMetric",
+    "seconds": 0.009,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DashboardServiceImplTest",
+    "name": "shouldBuildDashboardMetricsFromPersistedCheckIns",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DashboardServiceImplTest",
+    "name": "cancelledOnlyHasZeroDashboardButDoesNotDeleteHistory",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DashboardServiceImplTest",
+    "name": "earlyCompletionCountsAsAchievementWithoutInflatingAttendance",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "completedPlanRejectsRetryWithoutConsumingPendingRecord",
+    "seconds": 0.191,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "retryRejectsAnotherUsersRecord",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "unmatchedRetryRetainsRecordWithoutClaimingProgress",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "retryRetainsPendingWhenAIStillUnavailable",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "expiredPlanAlsoRejectsRetryWithoutCallingAi",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "importsLegacyCheckInUsingCheckInDateInsteadOfCreationDate",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "fallbackPersistsOriginalContentWithoutDuplicateCheckIn",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "appliedRecordCannotBeEditedOrDeletedAsPending",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.DeferredLearningRecordServiceTest",
+    "name": "retryUsesOriginalDateAndCannotApplyTwice",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.FeedbackServiceImplTest",
+    "name": "reportIgnoresCancelledLearningAndDeduplicatesDatesAcrossPlans",
+    "seconds": 0.021,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.FeedbackServiceImplTest",
+    "name": "reportIncludesEarlyCompletionAndActualAttendanceAsSeparateFacts",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "addingFullWeightCannotZeroExistingStep",
+    "seconds": 0.008,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "deletionRejectsLastStep",
+    "seconds": 0.007,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "editingFullWeightCannotZeroOtherSteps",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "deletionRedistributesEvenWhenRemainingWeightsWereZero",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "additionRejectsUnownedPlan",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "additionRejectsBlankContentAndInvalidWeight",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "additionRedistributesWeightsAndPreservesExistingProgress",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.SubTaskManagementTest",
+    "name": "tinyRedistributedWeightIsRejectedBeforeAnyMutation",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "changingPeriodWithoutExplicitStatusDerivesStableDateStatus",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "completedPlanCannotChangePeriodOrTarget",
+    "seconds": 0.006,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "zeroProgressCannotBeClaimedAsLearningCompleted",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "terminalPlansRejectAllStepEdits(PlanStatus)[1]",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "terminalPlansRejectAllStepEdits(PlanStatus)[2]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "terminalPlansRejectAllStepEdits(PlanStatus)[3]",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "terminalPlansRejectAllStepEdits(PlanStatus)[4]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creationRejectsInvalidTotalAndOversubscribedMissingWeights",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "directProgressRecalculationCannotReopenOrCompleteTerminalPlan",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "futurePeriodCannotBeSavedAsInProgress",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "expiredPlanCannotBeReopenedByChangingDates",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creatingPastPeriodImmediatelyMarksItExpired",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "requiresConfirmationBeforePruningAttendance",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "expandedPeriodNeedsNoDestructiveConfirmation",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "confirmationMustMatchExactAffectedRecords",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "confirmedPeriodChangeDeletesOnlyOutsideRecordsAndKeepsProgress",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "cannotCompleteStepOutsideActivePlan(PlanStatus)[1]",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "cannotCompleteStepOutsideActivePlan(PlanStatus)[2]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "cannotCompleteStepOutsideActivePlan(PlanStatus)[3]",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "cannotCompleteStepOutsideActivePlan(PlanStatus)[4]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "cannotCompleteStepOutsideActivePlan(PlanStatus)[5]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "contradictoryExplicitStatusIsRejectedBeforeDeletingRecords",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "manualEndPreservesProgressAndCannotBeReopenedOrReclassified",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creationRejectsInvalidWeightsBeforePersistingAnything(String)[1]",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creationRejectsInvalidWeightsBeforePersistingAnything(String)[2]",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creationRejectsInvalidWeightsBeforePersistingAnything(String)[3]",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "creationRejectsInvalidWeightsBeforePersistingAnything(String)[4]",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "completedPlanMayRenameWithoutChangingFrozenBusinessData",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "roundingToleranceProducesPositiveWeightsSummingExactlyToOne",
+    "seconds": 0.004,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "omittedWeightsShareRemainderWithoutNegativeCorrection",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskBusinessRulesTest",
+    "name": "weightedHundredPercentCannotHideIncompleteZeroWeightLegacyStep",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldRejectTargetDaysBeyondPlanPeriod",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldCreateManualPlanWithoutCallingAiService",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "batchDeleteRejectsEmptySelection",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldUpdateEditablePlanFields",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "batchDeleteMustCheckAllOwnersBeforeDeleting",
+    "seconds": 0.005,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldRejectUpdatingAnotherUsersPlan",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "previewPassesRefinementWithoutCreatingAnyTask",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "taskListReturnsRealSubtaskCountForDashboard",
+    "seconds": 0.093,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldRejectTransitionFromCompletedBackToInProgress",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "shouldAllowTransitionFromInProgressToCompleted",
+    "seconds": 0.003,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.service.TaskServiceTest",
+    "name": "batchDeleteMustRejectMissingTaskBeforeDeleting",
+    "seconds": 0.002,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.support.IsolatedDatabaseInitializerTest",
+    "name": "refusesNormalDatabaseAndMissingOrMisleadingUrls",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.support.IsolatedDatabaseInitializerTest",
+    "name": "acceptsExplicitMysqlTestSchema",
+    "seconds": 0.001,
+    "outcome": "passed",
+    "layer": "unit"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "staleStepEditorCannotOverwriteEvenWhenLearningProgressDoesNotChange",
+    "seconds": 0.27,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "databaseDateBoundsAreRejectedBeforePersistenceAcrossPlanInputs",
+    "seconds": 0.19,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "historyPaginatesBeyondTwentyWithStableTieOrderAndDeletionRefillsPage",
+    "seconds": 0.254,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "manualEndLearningCompletionAndAttendanceAreIndependent",
+    "seconds": 0.304,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "cancelledHistoryRemainsQueryableButAllDashboardMetricsExcludeIt",
+    "seconds": 0.297,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "invalidCategoryAndDashboardAccessHaveConsistentClientErrorStatuses",
+    "seconds": 0.039,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "realAiConnectionFailureNeverCreatesFakeProgressAndFallbackRemainsDurable",
+    "seconds": 0.223,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "staleFormCannotOverwriteNewerPlanAndMissingVersionIsRejected",
+    "seconds": 0.1,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "manualAttendanceRejectsDuplicateAndDateFiltersUsePersistedRecordsWithoutAI",
+    "seconds": 0.194,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "foreignUserCannotReadEditDeleteCheckInOrRevokeAndDatabaseRemainsUnchanged",
+    "seconds": 0.232,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "longTitleAndNonIntegerDurationAreClearBadRequestsWithoutWrites",
+    "seconds": 0.103,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "unsupportedHistorySortIsAClientErrorAndValidSortStillWorks",
+    "seconds": 0.042,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "completedLearningStillAcceptsAttendanceInsidePeriodAndRejectsDuplicates",
+    "seconds": 0.246,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "learningSubmissionActivatesByBusinessDateWithoutWaitingForScheduledRefresh",
+    "seconds": 0.122,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "pendingEditsAndRemovalPreserveDateRejectOldRequestsAndRespectClosedPlans",
+    "seconds": 0.199,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "frontendApiModuleWorksAgainstRealHttpServerAndMysql",
+    "seconds": 0.745,
+    "outcome": "passed",
+    "layer": "frontend-real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "retryAfterLostResponseKeepsOnePendingSubmissionAndRejectsKeyReuse",
+    "seconds": 0.073,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "stepContentChangeRequiresExplicitProgressPolicyAndKeepsHistoryWithoutOldProgress",
+    "seconds": 0.195,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "databasePaginationIsStableFilteredBoundedAndDoesNotChangeStatistics",
+    "seconds": 0.451,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "dashboardUsesPersistedWeightedGainEvenAfterStepWeightsChange",
+    "seconds": 0.093,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  },
+  {
+    "class": "com.lifetrack.UserOperationIntegrationTest",
+    "name": "invalidRequestsDoNotPersistAnythingAndDeleteActuallyRemovesAllRelations",
+    "seconds": 0.136,
+    "outcome": "passed",
+    "layer": "real-http-mysql"
+  }
+]

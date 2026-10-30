@@ -22,5 +22,10 @@ public class DeferredLearningRecordController {
     @PostMapping("/{id}/retry") public Result<ActionSyncResponse> retry(@PathVariable Long id) {
         return Result.success(service.retry(id));
     }
+    @PutMapping("/{id}") public Result<DeferredLearningRecordResponse> update(@PathVariable Long id,
+            @RequestBody @Valid DeferredLearningRecordUpdateRequest request) { return Result.success(service.update(id, request)); }
+    @DeleteMapping("/{id}") public Result<Void> delete(@PathVariable Long id) {
+        service.delete(id); return Result.success();
+    }
     @PostMapping("/import-legacy") public Result<Integer> importLegacy() { return Result.success(service.importLegacyCheckIns()); }
 }

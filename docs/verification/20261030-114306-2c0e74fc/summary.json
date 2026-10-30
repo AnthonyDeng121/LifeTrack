@@ -1,0 +1,63 @@
+{
+  "runId": "20261030-114306-2c0e74fc",
+  "startedAt": "2026-10-30T11:43:06.351732+08:00",
+  "finishedAt": "2026-10-30T11:44:36.288187+08:00",
+  "sourceCommit": "3e5e393b729f20a9df54331053584a0a4f835241",
+  "workingTreeDirty": true,
+  "sourceTreeSha256": "68483e55b4eaffaacc8612ef95dfa313bb40ef71c35015593c31b53fc5053ea1",
+  "database": "new isolated lifetrack_test_* schema",
+  "databaseRemoved": true,
+  "runtimeVersions": {
+    "mysql": "8.0.45",
+    "java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
+    "node": "v24.19.0",
+    "python": "Python 3.12.10"
+  },
+  "passed": true,
+  "errorType": null,
+  "testCases": 179,
+  "commands": [
+    {
+      "name": "backend",
+      "exitCode": 0,
+      "seconds": 70.578,
+      "log": ".verification/20261030-114306-2c0e74fc/backend.log",
+      "logSha256": "6383fd1100e18e6cb90aac08a4a3104fd9a252cd6e497b122ebba59b3da17371"
+    },
+    {
+      "name": "frontend",
+      "exitCode": 0,
+      "seconds": 12.171,
+      "log": ".verification/20261030-114306-2c0e74fc/frontend.log",
+      "logSha256": "1ab0c040dce77503ade9520c0505347d954e17e165b008d1e7cbd08b5e9ceb48"
+    },
+    {
+      "name": "python-ai",
+      "exitCode": 0,
+      "seconds": 0.953,
+      "log": ".verification/20261030-114306-2c0e74fc/python-ai.log",
+      "logSha256": "27b092c8f0b541c48221814391e837c1867d85071a27c055123907bd2727c3c6",
+      "testCount": 12
+    },
+    {
+      "name": "verification-tooling",
+      "exitCode": 0,
+      "seconds": 1.609,
+      "log": ".verification/20261030-114306-2c0e74fc/verification-tooling.log",
+      "logSha256": "4e47e6dff051850b29c0c6e8e5cabb9264fb23e98f40fdcbad63e4c067325f23",
+      "testCount": 5
+    },
+    {
+      "name": "python-dependencies",
+      "exitCode": 0,
+      "seconds": 0.875,
+      "log": ".verification/20261030-114306-2c0e74fc/python-dependencies.log",
+      "logSha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    }
+  ],
+  "boundaries": {
+    "browser": "not executed by this runner",
+    "realModel": "not executed; deterministic tests use unavailable AI or controlled test doubles",
+    "frontendHttpContract": "original frontend API/http modules against real Spring Boot + MySQL; uni transport bridge uses fetch"
+  }
+}

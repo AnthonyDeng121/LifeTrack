@@ -31,13 +31,13 @@ public class DeferredLearningRecordService {
             Task task = tasks.findById(taskId).orElseThrow(() -> new BusinessException(404, "计划不存在"));
             if (!task.getUserId().equals(userId)) throw new BusinessException(403, "无权查看该计划");
         }
-        var entries = records.findPendingPage(userId, taskId, DeferredLearningRecord.Status.APPLIED,
+        var entries = records.findPendingPage(userId, taskId, List.of(DeferredLearningRecord.Status.PENDING, DeferredLearningRecord.Status.UNMATCHED),
                 org.springframework.data.domain.PageRequest.of(page, size, org.springframework.data.domain.Sort.by(
                         org.springframework.data.domain.Sort.Direction.DESC, "recordedAt", "id")));
-        Map<Long, String> titles = tasks.findAllById(entries.getContent().stream().map(DeferredLearningRecord::getTaskId).distinct().toList())
-                .stream().filter(t -> t.getUserId().equals(userId)).collect(Collectors.toMap(Task::getId, Task::getTitle));
+        Map<Long, Task> parents = tasks.findAllById(entries.getContent().stream().map(DeferredLearningRecord::getTaskId).distinct().toList())
+                .stream().filter(t -> t.getUserId().equals(userId)).collect(Collectors.toMap(Task::getId, t -> t));
         return PageResponse.of(entries.getTotalElements(), entries.getContent().stream()
-                .map(r -> response(r, titles.getOrDefault(r.getTaskId(), "已删除的计划"))).toList());
+                .map(r -> response(r, parents.get(r.getTaskId()))).toList());
     }
 
     /** 原文先提交到数据库；外部AI失败不会回滚原文，也不会产生学习时长或打卡。 */
@@ -62,12 +62,15 @@ public class DeferredLearningRecordService {
         Optional<DeferredLearningRecord> existing = records.findByUserIdAndRequestId(userId, requestId);
         if (existing.isPresent()) {
             DeferredLearningRecord previous = existing.get();
+            if (previous.getStatus() == DeferredLearningRecord.Status.DISCARDED)
+                throw new BusinessException(409, "该次记录已删除或替换，不能重新处理旧提交");
             if (!previous.getTaskId().equals(request.getTaskId()) || !previous.getContent().equals(request.getContent().trim())
                     || !previous.getDurationMinutes().equals(request.getDurationMinutes()))
                 throw new BusinessException(409, "提交标识已用于其他学习内容，请重新提交");
-            return response(previous, task.getTitle());
+            return response(previous, task);
         }
-        LocalDateTime now = LocalDateTime.now(ZONE);
+        // MySQL DATETIME基线精度为秒，先截断而非让数据库四舍五入，防止23:59:59跨到次日。
+        LocalDateTime now = LocalDateTime.now(ZONE).withNano(0);
         LocalDate today = now.toLocalDate();
         PlanDateRules.refresh(task, today);
         if (task.getStatus() != PlanStatus.IN_PROGRESS || today.isBefore(task.getStartDate()) || today.isAfter(task.getEndDate())) {
@@ -78,18 +81,16 @@ public class DeferredLearningRecordService {
         DeferredLearningRecord record = records.save(DeferredLearningRecord.builder().userId(userId).taskId(task.getId()).requestId(requestId)
                 .content(request.getContent().trim()).durationMinutes(request.getDurationMinutes()).recordedAt(now)
                 .status(DeferredLearningRecord.Status.PENDING).lastAnalysis("记录已保存，尚未分析成功，时长未计入").build());
-        return response(record, task.getTitle());
+        return response(record, task);
     }
 
     public ActionSyncResponse retry(Long id) {
         Long userId = UserContext.getUserId();
         DeferredLearningRecord record = records.findById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
         if (!record.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
-        if (record.getStatus() == DeferredLearningRecord.Status.APPLIED) throw new BusinessException(409, "该记录已处理，请勿重复补进度");
+        requirePending(record);
         Task task = tasks.findById(record.getTaskId()).orElseThrow(() -> new BusinessException(404, "计划不存在"));
-        if (task.getStatus().isClosed()) {
-            throw new BusinessException(400, "已关闭计划不可补分析，计划不会重新打开");
-        }
+        requireRetryable(task, record);
         ActionSyncRequest request = new ActionSyncRequest();
         request.setTaskId(record.getTaskId()); request.setRawInput(record.getContent());
         request.setDurationMinutes(record.getDurationMinutes());
@@ -99,11 +100,10 @@ public class DeferredLearningRecordService {
 
     private ActionSyncResponse applyRetry(Long id, Long userId, DeferredLearningRecord snapshot, PreparedLearningRecord prepared) {
         Task parent = ownedLockedTask(snapshot.getTaskId(), userId);
-        if (parent.getStatus().isClosed())
-            throw new BusinessException(400, "已关闭计划不可补分析，计划不会重新打开");
         DeferredLearningRecord record = records.findLockedById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
         if (!record.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
-        if (record.getStatus() == DeferredLearningRecord.Status.APPLIED) throw new BusinessException(409, "该记录已处理，请勿重复补进度");
+        requirePending(record);
+        requireRetryable(parent, record);
         // 与进度写入共用事务。先标记已处理，汇总时不再重复计算这条待分析时长。
         record.setStatus(DeferredLearningRecord.Status.APPLIED);
         ActionSyncResponse result = actions.syncPreparedAction(prepared);
@@ -114,6 +114,70 @@ public class DeferredLearningRecordService {
         actions.refreshAttendance(record.getTaskId(), record.getRecordedAt().toLocalDate());
         result.setRecordId(id);
         return result;
+    }
+
+    /** 修改生成新记录；原提交仅留防重凭证，避免旧请求覆盖修正后的内容。 */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public DeferredLearningRecordResponse update(Long id, DeferredLearningRecordUpdateRequest request) {
+        Long userId = UserContext.getUserId();
+        DeferredLearningRecord previous = ownedPendingLocked(id, userId);
+        Task parent = tasks.findById(previous.getTaskId()).orElseThrow(() -> new BusinessException(404, "计划不存在"));
+        requireRetryable(parent, previous);
+        if (request.getContent() == null || request.getContent().isBlank() || request.getContent().trim().length() > 500)
+            throw new BusinessException(400, "学习内容应为1到500字");
+        if (request.getDurationMinutes() == null || request.getDurationMinutes() < 1 || request.getDurationMinutes() > 1440)
+            throw new BusinessException(400, "学习时长必须为1到1440整数分钟");
+        DeferredLearningRecord replacement = records.save(DeferredLearningRecord.builder().userId(userId)
+                .taskId(previous.getTaskId()).requestId(UUID.randomUUID().toString()).recordedAt(previous.getRecordedAt())
+                .content(request.getContent().trim()).durationMinutes(request.getDurationMinutes())
+                .status(DeferredLearningRecord.Status.PENDING).lastAnalysis("内容已修正，等待重新分析，时长尚未计入").build());
+        discard(previous);
+        return response(replacement, parent);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void delete(Long id) {
+        discard(ownedPendingLocked(id, UserContext.getUserId()));
+    }
+
+    private DeferredLearningRecord ownedPendingLocked(Long id, Long userId) {
+        Long taskId = records.findTaskIdById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
+        ownedLockedTask(taskId, userId); // 先读取标量定位父计划，避免等待锁前将旧记录实体放入一级缓存。
+        DeferredLearningRecord current = records.findLockedById(id).orElseThrow(() -> new BusinessException(404, "待分析记录不存在"));
+        if (!current.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该记录");
+        requirePending(current);
+        return current;
+    }
+
+    private void discard(DeferredLearningRecord record) {
+        record.setStatus(DeferredLearningRecord.Status.DISCARDED);
+        record.setContent("[已移除]"); record.setDurationMinutes(0); record.setLastAnalysis("已移除，仅保留提交防重凭证");
+        records.save(record);
+    }
+
+    private void requirePending(DeferredLearningRecord record) {
+        if (record.getStatus() == DeferredLearningRecord.Status.APPLIED)
+            throw new BusinessException(409, "该记录已处理，请勿重复补进度");
+        if (record.getStatus() == DeferredLearningRecord.Status.DISCARDED)
+            throw new BusinessException(409, "该记录已删除或替换，请刷新列表");
+    }
+
+    private String retryBlockedReason(Task task, DeferredLearningRecord record) {
+        if (task == null) return "计划不存在，无法重新分析";
+        LocalDate today = LocalDate.now(ZONE);
+        if (task.getStatus().isClosed() || task.getStatus() == PlanStatus.EXPIRED
+                || today.isAfter(task.getEndDate())) return "计划已关闭或过期，仅可查看或删除待分析记录";
+        if (task.getStatus() != PlanStatus.IN_PROGRESS || today.isBefore(task.getStartDate()))
+            return "计划尚未进行，暂不可修改或重新分析";
+        LocalDate original = record.getRecordedAt().toLocalDate();
+        if (original.isBefore(task.getStartDate()) || original.isAfter(task.getEndDate()))
+            return "原记录日期已在计划周期外，仅可查看或删除";
+        return "";
+    }
+
+    private void requireRetryable(Task task, DeferredLearningRecord record) {
+        String reason = retryBlockedReason(task, record);
+        if (!reason.isEmpty()) throw new BusinessException(400, reason);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -146,8 +210,10 @@ public class DeferredLearningRecordService {
         if (!task.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该计划");
         return task;
     }
-    private DeferredLearningRecordResponse response(DeferredLearningRecord r, String title) {
-        return new DeferredLearningRecordResponse(r.getId(), r.getTaskId(), title, r.getContent(), r.getDurationMinutes(),
-                r.getRecordedAt(), r.getStatus(), r.getLastAnalysis());
+    private DeferredLearningRecordResponse response(DeferredLearningRecord r, Task task) {
+        String reason = r.getStatus() == DeferredLearningRecord.Status.APPLIED || r.getStatus() == DeferredLearningRecord.Status.DISCARDED
+                ? "记录已处理或移除" : retryBlockedReason(task, r);
+        return new DeferredLearningRecordResponse(r.getId(), r.getTaskId(), task == null ? "已删除的计划" : task.getTitle(), r.getContent(), r.getDurationMinutes(),
+                r.getRecordedAt(), r.getStatus(), r.getLastAnalysis(), reason.isEmpty(), reason);
     }
 }

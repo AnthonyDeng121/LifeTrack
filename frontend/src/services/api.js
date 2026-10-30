@@ -93,7 +93,9 @@ export function addSubtask(taskId, data) { return request(endpoints.tasks.addSub
 export function saveDeferredLearningRecord(data) { return request(endpoints.actions.saveDeferred(data)); }
 export function getDeferredLearningRecords(filters = {}) { return request(endpoints.actions.deferred(filters)); }
 export function previewPeriodChange(taskId, startDate, endDate) { return request(endpoints.tasks.periodPreview(taskId, startDate, endDate)); }
-export function retryDeferredLearningRecord(id) { return request(endpoints.actions.retryDeferred(id)); }
+export function retryDeferredLearningRecord(id) { return request({ ...endpoints.actions.retryDeferred(id), timeout: 50000 }); }
+export function updateDeferredLearningRecord(id, data) { return request(endpoints.actions.updateDeferred(id, data)); }
+export function deleteDeferredLearningRecord(id) { return request(endpoints.actions.deleteDeferred(id)); }
 export function importDeferredLearningRecords() { return request(endpoints.actions.importDeferred); }
 
 export function getActionHistory(page = 0, size = 10, taskId) {

@@ -82,3 +82,18 @@ assert.deepEqual(endpoints.feedback.mood(6), {
 });
 
 console.log("Frontend endpoint declaration checks passed (no backend requests).");
+
+// 执行实际API封装，验证首发和补分析都给后端40秒AI读取预算留足传输余量。
+const calls = [];
+globalThis.uni = { getStorageSync() { return ""; }, request(options) {
+  calls.push(options); queueMicrotask(() => options.success({ statusCode: 200, data: { code: 200, data: { updates: [] } } }));
+} };
+const liveApi = await import("../src/services/api.js");
+await liveApi.syncAction("synthetic learning", 30, 101, "11111111-1111-1111-1111-111111111111");
+await liveApi.retryDeferredLearningRecord(7);
+assert.equal(calls[0].timeout, 50000); assert.equal(calls[1].timeout, calls[0].timeout);
+await liveApi.updateDeferredLearningRecord(7, { content: "corrected", durationMinutes: 45 });
+await liveApi.deleteDeferredLearningRecord(8);
+assert.equal(calls[2].method, "PUT"); assert.equal(calls[2].url.endsWith("/actions/deferred/7"), true);
+assert.deepEqual(calls[2].data, { content: "corrected", durationMinutes: 45 });
+assert.equal(calls[3].method, "DELETE");

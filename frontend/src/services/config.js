@@ -75,6 +75,8 @@ export const endpoints = {
     saveDeferred: (data) => ({ method: "POST", path: "/actions/deferred", data }),
     deferred: (filters = {}) => ({ method: "GET", path: "/actions/deferred", data: filters }),
     retryDeferred: (id) => ({ method: "POST", path: `/actions/deferred/${id}/retry` }),
+      updateDeferred: (id, data) => ({ method: "PUT", path: `/actions/deferred/${id}`, data }),
+      deleteDeferred: (id) => ({ method: "DELETE", path: `/actions/deferred/${id}` }),
     importDeferred: { method: "POST", path: "/actions/deferred/import-legacy" },
     sync: (rawInput, durationMinutes, taskId, requestId) => ({
       method: "POST",

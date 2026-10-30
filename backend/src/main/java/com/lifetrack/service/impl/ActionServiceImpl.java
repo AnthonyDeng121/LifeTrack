@@ -301,21 +301,24 @@ public class ActionServiceImpl implements ActionService {
     @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void deleteAction(Long actionId) {
         Long userId = UserContext.getUserId();
-        ActionLog actionLog = actionLogRepository.findById(actionId)
+        var target = actionLogRepository.findRemovalTarget(actionId)
                 .orElseThrow(() -> new BusinessException(404, "记录不存在"));
         
-        if (!actionLog.getUserId().equals(userId)) {
+        if (!target.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权删除该记录");
         }
 
-        if (actionLog.getTaskId() != null) {
-            Task parent = taskRepository.findLockedById(actionLog.getTaskId())
+        if (target.getTaskId() != null) {
+            Task parent = taskRepository.findLockedById(target.getTaskId())
                     .orElseThrow(() -> new BusinessException(404, "关联计划不存在"));
             if (!parent.getUserId().equals(userId)) throw new BusinessException(403, "无权操作该计划");
             if (parent.getStatus().isClosed()) {
                 throw new BusinessException(400, "已关闭计划不可撤销学习记录，计划不会重新打开");
             }
         }
+        // 父计划锁之后才读取日志，才能看到并发人工确认刚解除的步骤关联。
+        ActionLog actionLog = actionLogRepository.findLockedById(actionId)
+                .orElseThrow(() -> new BusinessException(404, "记录已撤销，请勿重复操作"));
         if (!actionLogRepository.existsById(actionId)) {
             throw new BusinessException(404, "记录已撤销，请勿重复操作");
         }
@@ -360,15 +363,18 @@ public class ActionServiceImpl implements ActionService {
     private void refreshAutomaticAttendance(Long userId, Long taskId, LocalDate date) {
         checkInRecordRepository.findByUserIdAndTaskIdAndCheckInDate(userId, taskId, date)
                 .ifPresent(record -> {
-                    List<ActionLog> remaining = actionLogRepository.findByTaskId(taskId).stream()
-                            .filter(a -> a.getUserId().equals(userId) && a.getCreatedAt().toLocalDate().equals(date)).toList();
-                    if (remaining.isEmpty() && Boolean.TRUE.equals(record.getAutomatic())) {
+                    var from = date.atStartOfDay();
+                    var until = date.plusDays(1).atStartOfDay();
+                    var totals = actionLogRepository.aggregateDay(userId, taskId, from, until);
+                    if (totals.getRecordCount() == 0 && Boolean.TRUE.equals(record.getAutomatic())) {
                         checkInRecordRepository.delete(record);
                     } else {
                         // 只汇总已成功落库的学习日志；手动打卡原备注不再被覆盖。
                         // 撤销最后一条成功日志时也必须归零；旧手动备注始终保留。
-                        record.setDurationMinutes(remaining.stream().mapToInt(a -> a.getDurationMinutes() == null ? 0 : a.getDurationMinutes()).sum());
-                        if (Boolean.TRUE.equals(record.getAutomatic()) && !remaining.isEmpty()) record.setContent(remaining.get(0).getRawInput());
+                        record.setDurationMinutes(Math.toIntExact(totals.getMinutes()));
+                        if (Boolean.TRUE.equals(record.getAutomatic()) && totals.getRecordCount() > 0)
+                            actionLogRepository.findFirstByUserIdAndTaskIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAscIdAsc(
+                                    userId, taskId, from, until).ifPresent(first -> record.setContent(first.getRawInput()));
                         checkInRecordRepository.save(record);
                     }
                 });

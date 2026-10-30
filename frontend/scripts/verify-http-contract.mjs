@@ -58,6 +58,14 @@ try {
   await api.saveDeferredLearningRecord({taskId:id,content:'frontend durable retry contract',durationMinutes:30,requestId:key});
   const pending=await api.getDeferredLearningRecords({taskId:id,page:0,size:20});
   assert.equal(pending.total,1); assert.equal(pending.list.length,1);
+  assert.equal(pending.list[0].canRetry,true);
+  const replacement=await api.updateDeferredLearningRecord(pending.list[0].id,{content:'corrected durable retry contract',durationMinutes:45});
+  assert.notEqual(replacement.id,pending.list[0].id);
+  assert.equal(replacement.recordedAt,pending.list[0].recordedAt);
+  await assert.rejects(()=>api.retryDeferredLearningRecord(pending.list[0].id),e=>e.code===409);
+  await assert.rejects(()=>api.saveDeferredLearningRecord({taskId:id,content:'frontend durable retry contract',durationMinutes:30,requestId:key}),e=>e.code===409);
+  await api.deleteDeferredLearningRecord(replacement.id);
+  assert.equal((await api.getDeferredLearningRecords({taskId:id})).total,0);
   assert.equal((await api.getActionHistory(0,20,id)).total,0);
   assert.deepEqual(await api.previewPeriodChange(id,today,today),[]);
 } finally {

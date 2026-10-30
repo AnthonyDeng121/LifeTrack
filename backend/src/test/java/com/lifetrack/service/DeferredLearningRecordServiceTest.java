@@ -48,6 +48,7 @@ class DeferredLearningRecordServiceTest {
         assertEquals(DeferredLearningRecord.Status.PENDING, response.status());
         assertEquals("学习编曲", response.content());
         assertEquals(today, response.recordedAt().toLocalDate());
+        assertEquals(0, response.recordedAt().getNano(), "与数据库秒级精度一致，禁止跨日四舍五入");
         verifyNoInteractions(checkInService, checkIns, actions);
     }
     void retryable() {
@@ -88,6 +89,19 @@ class DeferredLearningRecordServiceTest {
         assertThrows(BusinessException.class, () -> service.retry(10L));
         assertEquals(DeferredLearningRecord.Status.PENDING, pending.getStatus());
         verifyNoInteractions(actions); verify(records, never()).save(any());
+    }
+    @Test void expiredPlanAlsoRejectsRetryWithoutCallingAi() {
+        retryable(); task.setStatus(PlanStatus.EXPIRED);
+        assertEquals(400, assertThrows(BusinessException.class, () -> service.retry(10L)).getCode());
+        verifyNoInteractions(actions);
+    }
+    @Test void appliedRecordCannotBeEditedOrDeletedAsPending() {
+        retryable(); pending.setStatus(DeferredLearningRecord.Status.APPLIED);
+        when(records.findTaskIdById(10L)).thenReturn(Optional.of(1L));
+        var edit = new DeferredLearningRecordUpdateRequest(); edit.setContent("不能重复计时"); edit.setDurationMinutes(30);
+        assertEquals(409, assertThrows(BusinessException.class, () -> service.update(10L, edit)).getCode());
+        assertEquals(409, assertThrows(BusinessException.class, () -> service.delete(10L)).getCode());
+        verify(records, never()).save(any()); verifyNoInteractions(actions);
     }
     @Test void importsLegacyCheckInUsingCheckInDateInsteadOfCreationDate() {
         CheckInRecord checkIn = CheckInRecord.builder().userId(7L).taskId(1L).content("旧版学习记录").durationMinutes(30)

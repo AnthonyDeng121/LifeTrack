@@ -198,6 +198,34 @@ await pagedRecord.retryRecord(pagedRecord.pendingRecords.value[0]);
 assert.equal(pagedRecord.deferredPage.value,0);assert.equal(pagedRecord.deferredTotal.value,20);
 assert.equal(pagedRecord.rawInput.value,"未提交草稿");
 
+let editableRows = Array.from({length:21}, (_, i) => ({id:200-i,taskId:101,status:"PENDING",content:"待修正记录",durationMinutes:30,canRetry:true}));
+let confirmedPendingDelete = false, pendingEditCalls = 0, pendingDeleteCalls = 0, closedRetryCalls = 0;
+const pendingEditor = await page("record", {
+  getDeferredLearningRecords: async ({page,size}) => ({total:editableRows.length,list:editableRows.slice(page*size,(page+1)*size)}),
+  updateDeferredLearningRecord: async (id, data) => { pendingEditCalls++; editableRows=editableRows.map(r=>r.id===id?{...r,...data,id:999}:r); return {id:999}; },
+  deleteDeferredLearningRecord: async id => { pendingDeleteCalls++; editableRows=editableRows.filter(r=>r.id!==id); },
+  retryDeferredLearningRecord: async () => { closedRetryCalls++; },
+  uni: { showToast() {}, showModal: ({success}) => success({confirm:confirmedPendingDelete}), getStorageSync() {return [];}, setStorageSync() {} },
+}, "loadDeferredRecords,nextDeferredPage,deferredPage,deferredTotal,pendingRecords,editingDeferred,editDeferredRecord,saveDeferredEdit,removeDeferredRecord,retryRecord,rawInput");
+await pendingEditor.loadDeferredRecords(); await pendingEditor.nextDeferredPage();
+const lastPending = pendingEditor.pendingRecords.value[0];
+pendingEditor.rawInput.value="保留未提交草稿";
+pendingEditor.editDeferredRecord(lastPending);
+pendingEditor.editingDeferred.value.minutes="60";
+await pendingEditor.saveDeferredEdit(); assert.equal(pendingEditCalls,0);
+pendingEditor.editingDeferred.value.minutes="45"; pendingEditor.editingDeferred.value.content="修正后的具体事实";
+await pendingEditor.saveDeferredEdit();
+assert.equal(pendingEditCalls,1); assert.equal(pendingEditor.pendingRecords.value[0].id,999);
+assert.equal(pendingEditor.pendingRecords.value[0].durationMinutes,45);
+await pendingEditor.removeDeferredRecord(pendingEditor.pendingRecords.value[0]); assert.equal(pendingDeleteCalls,0);
+confirmedPendingDelete=true;
+await pendingEditor.removeDeferredRecord(pendingEditor.pendingRecords.value[0]);
+assert.equal(pendingDeleteCalls,1); assert.equal(pendingEditor.deferredPage.value,0); assert.equal(pendingEditor.deferredTotal.value,20);
+assert.equal(pendingEditor.rawInput.value,"保留未提交草稿");
+await pendingEditor.retryRecord({id:9999,canRetry:false,retryBlockedReason:"计划已关闭"});
+assert.equal(closedRetryCalls,0);
+pendingEditor.editDeferredRecord({id:9999,canRetry:false}); assert.equal(pendingEditor.editingDeferred.value,null);
+
 let lost = true; const submissionIds=[];
 const resilient = await page("record", {
   syncAction:async (...args)=>{submissionIds.push(args[3]);if(lost){lost=false;throw new Error("response lost after save");}return {updates:[],replayed:true};},

@@ -33,6 +33,12 @@ class ActionServiceTest {
     LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
 
     @BeforeEach void setup() {
+        lenient().when(logs.findRemovalTarget(anyLong())).thenAnswer(i -> logs.findById(i.getArgument(0)).map(log -> new ActionLogRepository.RemovalTarget() {
+            public Long getUserId() { return log.getUserId(); }
+            public Long getTaskId() { return log.getTaskId(); }
+        }));
+        lenient().when(logs.findLockedById(anyLong())).thenAnswer(i -> logs.findById(i.getArgument(0)));
+        lenient().when(logs.aggregateDay(anyLong(), anyLong(), any(), any())).thenReturn(totals(0, 0));
         lenient().when(recordTransactions.execute(any())).thenAnswer(i -> ((org.springframework.transaction.support.TransactionCallback<?>) i.getArgument(0)).doInTransaction(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class)));
         lenient().when(tasks.findById(anyLong())).thenAnswer(i -> tasks.findLockedById(i.getArgument(0)));
         lenient().when(tasks.findAllById(any())).thenAnswer(i -> {
@@ -53,6 +59,12 @@ class ActionServiceTest {
                 .currentProgress(BigDecimal.ZERO).isCompleted(0).build();
     }
     @AfterEach void cleanup() { UserContext.clear(); }
+    ActionLogRepository.DayTotals totals(long count, long minutes) {
+        return new ActionLogRepository.DayTotals() {
+            public long getRecordCount() { return count; }
+            public long getMinutes() { return minutes; }
+        };
+    }
     void eligible() {
         eligible(true);
     }
@@ -234,7 +246,6 @@ class ActionServiceTest {
         when(logs.existsById(100L)).thenReturn(true);
         when(steps.findById(11L)).thenReturn(Optional.of(step));
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
-        when(logs.findByTaskId(1L)).thenReturn(List.of());
         CheckInRecord record = CheckInRecord.builder().automatic(true).build();
         when(checkIns.findByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(Optional.of(record));
         service.deleteAction(100L);
@@ -246,13 +257,16 @@ class ActionServiceTest {
         when(tasks.findLockedById(1L)).thenReturn(Optional.of(plan));
         var record = CheckInRecord.builder().automatic(true).build();
         when(checkIns.findByUserIdAndTaskIdAndCheckInDate(7L, 1L, today)).thenReturn(Optional.of(record));
-        when(logs.findByTaskId(1L)).thenReturn(List.of(ActionLog.builder().userId(7L).taskId(1L)
+        when(logs.aggregateDay(eq(7L), eq(1L), any(), any())).thenReturn(totals(1, 30));
+        when(logs.findFirstByUserIdAndTaskIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAscIdAsc(eq(7L), eq(1L), any(), any())).thenReturn(Optional.of(ActionLog.builder().userId(7L).taskId(1L)
                 .contribution(BigDecimal.ZERO).durationMinutes(30).rawInput("继续练习编曲软件")
                 .createdAt(today.atTime(10, 0)).build()));
         service.refreshAttendance(1L, today);
         assertEquals(30, record.getDurationMinutes());
         verify(checkIns).save(record);
         verify(checkIns, never()).delete(any());
+        verify(logs, never()).findByTaskId(anyLong());
+        verify(logs).aggregateDay(7L, 1L, today.atStartOfDay(), today.plusDays(1).atStartOfDay());
     }
 
     @Test void rejectsNegativeAndZeroContributions() {

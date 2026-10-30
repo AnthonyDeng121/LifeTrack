@@ -21,7 +21,7 @@
           <text v-else-if="!plans.length" class="hint">暂无有效周期内可打卡的计划。学习和打卡同时达标后，计划停止新增记录。</text>
         </view>
         <text class="hint">日期：{{ businessToday }}</text>
-        <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!retryingId" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
+        <button class="glass-button sync-btn" :disabled="manualSaving || manualChecking || manualAlreadyChecked || syncing || !!pendingBusy" :loading="manualSaving || manualChecking" @tap="submitDailyCheckIn">{{ manualAlreadyChecked ? "今日已打卡" : "今日打卡" }}</button>
         <text v-if="manualMessage" class="hint" role="status">{{ manualMessage }}</text>
         <button v-if="manualResultTaskId" class="glass-button" @tap="viewManualHistory">查看该计划打卡历史</button>
       </view>
@@ -56,7 +56,7 @@
           <text class="hint">小时和分钟均填整数，分钟为0～59；总时长1分钟～24小时。仅分析成功的记录计入学习时长。</text>
         </view>
 
-        <button class="glass-button sync-btn" :disabled="syncing || manualSaving || !!retryingId" :loading="syncing" @tap="submitRecord">
+        <button class="glass-button sync-btn" :disabled="syncing || manualSaving || !!pendingBusy" :loading="syncing" @tap="submitRecord">
           分析并保存记录
         </button>
         <text class="hint">
@@ -97,7 +97,24 @@
           <text class="text-muted">{{ item.recordedAt }} · 填写 {{ item.durationMinutes }} 分钟（未计入）· {{ item.status === "UNMATCHED" ? "暂未匹配" : "尚未分析成功" }}</text>
           <text class="raw">{{ item.content }}</text>
           <text class="text-muted">{{ item.lastAnalysis }}</text>
-          <button class="glass-button retry-analysis-btn" :disabled="syncing || !!retryingId" :loading="retryingId === item.id" @tap="retryRecord(item)">重新分析</button>
+          <text v-if="item.canRetry === false" class="hint">{{ item.retryBlockedReason }}</text>
+          <view v-if="editingDeferred?.id === item.id" class="pending-editor">
+            <textarea v-model="editingDeferred.content" class="glass-input pending-content" maxlength="500" :disabled="!!pendingBusy" />
+            <view class="duration-fields">
+              <input v-model="editingDeferred.hours" type="number" class="glass-input" :disabled="!!pendingBusy" /><text>小时</text>
+              <input v-model="editingDeferred.minutes" type="number" class="glass-input" :disabled="!!pendingBusy" /><text>分钟</text>
+            </view>
+            <text class="hint">修改后保留原学习日期，不自动计时；需重新分析成功后才计入。</text>
+            <view class="pending-actions">
+              <button class="glass-button" :disabled="!!pendingBusy || syncing" @tap="saveDeferredEdit">保存修改</button>
+              <button class="glass-button" :disabled="!!pendingBusy" @tap="editingDeferred = null">取消</button>
+            </view>
+          </view>
+          <view class="pending-actions">
+            <button v-if="item.canRetry !== false" class="glass-button retry-analysis-btn" :disabled="syncing || !!pendingBusy" :loading="retryingId === item.id" @tap="retryRecord(item)">重新分析</button>
+            <button v-if="item.canRetry !== false" class="glass-button" :disabled="syncing || !!pendingBusy" @tap="editDeferredRecord(item)">修改</button>
+            <button class="glass-button" :disabled="syncing || !!pendingBusy" @tap="removeDeferredRecord(item)">删除</button>
+          </view>
         </view>
       </view>
       <view v-if="deferredTotal" class="history-footer">
@@ -111,7 +128,7 @@
       <view class="section-head">
         <text class="section-title">历史记录</text>
       </view>
-      <text class="hint">学习记录可在同一天多次追加，正式打卡每天只有一条。已完成、人工结束或已取消计划的记录不能撤销。</text>
+      <text class="hint">学习记录可在同一天多次追加，正式打卡每天只有一条。已完成、人工结束或已取消计划的记录不能撤销。人工确认完成后，撤销旧AI记录仍保留人工确认的学习成果。</text>
       <view v-if="historyLoading && history.length === 0" class="glass-card empty-card">
         <text>正在读取历史...</text>
       </view>
@@ -131,7 +148,7 @@
             <text class="text-muted analysis">{{ item.aiAnalysis }}</text>
             <text class="text-muted time">{{ item.createdAt }}</text>
           </view>
-          <button class="delete-btn" :disabled="!!undoingId || syncing || manualSaving || !!retryingId" @tap="removeHistory(item.id)">撤销</button>
+          <button class="delete-btn" :disabled="!!undoingId || syncing || manualSaving || !!pendingBusy" @tap="removeHistory(item.id)">撤销</button>
         </view>
       </view>
       <view v-if="history.length" class="history-footer">
@@ -152,7 +169,7 @@
 import { computed, ref } from "vue";
 import { onShow, onHide, onUnload, onLoad } from "@dcloudio/uni-app";
 import LifeTabBar from "../../components/LifeTabBar.vue";
-import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, getDeferredLearningRecords, retryDeferredLearningRecord } from "../../services/api";
+import { deleteAction, getActionHistory, syncAction, getTasks, createCheckIn, getCheckInHistory, getDeferredLearningRecords, retryDeferredLearningRecord, updateDeferredLearningRecord, deleteDeferredLearningRecord } from "../../services/api";
 import { getBusinessDate } from "../../services/businessTime";
 import { getUser, getApiBaseUrl } from "../../services/http";
 
@@ -209,7 +226,7 @@ function viewManualHistory() {
 }
 async function submitDailyCheckIn() {
   refreshBusinessDate();
-  if (manualSaving.value || manualChecking.value || manualAlreadyChecked.value || syncing.value || retryingId.value) return;
+  if (manualSaving.value || manualChecking.value || manualAlreadyChecked.value || syncing.value || pendingBusy.value) return;
   const plan = plans.value.find(item => item.id === manualTaskId.value);
   if (!plan) return uni.showToast({ title: "请选择进行中的学习计划", icon: "none" });
   const date = getBusinessDate();
@@ -271,12 +288,15 @@ const deferredRecords = ref([]);
 const deferredLoading = ref(false);
 const deferredError = ref("");
 const retryingId = ref(null);
+const pendingMutationId = ref(null);
+const pendingBusy = computed(() => retryingId.value || pendingMutationId.value);
+const editingDeferred = ref(null);
 const deferredPage = ref(0);
 const deferredTotal = ref(0);
 const deferredPageSize = 20;
 const deferredPageCount = computed(() => Math.max(1, Math.ceil(deferredTotal.value / deferredPageSize)));
 let deferredVersion = 0;
-const pendingRecords = computed(() => deferredRecords.value.filter(r => r.status !== "APPLIED"));
+const pendingRecords = computed(() => deferredRecords.value.filter(r => r.status !== "APPLIED" && r.status !== "DISCARDED"));
 async function loadDeferredRecords(requestedPage = 0) {
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 0;
   const version = ++deferredVersion;
@@ -293,15 +313,63 @@ async function loadDeferredRecords(requestedPage = 0) {
 function nextDeferredPage() { if (!deferredLoading.value && deferredPage.value < deferredPageCount.value - 1) return loadDeferredRecords(deferredPage.value + 1); }
 function previousDeferredPage() { if (!deferredLoading.value && deferredPage.value > 0) return loadDeferredRecords(deferredPage.value - 1); }
 async function retryRecord(item) {
-  if (syncing.value || manualSaving.value || retryingId.value) return;
+  if (syncing.value || manualSaving.value || pendingBusy.value) return;
+  if (item.canRetry === false) return uni.showToast({ title: item.retryBlockedReason || "当前计划不可重新分析", icon: "none" });
   retryingId.value = item.id;
   try {
     syncResult.value = await retryDeferredLearningRecord(item.id);
     resultIsRetry.value = true;
     await Promise.all([loadDeferredRecords(deferredPage.value), loadData(), loadPlans()]);
     uni.showToast({ title: syncResult.value.updates?.length ? "分析成功，时长已计入" : "分析未成功，时长未计入", icon: "none" });
-  } catch (error) { console.warn("retry learning record failed", error); }
+  } catch (error) {
+    console.warn("retry learning record failed", error);
+    await loadDeferredRecords(deferredPage.value);
+  }
   finally { retryingId.value = null; }
+}
+function editDeferredRecord(item) {
+  if (syncing.value || manualSaving.value || pendingBusy.value || item.canRetry === false) return;
+  editingDeferred.value = { id: item.id, original: item, content: item.content,
+    hours: String(Math.floor(item.durationMinutes / 60)), minutes: String(item.durationMinutes % 60) };
+}
+function clearOldSubmission(item) {
+  const signature = JSON.stringify([item.taskId, item.content.trim(), item.durationMinutes]);
+  for (const entry of unconfirmedSubmissions()) if (entry.signature === signature) forgetSubmission(entry.id);
+}
+async function saveDeferredEdit() {
+  const draft = editingDeferred.value;
+  if (!draft || syncing.value || manualSaving.value || pendingBusy.value) return;
+  const content = draft.content.trim();
+  const minutes = readDurationMinutes(draft.hours, draft.minutes);
+  if (!content || content.length > 500 || minutes === null)
+    return uni.showToast({ title: "填写1～500字内容及1～1440整数分钟", icon: "none" });
+  pendingMutationId.value = draft.id;
+  try {
+    await updateDeferredLearningRecord(draft.id, { content, durationMinutes: minutes });
+    clearOldSubmission(draft.original);
+    editingDeferred.value = null;
+    syncResult.value = null;
+    await loadDeferredRecords(deferredPage.value);
+    uni.showToast({ title: "已保存修改，请重新分析", icon: "none" });
+  } catch (error) {
+    if (error.code === 409 || error.code === 404) { editingDeferred.value = null; await loadDeferredRecords(deferredPage.value); }
+  } finally { pendingMutationId.value = null; }
+}
+async function removeDeferredRecord(item) {
+  if (syncing.value || manualSaving.value || pendingBusy.value) return;
+  pendingMutationId.value = item.id;
+  try {
+    const confirmed = await new Promise(resolve => uni.showModal({ title: "删除待分析记录", content: "删除后该记录不再分析；已成功的学习历史与打卡不受影响。",
+      success: result => resolve(result.confirm), fail: () => resolve(false) }));
+    if (!confirmed) return;
+    await deleteDeferredLearningRecord(item.id);
+    clearOldSubmission(item);
+    if (editingDeferred.value?.id === item.id) editingDeferred.value = null;
+    if (syncResult.value?.recordId === item.id) syncResult.value = null;
+    await loadDeferredRecords(deferredPage.value);
+    uni.showToast({ title: "待分析记录已删除", icon: "none" });
+  } catch { await loadDeferredRecords(deferredPage.value); }
+  finally { pendingMutationId.value = null; }
 }
 onShow(loadDeferredRecords);
 const history = ref([]);
@@ -329,7 +397,7 @@ function formatProgress(value) {
 }
 
 async function submitRecord() {
-  if (syncing.value || manualSaving.value || retryingId.value) return;
+  if (syncing.value || manualSaving.value || pendingBusy.value) return;
   resultIsRetry.value = false;
   const value = rawInput.value.trim();
   const mins = readDurationMinutes();
@@ -428,9 +496,9 @@ onShow(() => { clearInterval(dateTimer); refreshBusinessDate(); dateTimer = setI
 onHide(() => clearInterval(dateTimer));
 onUnload(() => clearInterval(dateTimer));
 
-function readDurationMinutes() {
-  const hours = String(durationHours.value).trim();
-  const minutes = String(durationMinutes.value).trim();
+function readDurationMinutes(hoursValue = durationHours.value, minutesValue = durationMinutes.value) {
+  const hours = String(hoursValue).trim();
+  const minutes = String(minutesValue).trim();
   if ((!hours && !minutes) || !/^\d*$/.test(hours) || !/^\d*$/.test(minutes)) return null;
   const h = Number(hours || 0), m = Number(minutes || 0);
   const total = h * 60 + m;
@@ -464,7 +532,7 @@ function nextHistoryPage() { if (!historyLoading.value && historyPage.value + 1 
 function previousHistoryPage() { if (!historyLoading.value && historyPage.value > 0) return loadHistory(historyPage.value - 1); }
 function retryHistory() { return loadHistory(requestedHistoryPage); }
 async function removeHistory(id) {
-  if (undoingId.value || syncing.value || manualSaving.value || retryingId.value) return;
+  if (undoingId.value || syncing.value || manualSaving.value || pendingBusy.value) return;
   undoingId.value = id;
   try {
     await deleteAction(id);
@@ -486,6 +554,10 @@ onShow(() => { businessToday.value = getBusinessDate(); loadData(); });
 .history-pages { display: flex; gap: 12px; }
 .history-pages button { margin: 0; padding: 8px 18px; line-height: 1.5; font-size: 14px; }
 .deferred-card { display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
+.pending-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.pending-actions button { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
+.pending-editor { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; }
+.pending-content { width: 100%; min-height: 110px; box-sizing: border-box; }
 .import-deferred-btn, .retry-analysis-btn { margin: 0; padding: 8px 14px; line-height: 1.5; font-size: 13px; }
 .retry-analysis-btn { align-self: flex-end; }
 .record-hero {

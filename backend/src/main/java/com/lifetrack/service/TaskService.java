@@ -402,6 +402,8 @@ public class TaskService {
         }
 
         // 2. 更新状态
+        // 人工确认建立新的完成依据，旧AI日志仍保留时长和历史，但不再有权撤销此后的人工确认。
+        actionLogRepository.detachStepProgress(subTaskId);
         subTask.setIsCompleted(1);
         subTask.setCurrentProgress(BigDecimal.ONE);
         subTaskRepository.save(subTask);
