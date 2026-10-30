@@ -18,7 +18,7 @@ const testPhone = "198" + String(Date.now()).slice(-8);
 token = (await api("POST", "/auth/login/phone", { phone: testPhone, verifyCode: loginOptions.demoVerifyCode })).token;
 try {
   if (!matchingOnly) {
-    const draft = await api("POST", "/tasks/deconstruct/preview", { title: "系统学习计算机网络", stepCount: 10,
+    const draft = await api("POST", "/tasks/deconstruct/preview", { title: "系统学习计算机网络", stepCount: 10, startDate: today, endDate: end, targetDays: 5,
       guidance: "覆盖分层、链路、寻址、路由、TCP、UDP、DNS、HTTP与安全，最后通过综合抓包实验验收" });
     assert.equal(draft.subTasks.length, 10);
   }

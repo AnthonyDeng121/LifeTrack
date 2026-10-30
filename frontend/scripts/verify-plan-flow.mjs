@@ -75,15 +75,16 @@ let storedTasks = ["EXPIRED", "COMPLETED", "IN_PROGRESS", "CANCELLED", "NOT_STAR
 let confirmDeletion = false;
 let deletedIds = [];
 let previewCalls = [];
+let creatorMessages = [];
 let savedPayload;
 let previewWait;
 const pageScript = tasksPage.match(/<script setup>([\s\S]*?)<\/script>/)[1]
   .replace(/^import .*;$/gm, "");
 const page = new Function("computed", "ref", "watch", "onShow", "uni", "getTasks", "deleteTasks", "TASK_CATEGORIES", "previewTaskByAI", "createTaskManually", "validatePlanPeriod", `${pageScript}
   return { tasks, filteredTasks, batchMode, selectedIds, activeCategory, loadTasks, toggleBatchMode, toggleSelectAll, confirmBatchDelete, openTask,
-    newTitle, newTargetDays, showCreator, aiResult, decompositionGuidance, stepCountIndex, generatePreview, createTask, openCreator, formatUpdatedAt, formatProgress };
+    newTitle, newStartDate, newEndDate, newTargetDays, creating, showCreator, aiResult, decompositionGuidance, stepCountIndex, generatePreview, createTask, openCreator, formatUpdatedAt, formatProgress };
 `)(computed, ref, watch, () => {}, {
-  showToast() {},
+  showToast({title}) { creatorMessages.push(title); },
   showModal: async ({ success }) => success({ confirm: confirmDeletion }),
 }, async () => storedTasks, async ids => {
   deletedIds = ids;
@@ -119,15 +120,34 @@ assert.deepEqual(page.selectedIds.value, []);
 page.openCreator();
 page.newTitle.value = "学习计算机网络";
 await nextTick();
+const initialPeriod = [page.newStartDate.value, page.newEndDate.value, page.newTargetDays.value];
+page.newStartDate.value = "2026-12-30"; page.newEndDate.value = "2026-11-28"; page.newTargetDays.value = "20";
+await page.createTask(); await page.generatePreview();
+assert.equal(previewCalls.length, 0, "截图中的非法周期不能进入首次预览或直接重新生成");
+assert.equal(savedPayload, undefined); assert.equal(page.creating.value, false);
+assert.equal(creatorMessages.at(-1), "开始日期不能晚于结束日期");
+page.newStartDate.value = "2026-11-28"; page.newTargetDays.value = "2";
+await page.createTask(); await page.generatePreview();
+assert.equal(previewCalls.length, 0, "目标天数超过周期不能调用AI");
+[page.newStartDate.value, page.newEndDate.value, page.newTargetDays.value] = initialPeriod;
 await page.createTask();
 assert.equal(page.showCreator.value, true, "预览不能关闭或保存任务");
 assert.equal(savedPayload, undefined);
+const validPreviewCalls = previewCalls.length;
+page.newStartDate.value = "2026-12-30"; page.newEndDate.value = "2026-11-28";
+await page.createTask(); await page.generatePreview();
+assert.equal(previewCalls.length, validPreviewCalls, "已有预览时也必须拒绝非法周期的保存和重新生成");
+assert.equal(savedPayload, undefined);
+[page.newStartDate.value, page.newEndDate.value, page.newTargetDays.value] = initialPeriod;
 page.decompositionGuidance.value = "重点抓包，最后完成整体验收";
 page.stepCountIndex.value = 2;
 await page.createTask();
 assert.equal(previewCalls.length, 2, "更改建议后必须先重新生成");
 assert.equal(previewCalls[1].stepCount, 3);
 assert.equal(previewCalls[1].previousSteps.length, 1);
+assert.equal(previewCalls[1].startDate, initialPeriod[0]);
+assert.equal(previewCalls[1].endDate, initialPeriod[1]);
+assert.equal(previewCalls[1].targetDays, Number(initialPeriod[2]));
 assert.equal(savedPayload, undefined, "重新生成不能保存任务");
 await page.createTask();
 assert.equal(page.showCreator.value, false, "保存成功立即关闭新建框");

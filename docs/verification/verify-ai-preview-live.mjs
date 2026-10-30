@@ -16,7 +16,9 @@ const options = await api('GET', '/auth/options');
 assert.equal(options.demoPhoneEnabled, true);
 token = (await api('POST', '/auth/login/phone', {phone:'199'+String(Date.now()).slice(-8),verifyCode:options.demoVerifyCode})).token;
 const started = Date.now();
+const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const preview = await api('POST', '/tasks/deconstruct/preview', {title:'学习SQL SELECT基础查询',stepCount:2,
+  startDate:today,endDate:today,targetDays:1,
   guidance:'第一步练习students表的id和name字段查询；最后综合查询并核对预期结果，通过验收。'});
 assert.equal(preview.subTasks.length, 2);
 assert.match(preview.subTasks.at(-1).content, /验收|通过|验证|测试|测验|达标/);

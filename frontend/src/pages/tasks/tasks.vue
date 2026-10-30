@@ -134,20 +134,20 @@
         <view class="period-grid">
           <view class="form-block">
             <text class="field-label">开始日期</text>
-            <picker mode="date" :value="newStartDate" @change="newStartDate = $event.detail.value">
+            <picker mode="date" :disabled="creating" :value="newStartDate" @change="newStartDate = $event.detail.value">
               <view class="glass-input date-picker">{{ newStartDate }}</view>
             </picker>
           </view>
           <view class="form-block">
             <text class="field-label">结束日期</text>
-            <picker mode="date" :value="newEndDate" @change="newEndDate = $event.detail.value">
+            <picker mode="date" :disabled="creating" :value="newEndDate" @change="newEndDate = $event.detail.value">
               <view class="glass-input date-picker">{{ newEndDate }}</view>
             </picker>
           </view>
         </view>
         <view class="form-block">
           <text class="field-label">目标打卡天数</text>
-          <input v-model="newTargetDays" type="number" class="glass-input creator-input" placeholder="例如：20" />
+          <input v-model="newTargetDays" :disabled="creating" type="number" class="glass-input creator-input" placeholder="例如：20" />
           <text class="field-help">计划周期内希望坚持学习的天数；每天最多计1天，与子计划数量无关。</text>
         </view>
 
@@ -300,15 +300,26 @@ function formatUpdatedAt(value) {
   return `${String(value).replace("T", " ").slice(0, 16)} 更新`;
 }
 
+function validateCreatorForm() {
+  const title = newTitle.value.trim();
+  const targetDays = Number(newTargetDays.value);
+  const error = !title ? "先写一个任务名称"
+    : !TASK_CATEGORIES.includes(newCategory.value) ? "请选择有效分类"
+    : validatePlanPeriod(newStartDate.value, newEndDate.value, targetDays);
+  if (error) { uni.showToast({ title: error, icon: "none" }); return null; }
+  return { title, startDate: newStartDate.value, endDate: newEndDate.value, targetDays };
+}
+
 async function generatePreview() {
   if (creating.value) return;
-  const title = newTitle.value.trim();
-  if (!title) return uni.showToast({ title: "先写一个任务名称", icon: "none" });
+  const form = validateCreatorForm();
+  if (!form) return;
+  const title = form.title;
   const guidance = decompositionGuidance.value.trim();
   const countIndex = stepCountIndex.value;
   creating.value = true;
   try {
-    const result = await previewTaskByAI({ title, guidance,
+    const result = await previewTaskByAI({ ...form, guidance,
       stepCount: countIndex ? countIndex + 1 : null,
       previousSteps: aiResult.value?.subTasks.map(step => step.content) || [] });
     aiResult.value = result;
@@ -442,22 +453,13 @@ function removeManualSubtask(index) {
 
 async function createTask() {
   if (creating.value) return;
+  const form = validateCreatorForm();
+  if (!form) return;
   if (creatorMode.value === "ai" && (!aiResult.value || previewTitle !== newTitle.value.trim()
       || previewGuidance !== decompositionGuidance.value.trim() || previewStepCount !== stepCountIndex.value)) {
     return generatePreview();
   }
-  const title = newTitle.value.trim();
-  if (!title) {
-    uni.showToast({ title: "先写一个任务名称", icon: "none" });
-    return;
-  }
-  if (!TASK_CATEGORIES.includes(newCategory.value)) {
-    uni.showToast({ title: "请选择有效分类", icon: "none" });
-    return;
-  }
-  const targetDays = Number(newTargetDays.value);
-  const periodError = validatePlanPeriod(newStartDate.value, newEndDate.value, targetDays);
-  if (periodError) return uni.showToast({ title: periodError, icon: "none" });
+  const { title, targetDays } = form;
 
   creating.value = true;
   try {

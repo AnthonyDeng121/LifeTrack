@@ -4,7 +4,7 @@ async function api(method,path,data){ const r=await fetch(base+path,{method,sign
 const opts=await api('GET','/auth/options'); token=(await api('POST','/auth/login/phone',{phone:'199'+String(Date.now()).slice(-8),verifyCode:opts.demoVerifyCode})).token;
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 try {
- const draft=await api('POST','/tasks/deconstruct/preview',{title:'学习SQL SELECT基础查询',stepCount:2,guidance:'使用students表的id和name字段完成SELECT查询并验证返回结果，最后综合查询验收'});
+ const draft=await api('POST','/tasks/deconstruct/preview',{title:'学习SQL SELECT基础查询',stepCount:2,startDate:today,endDate:new Date(Date.parse(today+'T12:00:00+08:00')+6*86400000).toISOString().slice(0,10),targetDays:3,guidance:'使用students表的id和name字段完成SELECT查询并验证返回结果，最后综合查询验收'});
  assert.equal(draft.subTasks.length,2);
  const saved=await api('POST','/tasks/manual',{title:'学习SQL SELECT基础查询',category:'学习',startDate:today,endDate:new Date(Date.parse(today+'T12:00:00+08:00')+6*86400000).toISOString().slice(0,10),targetDays:3,subTasks:draft.subTasks}); id=saved.taskId;
  const steps=await api('GET',`/tasks/${id}/subtasks`); assert.deepEqual(steps.map(s=>s.content),draft.subTasks.map(s=>s.content));

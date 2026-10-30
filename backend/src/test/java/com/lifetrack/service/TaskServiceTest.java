@@ -56,6 +56,9 @@ class TaskServiceTest {
     void previewPassesRefinementWithoutCreatingAnyTask() {
         var request = new com.lifetrack.dto.TaskPreviewRequest();
         request.setTitle("学习计算机网络");
+        request.setStartDate(LocalDate.of(2026, 10, 30));
+        request.setEndDate(LocalDate.of(2026, 11, 5));
+        request.setTargetDays(5);
         request.setGuidance("重点抓包，最后验证一次网页访问");
         request.setStepCount(3);
         when(aiService.previewTask(request)).thenReturn(new com.lifetrack.dto.TaskDeconstructResponse.SubTaskDTO[] {
@@ -65,6 +68,20 @@ class TaskServiceTest {
         assertNull(response.getTaskId());
         assertEquals(1, response.getSubTasks().size());
         verifyNoInteractions(taskRepository, subTaskRepository, actionLogRepository, checkInRecordRepository);
+    }
+
+    @Test void previewRejectsInvalidPeriodBeforeCallingAi() {
+        var request = new com.lifetrack.dto.TaskPreviewRequest();
+        request.setTitle("学习计算机网络"); request.setStartDate(LocalDate.of(2026,12,30));
+        request.setEndDate(LocalDate.of(2026,11,28)); request.setTargetDays(20);
+        assertEquals(400, assertThrows(BusinessException.class, () -> taskService.previewTask(request)).getCode());
+        request.setStartDate(LocalDate.of(2026,11,28)); request.setTargetDays(2);
+        assertEquals(400, assertThrows(BusinessException.class, () -> taskService.previewTask(request)).getCode());
+        request.setTargetDays(0);
+        assertEquals(400, assertThrows(BusinessException.class, () -> taskService.previewTask(request)).getCode());
+        request.setStartDate(null);
+        assertEquals(400, assertThrows(BusinessException.class, () -> taskService.previewTask(request)).getCode());
+        verifyNoInteractions(aiService, taskRepository, subTaskRepository);
     }
 
     @Test

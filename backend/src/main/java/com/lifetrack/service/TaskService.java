@@ -282,6 +282,8 @@ public class TaskService {
     }
 
     public TaskDeconstructResponse previewTask(com.lifetrack.dto.TaskPreviewRequest request) {
+        validateTitle(request.getTitle());
+        validatePlanPeriod(request.getStartDate(), request.getEndDate(), request.getTargetDays());
         return TaskDeconstructResponse.builder()
                 .subTasks(java.util.Arrays.asList(aiService.previewTask(request)))
                 .aiSuggestion("最后一步为目标验收；确认步骤符合预期后再保存。")

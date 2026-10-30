@@ -34,6 +34,8 @@ try {
     subTasks:[{content:'验证前后端字段和HTTP错误语义',weight:1}]});
   id = result.taskId;
   assert.ok(Number.isInteger(id));
+  await assert.rejects(() => api.previewTaskByAI({title:'invalid preview',startDate:'2026-12-30',endDate:'2026-11-28',targetDays:20}), e=>e.code===400);
+  await assert.rejects(() => api.previewTaskByAI({title:'missing period'}), e=>e.code===400);
   assert.equal((await api.getTaskDetail(id)).status,'IN_PROGRESS');
   assert.equal((await api.getTasks({status:'IN_PROGRESS',startDate:today,endDate:today})).some(p=>p.id===id),true);
   assert.equal((await api.getSubtasks(id)).length,1);

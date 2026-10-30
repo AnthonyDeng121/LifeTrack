@@ -18,11 +18,11 @@ assert.equal(loginOptions.demoPhoneEnabled, true, "Enable demo phone login in th
 const testPhone = "199" + String(Date.now()).slice(-8);
 token = (await api("POST", "/auth/login/phone", { phone: testPhone, verifyCode: loginOptions.demoVerifyCode })).token;
 try {
-  const draft = await api("POST", "/tasks/deconstruct/preview", { title: "学习计算机网络", stepCount: 3 });
+  const draft = await api("POST", "/tasks/deconstruct/preview", { title: "学习计算机网络", stepCount: 3, startDate: today, endDate: end, targetDays: 5 });
   assert.equal(draft.subTasks.length, 3);
   assert.equal(draft.taskId, null);
   assert.equal((await api("GET", "/tasks")).length, 0, "预览不写库");
-  const refined = await api("POST", "/tasks/deconstruct/preview", { title: "学习计算机网络", stepCount: 4,
+  const refined = await api("POST", "/tasks/deconstruct/preview", { title: "学习计算机网络", stepCount: 4, startDate: today, endDate: end, targetDays: 5,
     guidance: "已有分层基础，重点用Wireshark抓包分析DNS、HTTP和TCP，最后独立分析一次网页访问并验证协议顺序",
     previousSteps: draft.subTasks.map(s => s.content) });
   assert.equal(refined.subTasks.length, 4);

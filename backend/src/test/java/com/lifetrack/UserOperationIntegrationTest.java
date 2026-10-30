@@ -177,7 +177,8 @@ class UserOperationIntegrationTest {
 
     @Test void realAiConnectionFailureNeverCreatesFakeProgressAndFallbackRemainsDurable() throws Exception {
         long id=create(today.minusDays(2),today.plusDays(7));
-        var preview=api("POST","/tasks/deconstruct/preview",Map.of("title","学习数据库事务","stepCount",3));
+        var preview=api("POST","/tasks/deconstruct/preview",Map.of("title","学习数据库事务","stepCount",3,
+                "startDate",today.toString(),"endDate",today.plusDays(6).toString(),"targetDays",5));
         assertEquals(503,preview.path("code").asInt());
         assertEquals(1,database.queryForObject("select count(*) from tasks where user_id=?",Integer.class,user.getId()));
         var failed=api("POST","/actions/sync",Map.of("taskId",id,"rawInput","整理了数据库事务的学习笔记","durationMinutes",30,"requestId",UUID.randomUUID().toString()));
@@ -385,6 +386,15 @@ class UserOperationIntegrationTest {
         assertEquals("[已移除]", database.queryForObject("select content from deferred_learning_records where id=?", String.class, replacement));
         assertEquals(0, database.queryForObject("select count(*) from action_logs where task_id=?", Integer.class, id));
         assertEquals(0, database.queryForObject("select count(*) from check_in_records where task_id=?", Integer.class, id));
+    }
+
+    @Test void aiPreviewRejectsInvalidOrMissingPeriodBeforeAnyModelRequest() throws Exception {
+        assertEquals(400, api("POST", "/tasks/deconstruct/preview", Map.of("title", "学习计算机网络",
+                "startDate", "2026-12-30", "endDate", "2026-11-28", "targetDays", 20)).path("code").asInt());
+        assertEquals(400, api("POST", "/tasks/deconstruct/preview", Map.of("title", "学习计算机网络",
+                "startDate", today.toString(), "endDate", today.toString(), "targetDays", 2)).path("code").asInt());
+        assertEquals(400, api("POST", "/tasks/deconstruct/preview", Map.of("title", "学习计算机网络")).path("code").asInt());
+        assertEquals(0, database.queryForObject("select count(*) from tasks where user_id=?", Integer.class, user.getId()));
     }
 
     @Test void frontendApiModuleWorksAgainstRealHttpServerAndMysql() throws Exception {
